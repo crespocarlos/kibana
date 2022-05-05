@@ -15,6 +15,8 @@ import {
   MethodDeclaration,
   ObjectLiteralExpression,
   ExportedDeclarations,
+  CallExpression,
+  ts,
 } from 'ts-morph';
 import { __values } from 'tslib';
 import { Analyzer } from './types';
@@ -30,7 +32,7 @@ export const infraPluginHttpRouteAnalyzer: Analyzer = {
       const pluginClassType = pluginFactory.getReturnType();
       const pluginClass = pluginClassType.getSymbol()?.getDeclarations()[0];
       const pluginClassFile = pluginClass?.getSourceFile();
-      findRouteRegister(pluginClassFile);
+      findRouteRegistration(pluginClassFile);
     }
 
     return {
@@ -40,7 +42,7 @@ export const infraPluginHttpRouteAnalyzer: Analyzer = {
   },
 };
 
-function findRouteRegister(file: SourceFile | undefined, visitedSources: string[] = []) {
+function findRouteRegistration(file: SourceFile | undefined, visitedSources: string[] = []) {
   if (!file) {
     throw new Error('source file is undefined');
   }
@@ -60,7 +62,7 @@ function findRouteRegister(file: SourceFile | undefined, visitedSources: string[
       )
     );
 
-    for (const [_exportName, items] of validExportedDeclarations) {
+    for (const [, items] of validExportedDeclarations) {
       const functionStatements = items.flatMap((exportedItem) =>
         // TODO: doesn't cover function declaration
         exportedItem.getDescendantsOfKind(SyntaxKind.ArrowFunction)
@@ -69,36 +71,39 @@ function findRouteRegister(file: SourceFile | undefined, visitedSources: string[
       for (const func of functionStatements) {
         // gets calls within the function scope
         const calls = func.getDescendantsOfKind(SyntaxKind.CallExpression);
-
-        const propAccessesExpressions = calls.map(
-          (call) => call.getExpression() as PropertyAccessExpression
-        );
-
-        for (const propAccess of propAccessesExpressions) {
-          if (propAccess && 'getNameNode' in propAccess) {
-            // copied from https://github.com/dsherret/ts-morph/issues/802
-            const methodNameIdent = propAccess.getNameNode();
-            const methodSymbol = methodNameIdent.getSymbol();
-            if (!!methodSymbol) {
-              const methodDec = methodSymbol.getDeclarations()[0] as MethodDeclaration;
-              // TODO: if the function name is changed, this will stop working. Find a better way
-              if (methodDec.getName() === 'registerRoute') {
-                const tss = calls[0].getArguments()[0] as ObjectLiteralExpression;
-                // eslint-disable-next-line no-console
-                console.log(
-                  `${dependency.getDirectoryPath()}/${dependency.getBaseName()} ->`,
-                  tss.getText()
-                );
-              }
-            }
-          }
+        if (isRouteRegistrationFunction(calls)) {
+          const parameters = calls[0].getArguments()[0] as ObjectLiteralExpression;
+          // eslint-disable-next-line no-console
+          console.log(
+            `${dependency.getDirectoryPath()}/${dependency.getBaseName()} ->`,
+            parameters.getText()
+          );
         }
       }
     }
 
     if (!visitedSources.includes(`${dependency.getDirectoryPath()}/${dependency.getBaseName()}`)) {
       visitedSources.push(`${dependency.getDirectoryPath()}/${dependency.getBaseName()}`);
-      findRouteRegister(dependency, visitedSources);
+      findRouteRegistration(dependency, visitedSources);
+    }
+  }
+}
+
+function isRouteRegistrationFunction(calls: Array<CallExpression<ts.CallExpression>>) {
+  const propAccessesExpressions = calls.map(
+    (call) => call.getExpression() as PropertyAccessExpression
+  );
+
+  for (const propAccess of propAccessesExpressions) {
+    if (propAccess && 'getNameNode' in propAccess) {
+      // copied from https://github.com/dsherret/ts-morph/issues/802
+      const methodNameIdent = propAccess.getNameNode();
+      const methodSymbol = methodNameIdent.getSymbol();
+      if (!!methodSymbol) {
+        const methodDec = methodSymbol.getDeclarations()[0] as MethodDeclaration;
+        // TODO: if the function name is changed, this will stop working. Find a better way
+        return methodDec.getName() === 'registerRoute';
+      }
     }
   }
 }
