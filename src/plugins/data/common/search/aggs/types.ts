@@ -45,6 +45,7 @@ import {
   AggParamsBucketMinSerialized,
   AggParamsBucketSum,
   AggParamsBucketSumSerialized,
+  AggParamsBucketScriptSerialized,
   AggParamsFilteredMetric,
   AggParamsCardinality,
   AggParamsValueCount,
@@ -117,6 +118,7 @@ import { AggParamsSampler } from './buckets/sampler';
 import { AggParamsDiversifiedSampler } from './buckets/diversified_sampler';
 import { AggParamsSignificantText } from './buckets/significant_text';
 import { aggTopMetrics } from './metrics/top_metrics_fn';
+import { aggBucketScript, AggParamsBucketScript } from './metrics';
 
 export type { IAggConfig, AggConfigSerialized } from './agg_config';
 export type { CreateAggConfigParams, IAggConfigs, AggConfigsOptions } from './agg_configs';
@@ -217,6 +219,7 @@ interface SerializedAggParamsMapping {
   [METRIC_TYPES.SERIAL_DIFF]: AggParamsSerialDiffSerialized;
   [METRIC_TYPES.TOP_HITS]: AggParamsTopHitSerialized;
   [METRIC_TYPES.TOP_METRICS]: AggParamsTopMetricsSerialized;
+  [METRIC_TYPES.BUCKET_SCRIPT]: AggParamsBucketScriptSerialized;
 }
 
 export interface AggParamsMapping {
@@ -264,6 +267,8 @@ export interface AggParamsMapping {
   [METRIC_TYPES.SERIAL_DIFF]: AggParamsSerialDiff;
   [METRIC_TYPES.TOP_HITS]: AggParamsTopHit;
   [METRIC_TYPES.TOP_METRICS]: AggParamsTopMetrics;
+  [BUCKET_TYPES.RANGE]: AggParamsRange;
+  [METRIC_TYPES.BUCKET_SCRIPT]: AggParamsBucketScript;
 }
 /**
  * A global list of the expression function definitions for each agg type function.
@@ -288,6 +293,7 @@ export interface AggFunctionsMapping {
   aggBucketMax: ReturnType<typeof aggBucketMax>;
   aggBucketMin: ReturnType<typeof aggBucketMin>;
   aggBucketSum: ReturnType<typeof aggBucketSum>;
+  aggBucketScript: ReturnType<typeof aggBucketScript>;
   aggFilteredMetric: ReturnType<typeof aggFilteredMetric>;
   aggCardinality: ReturnType<typeof aggCardinality>;
   aggValueCount: ReturnType<typeof aggValueCount>;

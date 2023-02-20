@@ -30,7 +30,7 @@ export const tx: MetricsUIAggregation = {
     bucket_script: {
       buckets_path: {
         value: 'tx_avg',
-        period: 'tx_period>period',
+        period: 'tx_period-bucket>tx_period-metric',
       },
       script: {
         source: 'params.value / (params.period / 1000)',

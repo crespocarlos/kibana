@@ -52,6 +52,7 @@ export const getAggTypes = () => ({
     { name: METRIC_TYPES.FILTERED_METRIC, fn: metrics.getFilteredMetricAgg },
     { name: METRIC_TYPES.GEO_BOUNDS, fn: metrics.getGeoBoundsMetricAgg },
     { name: METRIC_TYPES.GEO_CENTROID, fn: metrics.getGeoCentroidMetricAgg },
+    { name: METRIC_TYPES.BUCKET_SCRIPT, fn: metrics.getBucketScriptMetricAgg },
   ],
   buckets: [
     { name: BUCKET_TYPES.DATE_HISTOGRAM, fn: buckets.getDateHistogramBucketAgg },

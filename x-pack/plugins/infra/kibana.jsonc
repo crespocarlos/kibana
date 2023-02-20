@@ -7,10 +7,7 @@
     "id": "infra",
     "server": true,
     "browser": true,
-    "configPath": [
-      "xpack",
-      "infra"
-    ],
+    "configPath": ["xpack", "infra"],
     "requiredPlugins": [
       "share",
       "features",
@@ -18,6 +15,7 @@
       "spaces",
       "embeddable",
       "data",
+      "inspector",
       "dataViews",
       "visTypeTimeseries",
       "alerting",
@@ -27,12 +25,7 @@
       "ruleRegistry",
       "unifiedSearch"
     ],
-    "optionalPlugins": [
-      "ml",
-      "home",
-      "embeddable",
-      "osquery"
-    ],
+    "optionalPlugins": ["ml", "home", "embeddable", "osquery"],
     "requiredBundles": [
       "unifiedSearch",
       "observability",

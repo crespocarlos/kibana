@@ -22,6 +22,7 @@ const metricAggFilter: string[] = [
   '!avg_bucket',
   '!min_bucket',
   '!max_bucket',
+  '!bucket_script',
   '!derivative',
   '!moving_avg',
   '!serial_diff',

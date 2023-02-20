@@ -20,6 +20,7 @@ export const termsAggFilter = [
   '!geo_centroid',
   '!std_dev',
   '!derivative',
+  '!bucket_script',
   '!moving_avg',
   '!serial_diff',
   '!cumulative_sum',

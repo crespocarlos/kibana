@@ -15,6 +15,7 @@ export enum METRIC_TYPES {
   MAX_BUCKET = 'max_bucket',
   MIN_BUCKET = 'min_bucket',
   SUM_BUCKET = 'sum_bucket',
+  BUCKET_SCRIPT = 'bucket_script',
   COUNT = 'count',
   CUMULATIVE_SUM = 'cumulative_sum',
   DERIVATIVE = 'derivative',

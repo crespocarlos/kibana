@@ -19,6 +19,7 @@ export const rx: MetricsUIAggregation = {
       },
     },
     aggs: {
+      // @ts-ignore
       period: {
         max: {
           field: 'metricset.period',
@@ -30,7 +31,7 @@ export const rx: MetricsUIAggregation = {
     bucket_script: {
       buckets_path: {
         value: 'rx_avg',
-        period: 'rx_period>period',
+        period: 'rx_period-bucket>rx_period-metric',
       },
       script: {
         source: 'params.value / (params.period / 1000)',
