@@ -12,6 +12,7 @@ import { Page } from './template/page';
 import { ContextProviders } from './context_providers';
 import { TabSwitcherProvider } from './hooks/use_tab_switcher';
 import { DataViewsProvider } from './hooks/use_data_views_provider';
+import { useAssetDetailsUrlState } from './hooks/use_asset_details_url_state';
 
 const ContentTemplate = ({
   header,
@@ -32,10 +33,11 @@ export const AssetDetails = ({
   metricAlias,
   ...props
 }: AssetDetailsProps) => {
+  const [urlState] = useAssetDetailsUrlState();
   return (
     <ContextProviders props={{ ...props, renderMode }}>
       <TabSwitcherProvider
-        initialActiveTabId={tabs.length > 0 ? activeTabId ?? tabs[0].id : undefined}
+        initialActiveTabId={tabs.length > 0 ? urlState?.tabId ?? tabs[0].id : undefined}
       >
         <DataViewsProvider metricAlias={metricAlias}>
           <ContentTemplate header={{ tabs, links }} renderMode={renderMode} />

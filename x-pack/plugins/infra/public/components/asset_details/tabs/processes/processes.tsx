@@ -28,6 +28,7 @@ import {
 } from '../../../../pages/metrics/inventory_view/hooks/use_process_list';
 import { getFieldByType } from '../../../../../common/inventory_models';
 import { useAssetDetailsStateContext } from '../../hooks/use_asset_details_state';
+import { useAssetDetailsUrlState } from '../../hooks/use_asset_details_url_state';
 
 const options = Object.entries(STATE_NAMES).map(([value, view]: [string, string]) => ({
   value,
@@ -35,12 +36,10 @@ const options = Object.entries(STATE_NAMES).map(([value, view]: [string, string]
 }));
 
 export const Processes = () => {
-  const { asset, assetType, overrides, dateRangeTs, onTabsStateChange } =
-    useAssetDetailsStateContext();
+  const [urlState, setUrlState] = useAssetDetailsUrlState();
+  const { asset, assetType, dateRangeTs, onTabsStateChange } = useAssetDetailsStateContext();
 
-  const { query: overrideQuery } = overrides?.processes ?? {};
-
-  const [searchText, setSearchText] = useState(overrideQuery ?? '');
+  const [searchText, setSearchText] = useState(urlState?.processSearch ?? '');
   const [searchBarState, setSearchBarState] = useState<Query>(() =>
     searchText ? Query.parse(searchText) : Query.MATCH_ALL
   );
@@ -65,12 +64,10 @@ export const Processes = () => {
 
   const debouncedSearchOnChange = useMemo(() => {
     return debounce<(queryText: string) => void>((queryText) => {
-      if (onTabsStateChange) {
-        onTabsStateChange({ processes: { query: queryText } });
-      }
+      setUrlState({ processSearch: queryText });
       setSearchText(queryText);
     }, 500);
-  }, [onTabsStateChange]);
+  }, [setUrlState]);
 
   const searchBarOnChange = useCallback(
     ({ query, queryText }) => {

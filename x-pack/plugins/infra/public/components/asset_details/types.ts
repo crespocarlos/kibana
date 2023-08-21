@@ -28,20 +28,13 @@ export type TabIds = `${FlyoutTabIds}`;
 
 export interface TabState {
   metadata?: {
-    query?: string;
     showActionsColumn?: boolean;
-  };
-  processes?: {
-    query?: string;
   };
   anomalies?: {
     onClose?: () => void;
   };
   alertRule?: {
     onCreateRuleClick?: () => void;
-  };
-  logs?: {
-    query?: string;
   };
 }
 
@@ -71,14 +64,11 @@ export interface AssetDetailsProps {
   activeTabId?: TabIds;
   overrides?: TabState;
   renderMode: RenderMode;
-  onTabsStateChange?: TabsStateChangeFn;
   links?: LinkOptions[];
   // This is temporary. Once we start using the asset details in other plugins,
   // It will have to retrieve the metricAlias internally rather than receive it via props
   metricAlias: string;
 }
-
-export type TabsStateChangeFn = (state: TabState & { activeTabId?: TabIds }) => void;
 
 export interface ContentTemplateProps {
   header: Pick<AssetDetailsProps, 'tabs' | 'links'>;

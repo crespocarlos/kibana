@@ -9,14 +9,14 @@ import { useState } from 'react';
 import createContainer from 'constate';
 import { useLazyRef } from '../../../hooks/use_lazy_ref';
 import type { TabIds } from '../types';
-import { useAssetDetailsStateContext } from './use_asset_details_state';
+import { AssetDetailsState, useAssetDetailsUrlState } from './use_asset_details_url_state';
 
 interface TabSwitcherParams {
   initialActiveTabId?: TabIds;
 }
 
 export function useTabSwitcher({ initialActiveTabId }: TabSwitcherParams) {
-  const { onTabsStateChange } = useAssetDetailsStateContext();
+  const [, setUrlState] = useAssetDetailsUrlState();
   const [activeTabId, setActiveTabId] = useState<TabIds | undefined>(initialActiveTabId);
 
   // This set keeps track of which tabs content have been rendered the first time.
@@ -27,9 +27,10 @@ export function useTabSwitcher({ initialActiveTabId }: TabSwitcherParams) {
     renderedTabsSet.current.add(tabId); // On a tab click, mark the tab content as allowed to be rendered
     setActiveTabId(tabId);
 
-    if (onTabsStateChange) {
-      onTabsStateChange({ activeTabId: tabId });
-    }
+    // save state in url enabled?
+    // if (onTabsStateChange) {
+    setUrlState({ tabId: tabId as AssetDetailsState['tabId'] });
+    // }
   };
 
   return {
