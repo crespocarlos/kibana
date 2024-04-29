@@ -12,16 +12,14 @@ import React, { useEffect } from 'react';
 import {
   noMetricIndicesPromptDescription,
   noMetricIndicesPromptPrimaryActionTitle,
+  NoRemoteCluster,
 } from '../../components/empty_states';
+import { SourceErrorPage } from '../../components/source_error_page';
+import { SourceLoadingPage } from '../../components/source_loading_page';
 import { useSourceContext } from '../../containers/metrics_source';
 import { useKibanaContextForPlugin } from '../../hooks/use_kibana';
 
-interface MetricsPageTemplateProps extends LazyObservabilityPageTemplateProps {
-  hasData?: boolean;
-}
-
-export const MetricsPageTemplate: React.FC<MetricsPageTemplateProps> = ({
-  hasData = true,
+export const MetricsPageTemplate: React.FC<LazyObservabilityPageTemplateProps> = ({
   'data-test-subj': _dataTestSubj,
   ...pageTemplateProps
 }) => {
@@ -35,9 +33,10 @@ export const MetricsPageTemplate: React.FC<MetricsPageTemplateProps> = ({
     },
   } = useKibanaContextForPlugin();
 
-  const { source } = useSourceContext();
+  const { source, error, loadSource, isLoading } = useSourceContext();
+  const { remoteClustersExist, metricIndicesExist } = source?.status ?? {};
 
-  const noDataConfig: NoDataConfig | undefined = hasData
+  const noDataConfig: NoDataConfig | undefined = metricIndicesExist
     ? undefined
     : {
         solution: i18n.translate('xpack.infra.metrics.noDataConfig.solutionName', {
@@ -64,7 +63,7 @@ export const MetricsPageTemplate: React.FC<MetricsPageTemplateProps> = ({
         },
       ],
       starterPrompts: [
-        ...(!hasData
+        ...(!metricIndicesExist
           ? [
               {
                 title: i18n.translate(
@@ -85,11 +84,21 @@ export const MetricsPageTemplate: React.FC<MetricsPageTemplateProps> = ({
           : []),
       ],
     });
-  }, [hasData, setScreenContext, source]);
+  }, [metricIndicesExist, setScreenContext, source]);
+
+  if (isLoading && !source) return <SourceLoadingPage />;
+
+  if (!remoteClustersExist) {
+    return <NoRemoteCluster />;
+  }
+
+  if (error) {
+    <SourceErrorPage errorMessage={error} retry={loadSource} />;
+  }
 
   return (
     <PageTemplate
-      data-test-subj={hasData ? _dataTestSubj : 'noDataPage'}
+      data-test-subj={metricIndicesExist ? _dataTestSubj : 'noDataPage'}
       noDataConfig={noDataConfig}
       {...pageTemplateProps}
     />
