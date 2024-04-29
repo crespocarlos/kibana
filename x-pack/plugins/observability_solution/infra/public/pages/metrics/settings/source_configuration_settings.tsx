@@ -68,12 +68,7 @@ export const SourceConfigurationSettings = ({
     getNumberOfInfraRules();
   }, [http]);
 
-  const {
-    persistSourceConfiguration: updateSourceConfiguration,
-    source,
-    sourceExists,
-    isLoading,
-  } = useSourceContext();
+  const { persistSourceConfiguration, source, sourceExists, isLoading } = useSourceContext();
 
   const {
     indicesConfigurationProps,
@@ -96,14 +91,14 @@ export const SourceConfigurationSettings = ({
 
   const persistUpdates = useCallback(async () => {
     await Promise.all([
-      updateSourceConfiguration(sourceExists ? formStateChanges : formState),
+      persistSourceConfiguration(sourceExists ? formStateChanges : formState),
       infraUiSettings.saveAll(),
     ]);
     resetForm();
   }, [
     sourceExists,
     resetForm,
-    updateSourceConfiguration,
+    persistSourceConfiguration,
     formStateChanges,
     infraUiSettings,
     formState,

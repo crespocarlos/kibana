@@ -17,11 +17,10 @@ import {
   MetricsSourceStatus,
   partialMetricsSourceConfigurationReqPayloadRT,
 } from '../../../common/metrics_sources';
-import { InfraSource, InfraSourceIndexField } from '../../lib/sources';
+import { InfraSource } from '../../lib/sources';
 import { InfraPluginRequestHandlerContext } from '../../types';
 
 const defaultStatus = {
-  indexFields: [],
   metricIndicesExist: false,
   remoteClustersExist: false,
 };
@@ -33,41 +32,50 @@ export const initMetricsSourceConfigurationRoutes = (libs: InfraBackendLibs) => 
     requestContext: InfraPluginRequestHandlerContext,
     sourceId: string
   ): Promise<MetricsSourceStatus> => {
-    const [metricIndicesExistSettled, indexFieldsSettled] = await Promise.allSettled([
-      libs.sourceStatus.hasMetricIndices(requestContext, sourceId),
-      libs.fields.getFields(requestContext, sourceId, 'METRICS'),
-    ]);
-
-    /**
-     * Extract values from promises settlements
-     */
-    const indexFields = isFulfilled<InfraSourceIndexField[]>(indexFieldsSettled)
-      ? indexFieldsSettled.value
-      : defaultStatus.indexFields;
-    const metricIndicesExist = isFulfilled<boolean>(metricIndicesExistSettled)
-      ? metricIndicesExistSettled.value
-      : defaultStatus.metricIndicesExist;
-    const remoteClustersExist = hasRemoteCluster<boolean | InfraSourceIndexField[]>(
-      indexFieldsSettled,
-      metricIndicesExistSettled
-    );
-
-    /**
-     * Report gracefully handled rejections
-     */
-    if (!isFulfilled<InfraSourceIndexField[]>(indexFieldsSettled)) {
-      logger.error(indexFieldsSettled.reason);
+    try {
+      const metricIndicesExist = await libs.sourceStatus.hasMetricIndices(requestContext, sourceId);
+      return {
+        metricIndicesExist,
+        remoteClustersExist: true,
+      };
+    } catch (error) {
+      logger.error(error);
+      return {
+        metricIndicesExist: false,
+        remoteClustersExist: !(error instanceof NoSuchRemoteClusterError),
+      };
     }
-    if (!isFulfilled<boolean>(metricIndicesExistSettled)) {
-      logger.error(metricIndicesExistSettled.reason);
-    }
-
-    return {
-      indexFields,
-      metricIndicesExist,
-      remoteClustersExist,
-    };
   };
+
+  framework.registerRoute(
+    {
+      method: 'get',
+      path: '/api/metrics/data_view/index_pattern',
+      validate: {},
+    },
+    async (requestContext, _, response) => {
+      const savedObjectsClient = (await requestContext.core).savedObjects.client;
+
+      try {
+        const metricsIndexPattern = await libs.metricsClient.getMetricIndices({
+          savedObjectsClient,
+        });
+
+        return response.ok({
+          body: {
+            metricsIndexPattern,
+          },
+        });
+      } catch (error) {
+        return response.customError({
+          statusCode: error.statusCode ?? 500,
+          body: {
+            message: error.message ?? 'An unexpected error occurred',
+          },
+        });
+      }
+    }
+  );
 
   framework.registerRoute(
     {

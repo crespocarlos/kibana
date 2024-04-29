@@ -82,10 +82,7 @@ export class InfraSources {
       savedObjectsClient,
       sourceId
     );
-    const metricAlias = await this.libs.metricsClient.getMetricIndices({
-      savedObjectsClient,
-    });
-    sourceConfiguration.configuration.metricAlias = metricAlias;
+
     return sourceConfiguration;
   }
 
