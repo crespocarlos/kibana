@@ -32,7 +32,7 @@ export async function getInfraMetricsClient({
   requestContext: InfraPluginRequestHandlerContext;
   request?: KibanaRequest;
 }) {
-  const soClient = (await requestContext.core).savedObjects.getClient();
+  const soClient = (await requestContext.core).savedObjects.client;
   const source = await infraSources.getSourceConfiguration(soClient, sourceId);
 
   return {

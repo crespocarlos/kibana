@@ -17,6 +17,7 @@ import { InfraBackendLibs } from '../../lib/infra_types';
 import { getInfraAlertsClient } from '../../lib/helpers/get_infra_alerts_client';
 import { getHosts } from './lib/host/get_hosts';
 import { getInfraMetricsClient } from '../../lib/helpers/get_infra_metrics_client';
+import { getApmDataAccessClient } from '../../lib/helpers/get_apm_client';
 
 export const initInfraMetricsRoute = (libs: InfraBackendLibs) => {
   const validateBody = createRouteValidationFunction(GetInfraMetricsRequestBodyPayloadRT);
@@ -48,10 +49,16 @@ export const initInfraMetricsRoute = (libs: InfraBackendLibs) => {
           request,
         });
 
+        const apmDataAccessClient = await getApmDataAccessClient({
+          apmDataAccess: libs.apmDataAccess,
+          requestContext,
+          request,
+        });
+
         const hosts = await getHosts({
           infraMetricsClient,
           alertsClient,
-          apmDataAccess: libs.apmDataAccess,
+          apmDataAccessClient,
           ...params,
         });
 

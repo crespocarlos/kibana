@@ -5,9 +5,4 @@
  * 2.0.
  */
 
-export interface Process {
-  args?: string[];
-  pid: number;
-  ppid?: number;
-  title?: string;
-}
+export { Process } from '@kbn/apm-utils/es_schemas_raw';

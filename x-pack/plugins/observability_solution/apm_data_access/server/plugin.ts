@@ -19,8 +19,7 @@ import {
   apmIndicesSavedObjectDefinition,
   getApmIndicesSavedObject,
 } from './saved_objects/apm_indices';
-import { registerServices } from './services/register_services';
-import { getTypedSearch } from '../utils/create_typed_es_client';
+import { getClient } from './services/get_client';
 
 export class ApmDataAccessPlugin
   implements Plugin<ApmDataAccessPluginSetup, ApmDataAccessPluginStart>
@@ -43,23 +42,11 @@ export class ApmDataAccessPlugin
     core.savedObjects.registerType(apmIndicesSavedObjectDefinition);
 
     // expose
-    const getCoreStart = () => core.getStartServices().then(([coreStart]) => coreStart);
-    const getResourcesForServices = async () => {
-      const coreStart = await getCoreStart();
-      const soClient = coreStart.savedObjects.createInternalRepository();
-      const apmIndices = await getApmIndices(soClient);
-      return {
-        apmIndices,
-        esClient: getTypedSearch(coreStart.elasticsearch.client.asInternalUser),
-      };
-    };
-
-    const services = registerServices({ getResourcesForServices });
 
     return {
       apmIndicesFromConfigFile,
       getApmIndices,
-      services,
+      getClient,
     };
   }
 

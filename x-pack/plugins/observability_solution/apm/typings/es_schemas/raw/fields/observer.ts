@@ -5,12 +5,4 @@
  * 2.0.
  */
 
-export interface Observer {
-  ephemeral_id?: string;
-  hostname?: string;
-  id?: string;
-  name?: string;
-  type?: string;
-  version: string;
-  version_major: number;
-}
+export { Observer } from '@kbn/apm-utils/es_schemas_raw';

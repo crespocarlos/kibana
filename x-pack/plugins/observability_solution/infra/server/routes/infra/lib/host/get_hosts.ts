@@ -20,7 +20,7 @@ export const getHosts = async ({
   type,
   query,
   alertsClient,
-  apmDataAccess,
+  apmDataAccessClient,
   infraMetricsClient,
 }: Omit<GetHostParameters, 'sourceId'>): Promise<GetInfraMetricsResponsePayload> => {
   const runFilterQuery = hasFilters(query);
@@ -28,7 +28,7 @@ export const getHosts = async ({
   const hostNamesShortList = runFilterQuery
     ? await getFilteredHostNames({
         infraMetricsClient,
-        apmDataAccess,
+        apmDataAccessClient,
         from,
         to,
         limit,
@@ -80,14 +80,14 @@ export const getHosts = async ({
 
 const getFilteredHostNames = async ({
   infraMetricsClient,
-  apmDataAccess,
+  apmDataAccessClient,
   from,
   to,
   limit,
   query,
 }: Pick<
   GetHostParameters,
-  'apmDataAccess' | 'infraMetricsClient' | 'from' | 'to' | 'limit' | 'query'
+  'apmDataAccessClient' | 'infraMetricsClient' | 'from' | 'to' | 'limit' | 'query'
 >) => {
   assertQueryStructure(query);
 
@@ -99,7 +99,7 @@ const getFilteredHostNames = async ({
       to,
       limit,
     }),
-    apmDataAccess.services.getHostNames({
+    apmDataAccessClient.getHostNames({
       query,
       from: new Date(from).getTime(),
       to: new Date(to).getTime(),
