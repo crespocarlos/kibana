@@ -6,15 +6,14 @@
  */
 
 import React from 'react';
-import { AGENT_NAME, CLOUD_PROVIDER, ENTITY_TYPE } from '@kbn/observability-shared-plugin/common';
 import { type CloudProvider, CloudProviderIcon, AgentIcon } from '@kbn/custom-icons';
 import { EuiFlexGroup, EuiFlexItem, EuiIcon } from '@elastic/eui';
 import type { AgentName } from '@kbn/elastic-agent-utils';
 import { euiThemeVars } from '@kbn/ui-theme';
-import type { Entity } from '../../../common/entities';
+import type { InventoryEntityLatest } from '../../../common/entities';
 
 interface EntityIconProps {
-  entity: Entity;
+  entity: InventoryEntityLatest;
 }
 
 type NotNullableCloudProvider = Exclude<CloudProvider, null>;
@@ -24,14 +23,14 @@ const getSingleValue = <T,>(value?: T | T[] | null): T | undefined => {
 };
 
 export function EntityIcon({ entity }: EntityIconProps) {
-  const entityType = entity[ENTITY_TYPE];
+  const entityType = entity.entity.type;
   const defaultIconSize = euiThemeVars.euiSizeL;
 
   switch (entityType) {
     case 'host':
     case 'container': {
       const cloudProvider = getSingleValue(
-        entity[CLOUD_PROVIDER] as NotNullableCloudProvider | NotNullableCloudProvider[]
+        entity.cloud?.provider as NotNullableCloudProvider | NotNullableCloudProvider[]
       );
       return (
         <EuiFlexGroup
@@ -51,7 +50,7 @@ export function EntityIcon({ entity }: EntityIconProps) {
       );
     }
     case 'service': {
-      const agentName = getSingleValue(entity[AGENT_NAME] as AgentName | AgentName[]);
+      const agentName = getSingleValue(entity.agent?.name as AgentName | AgentName[]);
       return <AgentIcon agentName={agentName} role="presentation" />;
     }
     default:

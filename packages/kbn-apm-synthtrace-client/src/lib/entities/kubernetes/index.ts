@@ -58,6 +58,8 @@ export class K8sEntity extends Serializable<EntityFields> {
       'entity.definitionId': `builtin_${entityTypeWithSchema}`,
       'entity.identityFields': identityFields,
       'entity.displayName': getDisplayName({ identityFields, fields }),
+      'entity.definitionVersion': '1.0.0',
+      'entity.schemaVersion': '1.0',
     });
   }
 }

@@ -13,7 +13,7 @@ export const entityBaseSchema = z.object({
   type: z.string(),
   identityFields: arrayOfStringsSchema,
   displayName: z.string(),
-  metrics: z.record(z.string(), z.number()),
+  metrics: z.optional(z.record(z.string(), z.number())),
   definitionVersion: z.string(),
   schemaVersion: z.string(),
   definitionId: z.string(),

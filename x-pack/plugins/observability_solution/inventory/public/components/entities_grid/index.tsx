@@ -20,7 +20,7 @@ import {
   ENTITY_LAST_SEEN,
   ENTITY_TYPE,
 } from '@kbn/observability-shared-plugin/common';
-import { EntityColumnIds, EntityType } from '../../../common/entities';
+import { EntityColumnIds } from '../../../common/entities';
 import { APIReturnType } from '../../api';
 import { BadgeFilterWithPopover } from '../badge_filter_with_popover';
 import { getColumns } from './grid_columns';
@@ -39,7 +39,7 @@ interface Props {
   pageIndex: number;
   onChangeSort: (sorting: EuiDataGridSorting['columns'][0]) => void;
   onChangePage: (nextPage: number) => void;
-  onFilterByType: (entityType: EntityType) => void;
+  onFilterByType: (entityType: string) => void;
 }
 
 const PAGE_SIZE = 20;
@@ -90,7 +90,7 @@ export function EntitiesGrid({
           return entity?.alertsCount ? <AlertsBadge entity={entity} /> : null;
 
         case ENTITY_TYPE:
-          const entityType = entity[columnEntityTableId];
+          const entityType = entity.entity.type;
           return (
             <BadgeFilterWithPopover
               field={ENTITY_TYPE}
@@ -107,7 +107,7 @@ export function EntitiesGrid({
               values={{
                 date: (
                   <FormattedDate
-                    value={entity[columnEntityTableId]}
+                    value={entity.entity.lastSeenTimestamp}
                     month="short"
                     day="numeric"
                     year="numeric"
@@ -115,7 +115,7 @@ export function EntitiesGrid({
                 ),
                 time: (
                   <FormattedTime
-                    value={entity[columnEntityTableId]}
+                    value={entity.entity.lastSeenTimestamp}
                     hour12={false}
                     hour="2-digit"
                     minute="2-digit"
@@ -128,7 +128,7 @@ export function EntitiesGrid({
         case ENTITY_DISPLAY_NAME:
           return <EntityName entity={entity} />;
         default:
-          return entity[columnId as EntityColumnIds] || '';
+          return '';
       }
     },
     [entities, onFilterByType]

@@ -5,17 +5,23 @@
  * 2.0.
  */
 
+import { z } from '@kbn/zod';
 import { type ObservabilityElasticsearchClient } from '@kbn/observability-utils/es/client/create_observability_es_client';
 import { kqlQuery } from '@kbn/observability-utils/es/queries/kql_query';
 import { esqlResultToPlainObjects } from '@kbn/observability-utils/es/utils/esql_result_to_plain_objects';
-import { ENTITY_LAST_SEEN, ENTITY_TYPE } from '@kbn/observability-shared-plugin/common';
+import {
+  ENTITY_IDENTITY_FIELDS,
+  ENTITY_LAST_SEEN,
+  ENTITY_TYPE,
+} from '@kbn/observability-shared-plugin/common';
 import { ScalarValue } from '@elastic/elasticsearch/lib/api/types';
+import { entityLatestSchema } from '@kbn/entities-schema';
 import {
   ENTITIES_LATEST_ALIAS,
   MAX_NUMBER_OF_ENTITIES,
   type EntityType,
-  type Entity,
   type EntityColumnIds,
+  InventoryEntityLatest,
 } from '../../../common/entities';
 import { getBuiltinEntityDefinitionIdESQLWhereClause } from './query_helper';
 
@@ -31,7 +37,7 @@ export async function getLatestEntities({
   sortField: EntityColumnIds;
   entityTypes?: EntityType[];
   kuery?: string;
-}) {
+}): Promise<InventoryEntityLatest[]> {
   // alertsCount doesn't exist in entities index. Ignore it and sort by entity.lastSeenTimestamp by default.
   const entitiesSortField = sortField === 'alertsCount' ? ENTITY_LAST_SEEN : sortField;
 
@@ -59,5 +65,7 @@ export async function getLatestEntities({
     params,
   });
 
-  return esqlResultToPlainObjects<Entity>(latestEntitiesEsqlResponse);
+  return z
+    .array(entityLatestSchema)
+    .parse(esqlResultToPlainObjects(latestEntitiesEsqlResponse, [ENTITY_IDENTITY_FIELDS]));
 }

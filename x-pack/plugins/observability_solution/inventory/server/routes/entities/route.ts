@@ -10,7 +10,7 @@ import { createObservabilityEsClient } from '@kbn/observability-utils/es/client/
 import * as t from 'io-ts';
 import { orderBy } from 'lodash';
 import { joinByKey } from '@kbn/observability-utils/array/join_by_key';
-import { entityTypeRt, entityColumnIdsRt, Entity } from '../../../common/entities';
+import { entityTypeRt, entityColumnIdsRt, InventoryEntityLatest } from '../../../common/entities';
 import { createInventoryServerRoute } from '../create_inventory_server_route';
 import { getEntityTypes } from './get_entity_types';
 import { getLatestEntities } from './get_latest_entities';
@@ -84,15 +84,15 @@ export const listLatestEntitiesRoute = createInventoryServerRoute({
 
     const joined = joinByKey(
       [...latestEntities, ...alerts],
-      [...identityFieldsPerEntityType.values()].flat()
-    ).filter((entity) => entity['entity.id']) as Entity[];
+      [...identityFieldsPerEntityType.values()].flat() as Array<keyof InventoryEntityLatest>
+    ).filter((latestEntity: InventoryEntityLatest) => latestEntity.entity.id);
 
     return {
       entities:
         sortField === 'alertsCount'
           ? orderBy(
               joined,
-              [(item: Entity) => item?.alertsCount === undefined, sortField],
+              [(item: InventoryEntityLatest) => item?.alertsCount === undefined, sortField],
               ['asc', sortDirection] // push entities without alertsCount to the end
             )
           : joined,
