@@ -9,13 +9,16 @@
 
 let seq = 0;
 const pid = String(process.pid);
+import { v4 as uuidv4 } from 'uuid';
 
 const LONG_ID_LENGTH = 32;
 const SHORT_ID_LENGTH = 16;
 
 function generateId(length: number = LONG_ID_LENGTH) {
-  const id = String(seq++);
-  const generatedId = pid + id.padStart(length - pid.length, '0');
+  const uuid = `${pid}${String(seq++)}${uuidv4().split('-').join('')}`;
+
+  const generatedId = uuid.length < length ? uuid.padStart(length, '0') : uuid.slice(0, length);
+
   if (generatedId.length > length) {
     throw new Error(`generated id is longer than ${length} characters: ${generatedId.length}`);
   }
