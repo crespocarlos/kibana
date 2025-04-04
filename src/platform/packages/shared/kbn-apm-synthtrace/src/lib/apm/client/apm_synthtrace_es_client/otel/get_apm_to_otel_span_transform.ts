@@ -24,7 +24,7 @@ function moveAttributes(
     }, {} as Record<string, any>);
 }
 
-export function getOtelSpanTransform() {
+export function getOtelToApmSpanTransform() {
   return new Transform({
     objectMode: true,
     transform(document: ApmFields, encoding, callback) {

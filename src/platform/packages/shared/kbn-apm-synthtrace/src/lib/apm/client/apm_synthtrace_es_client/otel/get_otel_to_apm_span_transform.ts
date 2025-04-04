@@ -18,7 +18,7 @@ const kindToProcessorEvent: Record<SpanKind, 'transaction' | 'span'> = {
   Producer: 'span',
 };
 
-export function getApmSpanTransform() {
+export function getOtelToApmTransform() {
   return new Transform({
     objectMode: true,
     transform(document: ApmOtelFields, encoding, callback) {
