@@ -12,6 +12,11 @@ import { map, takeUntil, firstValueFrom, Observable, Subject } from 'rxjs';
 import type { Logger } from '@kbn/logging';
 import type { CoreContext, CoreService } from '@kbn/core-base-server-internal';
 import type { AnalyticsServiceSetup } from '@kbn/core-analytics-server';
+import {
+  WorkerThreadsConfig,
+  type WorkerThreadsConfigType,
+  InternalWorkerThreadsServiceSetup,
+} from '@kbn/core-worker-threads-server-internal';
 import type {
   InternalExecutionContextSetup,
   IExecutionContext,
@@ -45,6 +50,7 @@ export interface SetupDeps {
   analytics: AnalyticsServiceSetup;
   http: InternalHttpServiceSetup;
   executionContext: InternalExecutionContextSetup;
+  workerThreads: InternalWorkerThreadsServiceSetup;
 }
 
 /** @internal */
@@ -53,6 +59,7 @@ export class ElasticsearchService
 {
   private readonly log: Logger;
   private readonly config$: Observable<ElasticsearchConfig>;
+  private readonly workerThreadsConfig$: Observable<WorkerThreadsConfigType>;
   private stop$ = new Subject<void>();
   private kibanaVersion: string;
   private authHeaders?: IAuthHeadersStorage;
@@ -66,6 +73,10 @@ export class ElasticsearchService
   constructor(private readonly coreContext: CoreContext) {
     this.kibanaVersion = coreContext.env.packageInfo.version;
     this.log = coreContext.logger.get('elasticsearch-service');
+    this.workerThreadsConfig$ = this.coreContext.configService
+      .atPath<WorkerThreadsConfigType>('workerThreads')
+      .pipe(map((rawConfig) => new WorkerThreadsConfig(rawConfig)));
+
     this.config$ = coreContext.configService
       .atPath<ElasticsearchConfigType>('elasticsearch')
       .pipe(map((rawConfig) => new ElasticsearchConfig(rawConfig)));
@@ -74,7 +85,10 @@ export class ElasticsearchService
   public async preboot(): Promise<InternalElasticsearchServicePreboot> {
     this.log.debug('Prebooting elasticsearch service');
 
-    const config = await firstValueFrom(this.config$);
+    const [config, workerThreadsConfig] = await Promise.all([
+      firstValueFrom(this.config$),
+      firstValueFrom(this.workerThreadsConfig$),
+    ]);
     return {
       config: {
         hosts: config.hosts,
@@ -83,7 +97,8 @@ export class ElasticsearchService
           config.password !== undefined ||
           config.serviceAccountToken !== undefined,
       },
-      createClient: (type, clientConfig) => this.createClusterClient(type, config, clientConfig),
+      createClient: (type, clientConfig) =>
+        this.createClusterClient(type, config, clientConfig, workerThreadsConfig),
     };
   }
 
@@ -223,7 +238,8 @@ export class ElasticsearchService
   private createClusterClient(
     type: string,
     baseConfig: ElasticsearchClientConfig,
-    clientConfig: Partial<ElasticsearchClientConfig> = {}
+    clientConfig: Partial<ElasticsearchClientConfig> = {},
+    workerThreadsConfig: Partial<WorkerThreadsConfig> = {}
   ) {
     return new ClusterClient({
       ...this.getClusterClientConfig(baseConfig, clientConfig),
@@ -232,6 +248,7 @@ export class ElasticsearchService
       getExecutionContext: () => this.executionContextClient?.getAsHeader(),
       getUnauthorizedErrorHandler: () => this.unauthorizedErrorHandler,
       agentFactoryProvider: this.getAgentManager(baseConfig),
+      workerThreadsConfig,
     });
   }
 

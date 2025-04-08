@@ -33,7 +33,13 @@ export const executeEsqlRoute = createServerRoute({
       end: z.number().optional(),
     }),
   }),
-  handler: async ({ params, request, logger, getScopedClients }): Promise<UnparsedEsqlResponse> => {
+  handler: async ({
+    params,
+    request,
+    logger,
+    getScopedClients,
+    context,
+  }): Promise<UnparsedEsqlResponse> => {
     const { scopedClusterClient } = await getScopedClients({ request });
     const tracedEsClient = createTracedEsClient({
       client: scopedClusterClient.asCurrentUser,
@@ -60,7 +66,7 @@ export const executeEsqlRoute = createServerRoute({
           },
         },
       },
-      { transform: 'none' }
+      { format: 'arrow', transform: 'columnar' }
     );
 
     return response;

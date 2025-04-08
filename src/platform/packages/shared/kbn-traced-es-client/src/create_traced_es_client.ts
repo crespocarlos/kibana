@@ -22,6 +22,8 @@ import { Required, ValuesType } from 'utility-types';
 import { DedotObject } from '@kbn/utility-types';
 import { unflattenObject } from '@kbn/task-manager-plugin/server/metrics/lib';
 import { esqlResultToPlainObjects } from './esql_result_to_plain_objects';
+import { esqlArrowResultToColumnar } from './esql_arrow_result_to_columnar';
+import { esqlArrowResultToJson } from './esql_arrow_result_to_json';
 
 type SearchRequest = ESSearchRequest & {
   index: string | string[];
@@ -29,9 +31,15 @@ type SearchRequest = ESSearchRequest & {
   size: number;
 };
 
-export interface EsqlOptions {
-  transform?: 'none' | 'plain' | 'unflatten';
-}
+export type EsqlOptions =
+  | {
+      format?: undefined;
+      transform?: 'none' | 'plain' | 'unflatten';
+    }
+  | {
+      format: 'arrow';
+      transform?: 'none' | 'unflatten' | 'columnar';
+    };
 
 export type EsqlValue = ScalarValue | ScalarValue[];
 
@@ -41,10 +49,15 @@ type MaybeUnflatten<T extends Record<string, any>, TApply> = TApply extends true
   ? DedotObject<T>
   : T;
 
-interface UnparsedEsqlResponseOf<TOutput extends EsqlOutput> {
-  columns: Array<{ name: keyof TOutput; type: string }>;
-  values: Array<Array<ValuesType<TOutput>>>;
-}
+type UnparsedEsqlResponseOf<
+  TOutput extends EsqlOutput,
+  TOptions extends EsqlOptions | undefined = {}
+> = TOptions extends { format: 'arrow'; transform: 'none' }
+  ? SharedArrayBuffer
+  : {
+      columns: Array<{ name: keyof TOutput; type: string }>;
+      values: Array<Array<ValuesType<TOutput>>>;
+    };
 
 interface ParsedEsqlResponseOf<
   TOutput extends EsqlOutput,
@@ -63,16 +76,20 @@ interface ParsedEsqlResponseOf<
 export type InferEsqlResponseOf<
   TOutput extends EsqlOutput,
   TOptions extends EsqlOptions | undefined = { transform: 'none' }
-> = TOptions extends { transform: 'plain' | 'unflatten' }
+> = TOptions extends
+  | { format?: undefined; transform: 'plain' | 'unflatten' }
+  | { format: 'arrow'; transform: 'unflatten' }
   ? ParsedEsqlResponseOf<TOutput, TOptions>
-  : UnparsedEsqlResponseOf<TOutput>;
+  : TOptions extends { format: 'arrow'; transform: 'none' }
+  ? SharedArrayBuffer
+  : UnparsedEsqlResponseOf<TOutput, TOptions>;
 
 export type ObservabilityESSearchRequest = SearchRequest;
 
-export type ObservabilityEsQueryRequest = Omit<EsqlQueryRequest, 'format' | 'columnar'>;
+export type ObservabilityEsQueryRequest = Omit<EsqlQueryRequest, 'columnar'>;
 
 export type ParsedEsqlResponse = ParsedEsqlResponseOf<EsqlOutput, EsqlOptions>;
-export type UnparsedEsqlResponse = UnparsedEsqlResponseOf<EsqlOutput>;
+export type UnparsedEsqlResponse = UnparsedEsqlResponseOf<EsqlOutput, EsqlOptions>;
 
 export type EsqlQueryResponse = UnparsedEsqlResponse | ParsedEsqlResponse;
 
@@ -98,10 +115,16 @@ export interface TracedElasticsearchClient {
   esql<TOutput extends EsqlOutput = EsqlOutput>(
     operationName: string,
     parameters: ObservabilityEsQueryRequest
-  ): Promise<InferEsqlResponseOf<TOutput, { transform: 'none' }>>;
+  ): Promise<InferEsqlResponseOf<TOutput, { transform: 'none'; format?: undefined }>>;
+  esql<TOutput extends EsqlOutput = EsqlOutput>(
+    operationName: string,
+    parameters: ObservabilityEsQueryRequest
+  ): Promise<InferEsqlResponseOf<TOutput, { transform: 'none' | 'columnar'; format: 'arrow' }>>;
   esql<
     TOutput extends EsqlOutput = EsqlOutput,
-    TEsqlOptions extends EsqlOptions = { transform: 'none' }
+    TEsqlOptions extends EsqlOptions =
+      | { transform: 'none'; format?: undefined }
+      | { transform: 'none' | 'columnar'; format: 'arrow' }
   >(
     operationName: string,
     parameters: ObservabilityEsQueryRequest,
@@ -162,7 +185,7 @@ export function createTracedEsClient({
       return callWithLogger(operationName, parameters, () => {
         return client.esql
           .query(
-            { ...parameters },
+            { ...parameters, format: options?.format },
             {
               querystring: {
                 drop_null_columns: true,
@@ -170,17 +193,36 @@ export function createTracedEsClient({
             }
           )
           .then((response) => {
-            const esqlResponse = response as unknown as UnparsedEsqlResponseOf<EsqlOutput>;
+            if (options?.format === 'arrow') {
+              switch (options?.transform) {
+                case 'columnar': {
+                  return esqlArrowResultToColumnar(response);
+                }
+                case 'unflatten': {
+                  return {
+                    hits: esqlArrowResultToJson(response),
+                  };
+                }
+                default: {
+                  return response;
+                }
+              }
+            }
 
-            const transform = options?.transform ?? 'none';
+            const esqlResponse = response as unknown as UnparsedEsqlResponseOf<
+              EsqlOutput,
+              EsqlOptions
+            >;
 
-            if (transform === 'none') {
+            if (options?.transform === 'none') {
               return esqlResponse;
             }
 
-            const parsedResponse = { hits: esqlResultToPlainObjects(esqlResponse) };
+            const parsedResponse = {
+              hits: esqlResultToPlainObjects(esqlResponse),
+            };
 
-            if (transform === 'plain') {
+            if (options?.transform === 'plain') {
               return parsedResponse;
             }
 

@@ -10,6 +10,7 @@
 import type { Client } from '@elastic/elasticsearch';
 import type { Logger } from '@kbn/logging';
 import type { Headers, IAuthHeadersStorage } from '@kbn/core-http-server';
+import { type WorkerThreadsConfigType } from '@kbn/core-worker-threads-server-internal';
 import {
   ensureRawRequest,
   filterHeaders,
@@ -55,6 +56,7 @@ export class ClusterClient implements ICustomClusterClient {
     getUnauthorizedErrorHandler = noop,
     agentFactoryProvider,
     kibanaVersion,
+    workerThreadsConfig = {},
   }: {
     config: ElasticsearchClientConfig;
     logger: Logger;
@@ -64,6 +66,7 @@ export class ClusterClient implements ICustomClusterClient {
     getUnauthorizedErrorHandler?: () => UnauthorizedErrorHandler | undefined;
     agentFactoryProvider: AgentFactoryProvider;
     kibanaVersion: string;
+    workerThreadsConfig: Partial<WorkerThreadsConfigType>;
   }) {
     this.config = config;
     this.authHeaders = authHeaders;
@@ -77,6 +80,7 @@ export class ClusterClient implements ICustomClusterClient {
       getExecutionContext,
       agentFactoryProvider,
       kibanaVersion,
+      workerThreadsConfig,
     });
     this.rootScopedClient = configureClient(config, {
       scoped: true,
@@ -85,6 +89,7 @@ export class ClusterClient implements ICustomClusterClient {
       getExecutionContext,
       agentFactoryProvider,
       kibanaVersion,
+      workerThreadsConfig,
     });
   }
 

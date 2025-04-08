@@ -55,9 +55,12 @@ export interface WorkerThreadsRequestClient {
   ): Promise<TOutput>;
 }
 
-export interface WorkerParams {
-  [x: string]: Primitive | Primitive[] | SharedArrayBuffer;
-}
+export type WorkerParams =
+  | {
+      [x: string]: Primitive | Primitive[];
+    }
+  | SharedArrayBuffer
+  | ArrayBuffer;
 
 export interface RouteWorkerCoreRequestContext {
   elasticsearch: Promise<ElasticsearchRequestHandlerContext>;

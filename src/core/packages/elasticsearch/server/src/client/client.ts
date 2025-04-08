@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { Client } from '@elastic/elasticsearch';
+import { CustomClient } from '@kbn/core-elasticsearch-client-server-internal';
 
 /**
  * Client used to query the elasticsearch cluster.
@@ -15,6 +15,6 @@ import type { Client } from '@elastic/elasticsearch';
  * @public
  */
 export type ElasticsearchClient = Omit<
-  Client,
+  CustomClient,
   'connectionPool' | 'serializer' | 'extend' | 'close' | 'diagnostic'
 >;

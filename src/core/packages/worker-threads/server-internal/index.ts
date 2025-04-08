@@ -13,4 +13,10 @@ export type {
   InternalWorkerThreadsServiceStart,
 } from './src/worker_threads_service';
 export { CoreWorkerThreadsRouteHandlerContext } from './src/worker_threads_route_handler_context';
-export { workerThreadsConfig } from './src/worker_threads_config';
+export {
+  workerThreadsConfig,
+  type WorkerThreadsConfigType,
+  WorkerThreadsConfig,
+} from './src/worker_threads_config';
+
+export { waitUntilStdoutCompleted } from './src/sync_console';
