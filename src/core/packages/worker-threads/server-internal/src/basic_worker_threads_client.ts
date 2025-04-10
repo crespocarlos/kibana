@@ -28,7 +28,8 @@ export class BasicWorkerThreadsClient implements WorkerThreadsClient {
     filenameOrImport: string | Promise<Worker<TInput, TOutput, BaseWorkerParams>>,
     { input, signal }: { input: TInput; signal?: AbortSignal }
   ) {
-    const runLocally = !this.config.pool || isPromise(filenameOrImport);
+    const { pool } = this.config;
+    const runLocally = !pool || isPromise(filenameOrImport);
 
     if (runLocally) {
       const worker = await (typeof filenameOrImport === 'string'
@@ -40,7 +41,7 @@ export class BasicWorkerThreadsClient implements WorkerThreadsClient {
       });
     }
 
-    return this.config.pool?.run(
+    const result = await pool.run(
       {
         filename: filenameOrImport,
         input,
@@ -49,5 +50,7 @@ export class BasicWorkerThreadsClient implements WorkerThreadsClient {
         signal,
       }
     );
+
+    return result;
   }
 }

@@ -8,6 +8,7 @@
  */
 
 import type { IncomingHttpHeaders } from 'http';
+import { WorkerThreadsRequestClient } from '@kbn/core-worker-threads-server/src/types';
 import {
   Transport,
   type TransportOptions,
@@ -27,9 +28,11 @@ const noop = () => undefined;
 export const createTransport = ({
   getExecutionContext = noop,
   getUnauthorizedErrorHandler,
+  workerThreadsClient,
 }: {
   getExecutionContext?: () => string | undefined;
   getUnauthorizedErrorHandler?: ErrorHandlerAccessor;
+  workerThreadsClient?: WorkerThreadsRequestClient;
 }): TransportClass => {
   class KibanaTransport extends Transport {
     private headers: IncomingHttpHeaders = {};
@@ -43,6 +46,7 @@ export const createTransport = ({
     async request(params: TransportRequestParams, options?: TransportRequestOptions) {
       const opts: TransportRequestOptions = options ? { ...options } : {};
       // sync override of maxResponseSize and maxCompressedResponseSize
+
       if (options) {
         if (
           options.maxResponseSize !== undefined &&
@@ -69,6 +73,19 @@ export const createTransport = ({
       };
 
       try {
+        if (
+          (params.querystring as { format: string } | undefined)?.format === 'arrow' &&
+          workerThreadsClient
+        ) {
+          const response = (await super.request(params, opts)) as ArrayBuffer;
+          const controller = new AbortController();
+
+          return workerThreadsClient.run(import('./worker_thread/esql_parse_response.worker'), {
+            input: response,
+            signal: controller.signal,
+          }) as unknown as TransportResult<any, any>;
+        }
+
         return (await super.request(params, opts)) as TransportResult<any, any>;
       } catch (e) {
         if (isUnauthorizedError(e)) {

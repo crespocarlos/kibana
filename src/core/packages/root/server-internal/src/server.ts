@@ -208,9 +208,11 @@ export class Server {
       const i18nPreboot = await this.i18n.preboot({ http: httpPreboot, pluginPaths });
 
       this.capabilities.preboot({ http: httpPreboot });
-      this.workerThreads.preboot();
+      const workerThreadsPreboot = await this.workerThreads.preboot();
 
-      const elasticsearchServicePreboot = await this.elasticsearch.preboot();
+      const elasticsearchServicePreboot = await this.elasticsearch.preboot({
+        workerThreads: workerThreadsPreboot,
+      });
 
       await this.status.preboot({ http: httpPreboot });
 

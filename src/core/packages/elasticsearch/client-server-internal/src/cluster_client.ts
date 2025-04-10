@@ -22,7 +22,8 @@ import type {
 } from '@kbn/core-elasticsearch-server';
 import type { ElasticsearchClientConfig } from '@kbn/core-elasticsearch-server';
 import { WorkerThreadsRequestClient } from '@kbn/core-worker-threads-server/src/types';
-import { CustomClient, configureClient } from './configure_client';
+import { Client } from '@elastic/elasticsearch';
+import { configureClient } from './configure_client';
 import { ScopedClusterClient } from './scoped_cluster_client';
 import { getDefaultHeaders, AUTHORIZATION_HEADER, ES_SECONDARY_AUTH_HEADER } from './headers';
 import {
@@ -38,13 +39,15 @@ const noop = () => undefined;
 export class ClusterClient implements ICustomClusterClient {
   private readonly config: ElasticsearchClientConfig;
   private readonly authHeaders?: IAuthHeadersStorage;
-  private readonly rootScopedClient: CustomClient;
+  private readonly rootScopedClient: Client;
   private readonly kibanaVersion: string;
   private readonly getUnauthorizedErrorHandler: () => UnauthorizedErrorHandler | undefined;
   private readonly getExecutionContext: () => string | undefined;
+
+  private readonly workerThreadsClient?: WorkerThreadsRequestClient;
   private isClosed = false;
 
-  public readonly asInternalUser: CustomClient;
+  public readonly asInternalUser: Client;
 
   constructor({
     config,
@@ -72,6 +75,7 @@ export class ClusterClient implements ICustomClusterClient {
     this.kibanaVersion = kibanaVersion;
     this.getExecutionContext = getExecutionContext;
     this.getUnauthorizedErrorHandler = getUnauthorizedErrorHandler;
+    this.workerThreadsClient = workerThreadsClient;
 
     this.asInternalUser = configureClient(config, {
       logger,
@@ -99,6 +103,7 @@ export class ClusterClient implements ICustomClusterClient {
       const transportClass = createTransport({
         getExecutionContext: this.getExecutionContext,
         getUnauthorizedErrorHandler: this.createInternalErrorHandlerAccessor(request),
+        workerThreadsClient: this.workerThreadsClient,
       });
 
       return this.rootScopedClient.child({

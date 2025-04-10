@@ -35,14 +35,13 @@ interface ThreadPoolConfig extends WorkerThreadsConfigType {
   workerData?: any;
 }
 
-export interface InternalWorkerThreadsServiceSetup {
+export interface InternalWorkerThreadsServicePreboot {
   registerPool: (name: string, piscinaConfig: ThreadPoolConfig) => void;
   getClient: (name: string) => WorkerThreadsClient;
 }
 
-export interface InternalWorkerThreadsServicePreboot {
-  registerRouterPool: () => void;
-}
+export type InternalWorkerThreadsServiceSetup = InternalWorkerThreadsServicePreboot;
+
 /**
  * @internal
  */
@@ -80,16 +79,15 @@ export class WorkerThreadsService
     });
 
     if (!this.pools.has(name)) {
-      this.pools.set(
-        name,
-        new Piscina({
-          ...piscinaConfig,
-          filename: piscinaConfig.filename ?? Path.join(__dirname, './basic_worker_entry.js'),
-          workerData: {
-            services,
-          } satisfies InternalWorkerData,
-        })
-      );
+      const pool = new Piscina({
+        ...piscinaConfig,
+        filename: piscinaConfig.filename ?? Path.join(__dirname, './basic_worker_entry.js'),
+        workerData: {
+          services,
+        } satisfies InternalWorkerData,
+      });
+
+      this.pools.set(name, pool);
 
       this.lastUsedTimestamps.set(name, Date.now());
     }
@@ -97,6 +95,7 @@ export class WorkerThreadsService
 
   getClient(name: string) {
     const pool = this.pools.get(name);
+
     if (!pool) {
       throw new Error(`Pool '${name}' not found`);
     }
@@ -106,7 +105,7 @@ export class WorkerThreadsService
     return new BasicWorkerThreadsClient({ pool });
   }
 
-  public async preboot() {
+  public async preboot(): Promise<InternalWorkerThreadsServicePreboot> {
     const config = await firstValueFrom(
       this.coreContext.configService.atPath<WorkerThreadsConfigType>('workerThreads')
     );
@@ -120,6 +119,12 @@ export class WorkerThreadsService
         ...workerThreadConfig,
       });
     }
+
+    return {
+      registerPool: async (name: string, piscinaConfig: ThreadPoolConfig) =>
+        this.registerPool(name, piscinaConfig),
+      getClient: (name: string) => this.getClient(name),
+    };
   }
 
   public setup(): InternalWorkerThreadsServiceSetup {

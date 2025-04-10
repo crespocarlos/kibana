@@ -13,6 +13,7 @@ import type { Logger } from '@kbn/logging';
 import type { CoreContext, CoreService } from '@kbn/core-base-server-internal';
 import type { AnalyticsServiceSetup } from '@kbn/core-analytics-server';
 import {
+  InternalWorkerThreadsServicePreboot,
   InternalWorkerThreadsServiceSetup,
   InternalWorkerThreadsServiceStart,
 } from '@kbn/core-worker-threads-server-internal';
@@ -51,6 +52,11 @@ export interface SetupDeps {
   executionContext: InternalExecutionContextSetup;
   workerThreads?: InternalWorkerThreadsServiceSetup;
 }
+
+export interface PrebootDeps {
+  workerThreads?: InternalWorkerThreadsServicePreboot;
+}
+
 const ESQL_PARSER_POOL = 'esql_parser_pool';
 
 export interface StartDeps {
@@ -81,8 +87,18 @@ export class ElasticsearchService
       .pipe(map((rawConfig) => new ElasticsearchConfig(rawConfig)));
   }
 
-  public async preboot(): Promise<InternalElasticsearchServicePreboot> {
+  public async preboot({
+    workerThreads,
+  }: PrebootDeps): Promise<InternalElasticsearchServicePreboot> {
     this.log.debug('Prebooting elasticsearch service');
+
+    await workerThreads?.registerPool(ESQL_PARSER_POOL, {
+      minWorkers: 4,
+      maxWorkers: 8,
+      idleTimeout: 2000,
+      enabled: true,
+      concurrentTasksPerWorker: 1,
+    });
 
     const config = await firstValueFrom(this.config$);
     return {
@@ -93,7 +109,13 @@ export class ElasticsearchService
           config.password !== undefined ||
           config.serviceAccountToken !== undefined,
       },
-      createClient: (type, clientConfig) => this.createClusterClient(type, config, clientConfig),
+      createClient: (type, clientConfig) =>
+        this.createClusterClient(
+          type,
+          config,
+          clientConfig,
+          workerThreads?.getClient(ESQL_PARSER_POOL)
+        ),
     };
   }
 
@@ -103,14 +125,6 @@ export class ElasticsearchService
     const config = await firstValueFrom(this.config$);
 
     const agentManager = this.getAgentManager(config);
-
-    await deps.workerThreads?.registerPool(ESQL_PARSER_POOL, {
-      minWorkers: 4,
-      maxWorkers: 8,
-      idleTimeout: 2000,
-      enabled: true,
-      concurrentTasksPerWorker: 1,
-    });
 
     this.authHeaders = deps.http.authRequestHeaders;
     this.executionContextClient = deps.executionContext;
