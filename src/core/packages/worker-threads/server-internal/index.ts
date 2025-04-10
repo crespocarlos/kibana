@@ -11,6 +11,7 @@ export { WorkerThreadsService } from './src/worker_threads_service';
 export type {
   InternalWorkerThreadsServiceSetup,
   InternalWorkerThreadsServiceStart,
+  InternalWorkerThreadsServicePreboot,
 } from './src/worker_threads_service';
 export { CoreWorkerThreadsRouteHandlerContext } from './src/worker_threads_route_handler_context';
 export {

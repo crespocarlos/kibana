@@ -8,4 +8,9 @@
  */
 
 export type { WorkerThreadsRequestHandlerContext } from './src/request_handler_context';
-export type { RouteWorker } from './src/types';
+export type {
+  RouteWorker,
+  WorkerThreadsRequestClient,
+  Worker,
+  BaseWorkerParams,
+} from './src/types';

@@ -7,115 +7,158 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { CoreContext, CoreService } from '@kbn/core-base-server-internal';
-import {
-  InternalElasticsearchServiceSetup,
-  InternalElasticsearchServiceStart,
-} from '@kbn/core-elasticsearch-server-internal';
+import { InternalElasticsearchServiceStart } from '@kbn/core-elasticsearch-server-internal';
 import { KibanaRequest } from '@kbn/core-http-server';
-import {
-  InternalSavedObjectsServiceSetup,
-  InternalSavedObjectsServiceStart,
-} from '@kbn/core-saved-objects-server-internal';
-import {
-  InternalUiSettingsServiceSetup,
-  InternalUiSettingsServiceStart,
-} from '@kbn/core-ui-settings-server-internal';
+import { InternalSavedObjectsServiceStart } from '@kbn/core-saved-objects-server-internal';
+import { InternalUiSettingsServiceStart } from '@kbn/core-ui-settings-server-internal';
 import { Logger } from '@kbn/logging';
 import Path from 'path';
 import Piscina from 'piscina';
 import { firstValueFrom } from 'rxjs';
 import { bytes } from '@kbn/config-schema/src/byte_size_value';
-import { InternalWorkerThreadsClient } from './client';
-import { InternalRouteWorkerData } from './types';
+import {
+  WorkerThreadsClient,
+  WorkerThreadsRequestClient,
+} from '@kbn/core-worker-threads-server/src/types';
+import { RouteWorkerThreadsClient } from './route_worker_threads_client';
+import { InternalWorkerData } from './types';
 import { serialize } from './utils';
 import { WorkerThreadsConfig, WorkerThreadsConfigType } from './worker_threads_config';
+import { BasicWorkerThreadsClient } from './basic_worker_threads_client';
 
 /**
  * @internal
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
-export interface InternalWorkerThreadsServiceSetup {}
 
+interface ThreadPoolConfig extends WorkerThreadsConfigType {
+  filename?: string;
+  workerData?: any;
+}
+
+export interface InternalWorkerThreadsServiceSetup {
+  registerPool: (name: string, piscinaConfig: ThreadPoolConfig) => void;
+  getClient: (name: string) => WorkerThreadsClient;
+}
+
+export interface InternalWorkerThreadsServicePreboot {
+  registerRouterPool: () => void;
+}
 /**
  * @internal
  */
 export interface InternalWorkerThreadsServiceStart {
-  getClientWithRequest: (request: KibanaRequest) => InternalWorkerThreadsClient;
+  getClientWithRequest: (
+    request: KibanaRequest,
+    elasticsearch: InternalElasticsearchServiceStart,
+    savedObjects: InternalSavedObjectsServiceStart,
+    uiSettings: InternalUiSettingsServiceStart
+  ) => WorkerThreadsRequestClient;
+  getClient: (poolName: string) => WorkerThreadsClient;
 }
 
-interface SetupDeps {
-  elasticsearch: InternalElasticsearchServiceSetup;
-  uiSettings: InternalUiSettingsServiceSetup;
-  savedObjects: InternalSavedObjectsServiceSetup;
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+interface StartDeps {}
 
-interface StartDeps {
-  elasticsearch: InternalElasticsearchServiceStart;
-  uiSettings: InternalUiSettingsServiceStart;
-  savedObjects: InternalSavedObjectsServiceStart;
-}
-
+const ROUTER_POOL = 'router_pool';
 /** @internal */
 export class WorkerThreadsService
   implements CoreService<InternalWorkerThreadsServiceSetup, InternalWorkerThreadsServiceStart>
 {
-  private routeWorkerPool?: Piscina;
   private log: Logger;
 
-  private config?: WorkerThreadsConfig;
+  private pools: Map<string, Piscina> = new Map();
+  private lastUsedTimestamps: Map<string, number> = new Map();
 
   constructor(private readonly coreContext: CoreContext) {
     this.log = coreContext.logger.get('worker-threads-service');
   }
 
-  public async setup({}: SetupDeps): Promise<InternalWorkerThreadsServiceSetup> {
-    const config = await firstValueFrom(
-      this.coreContext.configService.atPath<WorkerThreadsConfigType>('workerThreads')
-    );
-    this.config = new WorkerThreadsConfig(config);
-    return {};
-  }
-
-  public async start({
-    elasticsearch,
-    savedObjects,
-    uiSettings,
-  }: StartDeps): Promise<InternalWorkerThreadsServiceStart> {
+  async registerPool(name: string, piscinaConfig: ThreadPoolConfig) {
     const services = await serialize({
       ConfigService: this.coreContext.configService,
       Env: this.coreContext.env,
     });
 
-    const config = this.config!;
-
-    this.log.info(JSON.stringify(config));
-
-    const enabled = config.enabled;
-
-    const routeWorkerPool = enabled
-      ? new Piscina({
-          filename: Path.join(__dirname, './route_worker_entry.js'),
+    if (!this.pools.has(name)) {
+      this.pools.set(
+        name,
+        new Piscina({
+          ...piscinaConfig,
+          filename: piscinaConfig.filename ?? Path.join(__dirname, './basic_worker_entry.js'),
           workerData: {
             services,
-          } satisfies InternalRouteWorkerData,
-          minThreads: config.minWorkers,
-          maxThreads: config.maxWorkers,
-          idleTimeout: config.idleTimeout,
-          concurrentTasksPerWorker: config.concurrentTasksPerWorker,
+          } satisfies InternalWorkerData,
         })
-      : undefined;
+      );
 
-    this.routeWorkerPool = routeWorkerPool;
+      this.lastUsedTimestamps.set(name, Date.now());
+    }
+  }
 
+  getClient(name: string) {
+    const pool = this.pools.get(name);
+    if (!pool) {
+      throw new Error(`Pool '${name}' not found`);
+    }
+
+    this.lastUsedTimestamps.set(name, Date.now());
+
+    return new BasicWorkerThreadsClient({ pool });
+  }
+
+  public async preboot() {
+    const config = await firstValueFrom(
+      this.coreContext.configService.atPath<WorkerThreadsConfigType>('workerThreads')
+    );
+    const workerThreadConfig = new WorkerThreadsConfig(config);
+
+    this.log.info(JSON.stringify(workerThreadConfig));
+
+    if (workerThreadConfig.enabled) {
+      await this.registerPool(ROUTER_POOL, {
+        filename: Path.join(__dirname, './route_worker_entry.js'),
+        ...workerThreadConfig,
+      });
+    }
+  }
+
+  public setup(): InternalWorkerThreadsServiceSetup {
+    return {
+      registerPool: async (name: string, piscinaConfig: ThreadPoolConfig) =>
+        this.registerPool(name, piscinaConfig),
+      getClient: (name: string) => this.getClient(name),
+    };
+  }
+
+  public async start(): Promise<InternalWorkerThreadsServiceStart> {
     setInterval(() => {
       const { rss, heapTotal, heapUsed } = process.memoryUsage();
+
+      const workerStats = Array.from(this.pools.entries()).reduce((acc, [name, pool]) => {
+        const lastUsedTimestamp = this.lastUsedTimestamps.get(name);
+        const idleTime = lastUsedTimestamp ? Date.now() - lastUsedTimestamp : 0;
+
+        acc[name] = {
+          size: pool.threads.length,
+          queueSize: pool.queueSize,
+          completed: pool.completed,
+          idleTime,
+        };
+
+        // do something ?
+        if (idleTime > 10 * 60 * 1000) {
+          this.log.info(`worker pool '${name}' idle`);
+        }
+
+        return acc;
+      }, {} as Record<string, { size: number; queueSize: number; completed: number; idleTime: number }>);
 
       this.log.info(
         `Main thread stats: ${JSON.stringify({
           rss: bytes(rss).toString(),
           heapTotal: bytes(heapTotal).toString(),
           heapUsed: bytes(heapUsed).toString(),
-          workers: routeWorkerPool?.threads.length ?? 0,
+          workers: workerStats,
         })}`
       );
     }, 5000).unref();
@@ -150,20 +193,44 @@ export class WorkerThreadsService
     // }, 5000);
 
     return {
-      getClientWithRequest: (request: KibanaRequest) => {
-        return new InternalWorkerThreadsClient({
+      getClientWithRequest: (
+        request: KibanaRequest,
+        elasticsearch: InternalElasticsearchServiceStart,
+        savedObjects: InternalSavedObjectsServiceStart,
+        uiSettings: InternalUiSettingsServiceStart
+      ) => {
+        return new RouteWorkerThreadsClient({
           request,
           elasticsearch,
           savedObjects,
           uiSettings,
-          pool: routeWorkerPool,
+          pool: this.pools.get(ROUTER_POOL),
           logger: this.log,
         });
+      },
+      getClient: (poolName) => {
+        return this.getClient(poolName);
       },
     };
   }
 
+  public getStats(): Record<string, any> {
+    return Array.from(this.pools.entries()).reduce((acc, [name, pool]) => {
+      acc[name] = {
+        size: pool.threads.length,
+        queueSize: pool.queueSize,
+        completed: pool.completed,
+        runTime: pool.runTime,
+        idleTime: Date.now() - (this.lastUsedTimestamps.get(name) ?? 0),
+      };
+      return acc;
+    }, {} as Record<string, any>);
+  }
+
   public async stop(): Promise<void> {
-    return await this.routeWorkerPool?.destroy();
+    await this.pools.forEach((item) => item.destroy());
+
+    this.pools.clear();
+    this.lastUsedTimestamps.clear();
   }
 }

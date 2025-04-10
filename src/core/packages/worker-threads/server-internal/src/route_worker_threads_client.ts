@@ -26,7 +26,7 @@ import { createMainThreadRequestContext } from './create_worker_threads_request_
 import { createSavedObjectsRpcServer } from './rpc/saved_objects/server';
 import { InternalRouteWorkerParams } from './types';
 
-export interface InternalWorkerThreadsClientConfig {
+export interface RouteWorkerThreadsClientConfig {
   request: KibanaRequest;
   elasticsearch: InternalElasticsearchServiceStart;
   savedObjects: InternalSavedObjectsServiceStart;
@@ -35,10 +35,10 @@ export interface InternalWorkerThreadsClientConfig {
   logger: Logger;
 }
 
-export class InternalWorkerThreadsClient implements WorkerThreadsRequestClient {
+export class RouteWorkerThreadsClient implements WorkerThreadsRequestClient {
   private readonly abortController: AbortController;
 
-  constructor(private readonly config: InternalWorkerThreadsClientConfig) {
+  constructor(private readonly config: RouteWorkerThreadsClientConfig) {
     this.abortController = new AbortController();
   }
 

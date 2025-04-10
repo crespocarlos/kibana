@@ -7,10 +7,8 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { Client } from '@elastic/elasticsearch';
 import type { Logger } from '@kbn/logging';
 import type { Headers, IAuthHeadersStorage } from '@kbn/core-http-server';
-import { type WorkerThreadsConfigType } from '@kbn/core-worker-threads-server-internal';
 import {
   ensureRawRequest,
   filterHeaders,
@@ -23,7 +21,8 @@ import type {
   ICustomClusterClient,
 } from '@kbn/core-elasticsearch-server';
 import type { ElasticsearchClientConfig } from '@kbn/core-elasticsearch-server';
-import { configureClient } from './configure_client';
+import { WorkerThreadsRequestClient } from '@kbn/core-worker-threads-server/src/types';
+import { CustomClient, configureClient } from './configure_client';
 import { ScopedClusterClient } from './scoped_cluster_client';
 import { getDefaultHeaders, AUTHORIZATION_HEADER, ES_SECONDARY_AUTH_HEADER } from './headers';
 import {
@@ -39,13 +38,13 @@ const noop = () => undefined;
 export class ClusterClient implements ICustomClusterClient {
   private readonly config: ElasticsearchClientConfig;
   private readonly authHeaders?: IAuthHeadersStorage;
-  private readonly rootScopedClient: Client;
+  private readonly rootScopedClient: CustomClient;
   private readonly kibanaVersion: string;
   private readonly getUnauthorizedErrorHandler: () => UnauthorizedErrorHandler | undefined;
   private readonly getExecutionContext: () => string | undefined;
   private isClosed = false;
 
-  public readonly asInternalUser: Client;
+  public readonly asInternalUser: CustomClient;
 
   constructor({
     config,
@@ -56,7 +55,7 @@ export class ClusterClient implements ICustomClusterClient {
     getUnauthorizedErrorHandler = noop,
     agentFactoryProvider,
     kibanaVersion,
-    workerThreadsConfig = {},
+    workerThreadsClient,
   }: {
     config: ElasticsearchClientConfig;
     logger: Logger;
@@ -66,7 +65,7 @@ export class ClusterClient implements ICustomClusterClient {
     getUnauthorizedErrorHandler?: () => UnauthorizedErrorHandler | undefined;
     agentFactoryProvider: AgentFactoryProvider;
     kibanaVersion: string;
-    workerThreadsConfig: Partial<WorkerThreadsConfigType>;
+    workerThreadsClient?: WorkerThreadsRequestClient;
   }) {
     this.config = config;
     this.authHeaders = authHeaders;
@@ -80,7 +79,7 @@ export class ClusterClient implements ICustomClusterClient {
       getExecutionContext,
       agentFactoryProvider,
       kibanaVersion,
-      workerThreadsConfig,
+      workerThreadsClient,
     });
     this.rootScopedClient = configureClient(config, {
       scoped: true,
@@ -89,7 +88,7 @@ export class ClusterClient implements ICustomClusterClient {
       getExecutionContext,
       agentFactoryProvider,
       kibanaVersion,
-      workerThreadsConfig,
+      workerThreadsClient,
     });
   }
 

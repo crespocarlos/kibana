@@ -208,6 +208,7 @@ export class Server {
       const i18nPreboot = await this.i18n.preboot({ http: httpPreboot, pluginPaths });
 
       this.capabilities.preboot({ http: httpPreboot });
+      this.workerThreads.preboot();
 
       const elasticsearchServicePreboot = await this.elasticsearch.preboot();
 
@@ -276,6 +277,7 @@ export class Server {
     const docLinksSetup = this.docLinks.setup();
     const securitySetup = this.security.setup();
     const userProfileSetup = this.userProfile.setup();
+    const workerThreadsSetup = this.workerThreads.setup();
 
     const httpSetup = await this.http.setup({
       context: contextServiceSetup,
@@ -291,6 +293,7 @@ export class Server {
       analytics: analyticsSetup,
       http: httpSetup,
       executionContext: executionContextSetup,
+      workerThreads: workerThreadsSetup,
     });
 
     const metricsSetup = await this.metrics.setup({
@@ -362,12 +365,6 @@ export class Server {
       rendering: renderingSetup,
     });
 
-    const workerThreadsSetup = this.workerThreads.setup({
-      elasticsearch: elasticsearchServiceSetup,
-      savedObjects: savedObjectsSetup,
-      uiSettings: uiSettingsSetup,
-    });
-
     const coreSetup: InternalCoreSetup = {
       analytics: analyticsSetup,
       capabilities: capabilitiesSetup,
@@ -418,7 +415,12 @@ export class Server {
     const executionContextStart = this.executionContext.start();
     const docLinkStart = this.docLinks.start();
 
-    const elasticsearchStart = await this.elasticsearch.start();
+    const workerThreadsStart = await this.workerThreads.start();
+
+    const elasticsearchStart = await this.elasticsearch.start({
+      workerThreads: workerThreadsStart,
+    });
+
     this.uptimePerStep.elasticsearch = {
       waitTime: elasticsearchStart.metrics.elasticsearchWaitTime,
     };
@@ -431,6 +433,7 @@ export class Server {
       docLinks: docLinkStart,
       node: await this.node.start(),
     });
+
     this.uptimePerStep.savedObjects = {
       migrationTime: savedObjectsStart.metrics.migrationDuration,
     };
@@ -466,12 +469,6 @@ export class Server {
 
     this.rendering.start({
       featureFlags: featureFlagsStart,
-    });
-
-    const workerThreadsStart = await this.workerThreads.start({
-      elasticsearch: elasticsearchStart,
-      savedObjects: savedObjectsStart,
-      uiSettings: uiSettingsStart,
     });
 
     this.coreStart = {

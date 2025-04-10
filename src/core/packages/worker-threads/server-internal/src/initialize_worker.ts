@@ -347,7 +347,7 @@ export async function initialize({ services }: InternalWorkerData) {
   const elasticsearchStart$ = forkJoin([elasticsearch$, elasticsearchSetup$])
     .pipe(
       switchMap(([elasticsearch]) => {
-        return from(elasticsearch.start());
+        return from(elasticsearch.start({}));
       })
     )
     .pipe(shareReplay(1));

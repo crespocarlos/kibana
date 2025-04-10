@@ -13,9 +13,8 @@ import type { Logger } from '@kbn/logging';
 import type { CoreContext, CoreService } from '@kbn/core-base-server-internal';
 import type { AnalyticsServiceSetup } from '@kbn/core-analytics-server';
 import {
-  WorkerThreadsConfig,
-  type WorkerThreadsConfigType,
   InternalWorkerThreadsServiceSetup,
+  InternalWorkerThreadsServiceStart,
 } from '@kbn/core-worker-threads-server-internal';
 import type {
   InternalExecutionContextSetup,
@@ -29,7 +28,7 @@ import type {
   ElasticsearchCapabilities,
 } from '@kbn/core-elasticsearch-server';
 import { ClusterClient, AgentManager } from '@kbn/core-elasticsearch-client-server-internal';
-
+import { WorkerThreadsClient } from '@kbn/core-worker-threads-server/src/types';
 import { registerAnalyticsContextProvider } from './register_analytics_context_provider';
 import { ElasticsearchConfig, ElasticsearchConfigType } from './elasticsearch_config';
 import {
@@ -50,16 +49,19 @@ export interface SetupDeps {
   analytics: AnalyticsServiceSetup;
   http: InternalHttpServiceSetup;
   executionContext: InternalExecutionContextSetup;
-  workerThreads: InternalWorkerThreadsServiceSetup;
+  workerThreads?: InternalWorkerThreadsServiceSetup;
 }
+const ESQL_PARSER_POOL = 'esql_parser_pool';
 
+export interface StartDeps {
+  workerThreads?: InternalWorkerThreadsServiceStart;
+}
 /** @internal */
 export class ElasticsearchService
   implements CoreService<InternalElasticsearchServiceSetup, InternalElasticsearchServiceStart>
 {
   private readonly log: Logger;
   private readonly config$: Observable<ElasticsearchConfig>;
-  private readonly workerThreadsConfig$: Observable<WorkerThreadsConfigType>;
   private stop$ = new Subject<void>();
   private kibanaVersion: string;
   private authHeaders?: IAuthHeadersStorage;
@@ -73,9 +75,6 @@ export class ElasticsearchService
   constructor(private readonly coreContext: CoreContext) {
     this.kibanaVersion = coreContext.env.packageInfo.version;
     this.log = coreContext.logger.get('elasticsearch-service');
-    this.workerThreadsConfig$ = this.coreContext.configService
-      .atPath<WorkerThreadsConfigType>('workerThreads')
-      .pipe(map((rawConfig) => new WorkerThreadsConfig(rawConfig)));
 
     this.config$ = coreContext.configService
       .atPath<ElasticsearchConfigType>('elasticsearch')
@@ -85,10 +84,7 @@ export class ElasticsearchService
   public async preboot(): Promise<InternalElasticsearchServicePreboot> {
     this.log.debug('Prebooting elasticsearch service');
 
-    const [config, workerThreadsConfig] = await Promise.all([
-      firstValueFrom(this.config$),
-      firstValueFrom(this.workerThreadsConfig$),
-    ]);
+    const config = await firstValueFrom(this.config$);
     return {
       config: {
         hosts: config.hosts,
@@ -97,8 +93,7 @@ export class ElasticsearchService
           config.password !== undefined ||
           config.serviceAccountToken !== undefined,
       },
-      createClient: (type, clientConfig) =>
-        this.createClusterClient(type, config, clientConfig, workerThreadsConfig),
+      createClient: (type, clientConfig) => this.createClusterClient(type, config, clientConfig),
     };
   }
 
@@ -109,9 +104,22 @@ export class ElasticsearchService
 
     const agentManager = this.getAgentManager(config);
 
+    await deps.workerThreads?.registerPool(ESQL_PARSER_POOL, {
+      minWorkers: 4,
+      maxWorkers: 8,
+      idleTimeout: 2000,
+      enabled: true,
+      concurrentTasksPerWorker: 1,
+    });
+
     this.authHeaders = deps.http.authRequestHeaders;
     this.executionContextClient = deps.executionContext;
-    this.client = this.createClusterClient('data', config);
+    this.client = this.createClusterClient(
+      'data',
+      config,
+      {},
+      deps.workerThreads?.getClient(ESQL_PARSER_POOL)
+    );
 
     const esNodesCompatibility$ = pollEsNodesVersion({
       kibanaVersion: this.kibanaVersion,
@@ -154,7 +162,7 @@ export class ElasticsearchService
     };
   }
 
-  public async start(): Promise<InternalElasticsearchServiceStart> {
+  public async start({ workerThreads }: StartDeps): Promise<InternalElasticsearchServiceStart> {
     if (!this.client || !this.esNodesCompatibility$) {
       throw new Error('ElasticsearchService needs to be setup before calling start');
     }
@@ -205,7 +213,13 @@ export class ElasticsearchService
 
     return {
       client: this.client!,
-      createClient: (type, clientConfig) => this.createClusterClient(type, config, clientConfig),
+      createClient: (type, clientConfig) =>
+        this.createClusterClient(
+          type,
+          config,
+          clientConfig,
+          workerThreads?.getClient(ESQL_PARSER_POOL)
+        ),
       getCapabilities: () => capabilities,
       metrics: {
         elasticsearchWaitTime,
@@ -239,7 +253,7 @@ export class ElasticsearchService
     type: string,
     baseConfig: ElasticsearchClientConfig,
     clientConfig: Partial<ElasticsearchClientConfig> = {},
-    workerThreadsConfig: Partial<WorkerThreadsConfig> = {}
+    workerThreadsClient?: WorkerThreadsClient
   ) {
     return new ClusterClient({
       ...this.getClusterClientConfig(baseConfig, clientConfig),
@@ -248,7 +262,7 @@ export class ElasticsearchService
       getExecutionContext: () => this.executionContextClient?.getAsHeader(),
       getUnauthorizedErrorHandler: () => this.unauthorizedErrorHandler,
       agentFactoryProvider: this.getAgentManager(baseConfig),
-      workerThreadsConfig,
+      workerThreadsClient,
     });
   }
 

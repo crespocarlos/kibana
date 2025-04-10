@@ -17,51 +17,70 @@ import {
 } from '@elastic/elasticsearch';
 import type { Logger } from '@kbn/logging';
 import { type ElasticsearchClientConfig } from '@kbn/core-elasticsearch-server';
-import { WorkerThreadsConfigType } from '@kbn/core-worker-threads-server-internal';
+import { WorkerThreadsRequestClient } from '@kbn/core-worker-threads-server/src/types';
 import { parseClientOptions } from './client_config';
 import { instrumentEsQueryAndDeprecationLogger } from './log_query_and_deprecation';
 import { createTransport } from './create_transport';
 import type { AgentFactoryProvider } from './agent_manager';
 import { patchElasticsearchClient } from './patch_client';
-import { WorkerThreadPool } from './worker_thread/worker_thread_pool';
 
 const noop = () => undefined;
 
 // Apply ES client patches on module load
 patchElasticsearchClient();
 
+function decorateEsqlQuery(
+  esql: ElasticsearchClient['esql'],
+  workerThreadsClient?: WorkerThreadsRequestClient
+): ElasticsearchClient['esql'] {
+  return new Proxy(esql, {
+    get(target, prop, receiver) {
+      if (prop === 'query') {
+        return async (request: estypes.EsqlQueryRequest, options?: TransportRequestOptions) => {
+          const result = await target.query.call(target, request, options);
+
+          if (request.format === 'arrow' && workerThreadsClient) {
+            return workerThreadsClient.run(import('./worker_thread/esql_parse_response.worker'), {
+              input: result,
+            });
+          }
+
+          return result;
+        };
+      }
+
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
+
+// POC
 export class CustomClient extends ElasticsearchClient {
-  private readonly workerThread: WorkerThreadPool;
-  constructor(opts: ClientOptions, workerThreadsConfig: Partial<WorkerThreadsConfigType> = {}) {
+  constructor(
+    opts: ClientOptions,
+    private readonly workerThreadsClient?: WorkerThreadsRequestClient
+  ) {
     super(opts);
-    this.workerThread = new WorkerThreadPool(workerThreadsConfig);
   }
 
-  public get esql(): ElasticsearchClient['esql'] {
-    const esqlOrig = super.esql;
+  public override get esql(): ElasticsearchClient['esql'] {
+    return decorateEsqlQuery(super.esql, this.workerThreadsClient);
+  }
 
-    return new Proxy(esqlOrig, {
-      get: (target, prop, receiver) => {
-        if (prop === 'query') {
-          return async (request: estypes.EsqlQueryRequest, options?: TransportRequestOptions) => {
-            const result = await target.query.call(target, request, options);
+  override child(opts: ClientOptions): CustomClient {
+    const childClient = super.child(opts);
 
-            if (request.format === 'arrow') {
-              const controller = new AbortController();
+    const baseEsql =
+      Object.getOwnPropertyDescriptor(
+        Object.getPrototypeOf(ElasticsearchClient.prototype),
+        'esql'
+      )?.get?.call(childClient) ?? childClient.esql;
 
-              return this.workerThread.run(import('./worker_thread/esql_parse_response.worker'), {
-                input: result,
-                signal: controller.signal,
-              });
-            }
-
-            return result;
-          };
-        }
-
-        return Reflect.get(target, prop, receiver);
-      },
+    Object.defineProperty(childClient, 'esql', {
+      get: () => decorateEsqlQuery(baseEsql, this.workerThreadsClient),
     });
+
+    return childClient as CustomClient;
   }
 }
 
@@ -74,7 +93,7 @@ export const configureClient = (
     getExecutionContext = noop,
     agentFactoryProvider,
     kibanaVersion,
-    workerThreadsConfig = {},
+    workerThreadsClient,
   }: {
     logger: Logger;
     type: string;
@@ -82,7 +101,7 @@ export const configureClient = (
     getExecutionContext?: () => string | undefined;
     agentFactoryProvider: AgentFactoryProvider;
     kibanaVersion: string;
-    workerThreadsConfig: Partial<WorkerThreadsConfigType>;
+    workerThreadsClient?: WorkerThreadsRequestClient;
   }
 ): CustomClient => {
   const clientOptions = parseClientOptions(config, scoped, kibanaVersion);
@@ -96,7 +115,7 @@ export const configureClient = (
       // using ClusterConnectionPool until https://github.com/elastic/elasticsearch-js/issues/1714 is addressed
       ConnectionPool: ClusterConnectionPool,
     },
-    workerThreadsConfig
+    workerThreadsClient
   );
 
   const { apisToRedactInLogs = [] } = config;

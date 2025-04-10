@@ -51,7 +51,14 @@ export type RouteWorker<
 export interface WorkerThreadsRequestClient {
   run<TInput extends WorkerParams, TOutput extends WorkerParams>(
     filename: Promise<RouteWorker<TInput, TOutput>>,
-    {}: { input: TInput; signal?: AbortSignal }
+    options: { input: TInput; signal?: AbortSignal }
+  ): Promise<TOutput>;
+}
+
+export interface WorkerThreadsClient {
+  run<TInput extends WorkerParams, TOutput extends WorkerParams>(
+    filename: Promise<Worker<TInput, TOutput>>,
+    options: { input: TInput; signal?: AbortSignal }
   ): Promise<TOutput>;
 }
 

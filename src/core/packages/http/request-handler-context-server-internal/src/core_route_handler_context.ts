@@ -145,6 +145,9 @@ export class CoreRouteHandlerContext implements CoreRequestHandlerContext {
     if (!this.#workerThreads) {
       this.#workerThreads = new CoreWorkerThreadsRouteHandlerContext(
         this.coreStart.workerThreads,
+        this.coreStart.elasticsearch,
+        this.coreStart.uiSettings,
+        this.coreStart.savedObjects,
         this.request
       );
     }

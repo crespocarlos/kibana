@@ -7,9 +7,12 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { KibanaRequest } from '@kbn/core-http-server';
 import { WorkerThreadsRequestHandlerContext } from '@kbn/core-worker-threads-server/src/request_handler_context';
 import { WorkerThreadsRequestClient } from '@kbn/core-worker-threads-server/src/types';
+import { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
+import { KibanaRequest } from '@kbn/core-http-server';
+import { InternalElasticsearchServiceStart } from '@kbn/core-elasticsearch-server-internal';
+import { InternalSavedObjectsServiceStart } from '@kbn/core-saved-objects-server-internal';
 import type { InternalWorkerThreadsServiceStart } from './worker_threads_service';
 
 /**
@@ -21,12 +24,21 @@ export class CoreWorkerThreadsRouteHandlerContext implements WorkerThreadsReques
 
   constructor(
     private readonly workerThreadsStart: InternalWorkerThreadsServiceStart,
+
+    private readonly elasticsearch: InternalElasticsearchServiceStart,
+    private readonly uiSettingsService: UiSettingsServiceStart,
+    private readonly savedObject: InternalSavedObjectsServiceStart,
     private readonly request: KibanaRequest
   ) {}
 
   public get client() {
     if (this.#client == null) {
-      this.#client = this.workerThreadsStart.getClientWithRequest(this.request);
+      this.#client = this.workerThreadsStart.getClientWithRequest(
+        this.request,
+        this.elasticsearch,
+        this.savedObject,
+        this.uiSettingsService
+      );
     }
     return this.#client;
   }

@@ -7,11 +7,11 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { Worker } from '@kbn/core-worker-threads-server';
 import * as arrow from 'apache-arrow';
-import { QueryWorker } from './worker_thread_pool';
 
-const worker: QueryWorker<ArrayBuffer, SharedArrayBuffer> = {
-  run: async ({ input, signal }) => {
+const worker: Worker<ArrayBuffer, SharedArrayBuffer> = {
+  run: async ({ input }) => {
     const table = arrow.tableFromIPC(new Uint8Array(input));
 
     const writer = arrow.RecordBatchStreamWriter.writeAll(table);
