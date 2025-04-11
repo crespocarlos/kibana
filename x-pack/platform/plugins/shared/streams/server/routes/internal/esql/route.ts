@@ -51,25 +51,29 @@ export const executeEsqlRoute = createServerRoute({
       body: { operationName, query, filter, kuery, start, end },
     } = params;
 
-    const response = await tracedEsClient.esql(
-      operationName,
-      {
-        query,
-        filter: {
-          bool: {
-            filter: [
-              filter || { match_all: {} },
-              ...kqlQuery(kuery),
-              ...excludeFrozenQuery(),
-              ...(isNumber(start) && isNumber(end) ? rangeQuery(start, end) : []),
-            ],
+    const response = await Promise.all(
+      Array.of(50).map(() =>
+        tracedEsClient.esql(
+          operationName,
+          {
+            query,
+            filter: {
+              bool: {
+                filter: [
+                  filter || { match_all: {} },
+                  ...kqlQuery(kuery),
+                  ...excludeFrozenQuery(),
+                  ...(isNumber(start) && isNumber(end) ? rangeQuery(start, end) : []),
+                ],
+              },
+            },
           },
-        },
-      },
-      { format: 'arrow', transform: 'columnar' }
+          { format: 'arrow', transform: 'columnar' }
+        )
+      )
     );
 
-    return response;
+    return response[0];
   },
 });
 

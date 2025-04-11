@@ -16,6 +16,8 @@ import {
   Worker,
   BaseWorkerParams,
 } from '@kbn/core-worker-threads-server/src/types';
+import { Readable } from 'stream';
+import { MessageChannel } from 'worker_threads';
 
 export interface BasicWorkerThreadsClientConfig {
   pool?: Piscina;
@@ -24,19 +26,35 @@ export interface BasicWorkerThreadsClientConfig {
 export class BasicWorkerThreadsClient implements WorkerThreadsClient {
   constructor(private readonly config: BasicWorkerThreadsClientConfig) {}
 
+  isReadable = (obj: any): obj is Readable =>
+    obj instanceof Readable && typeof obj._read === 'function';
+
   async run<TInput extends WorkerParams, TOutput extends WorkerParams>(
     filenameOrImport: string | Promise<Worker<TInput, TOutput, BaseWorkerParams>>,
     { input, signal }: { input: TInput; signal?: AbortSignal }
   ) {
     const { pool } = this.config;
+
+    const isStream = this.isReadable(input);
+    const messageChannel = new MessageChannel();
+    if (isStream) {
+      input.on('data', (chunk) => {
+        messageChannel.port1.postMessage(chunk);
+      });
+      input.on('end', () => {
+        messageChannel.port1.close();
+      });
+    }
+
     const runLocally = !pool || isPromise(filenameOrImport);
 
     if (runLocally) {
       const worker = await (typeof filenameOrImport === 'string'
         ? import(filenameOrImport)
         : filenameOrImport);
+
       return worker.run({
-        input,
+        input: isStream ? messageChannel.port2 : input,
         signal,
       });
     }
@@ -44,10 +62,11 @@ export class BasicWorkerThreadsClient implements WorkerThreadsClient {
     const result = await pool.run(
       {
         filename: filenameOrImport,
-        input,
+        input: isStream ? messageChannel.port2 : input,
       },
       {
         signal,
+        transferList: isStream ? [messageChannel.port2] : undefined,
       }
     );
 

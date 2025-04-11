@@ -26,18 +26,19 @@ import { serialize } from './utils';
 import { WorkerThreadsConfig, WorkerThreadsConfigType } from './worker_threads_config';
 import { BasicWorkerThreadsClient } from './basic_worker_threads_client';
 
+type PiscinaOptions = NonNullable<ConstructorParameters<typeof Piscina>[0]>;
 /**
  * @internal
  */
 
-interface ThreadPoolConfig extends WorkerThreadsConfigType {
-  filename?: string;
-  workerData?: any;
-}
+type ThreadPoolConfig = WorkerThreadsConfigType & {} & Pick<
+    PiscinaOptions,
+    'filename' | 'workerData' | 'resourceLimits' | 'maxQueue'
+  >;
 
 export interface InternalWorkerThreadsServicePreboot {
   registerPool: (name: string, piscinaConfig: ThreadPoolConfig) => void;
-  getClient: (name: string) => WorkerThreadsClient;
+  getClient: (name: string) => WorkerThreadsClient | undefined;
 }
 
 export type InternalWorkerThreadsServiceSetup = InternalWorkerThreadsServicePreboot;
@@ -52,11 +53,8 @@ export interface InternalWorkerThreadsServiceStart {
     savedObjects: InternalSavedObjectsServiceStart,
     uiSettings: InternalUiSettingsServiceStart
   ) => WorkerThreadsRequestClient;
-  getClient: (poolName: string) => WorkerThreadsClient;
+  getClient: (poolName: string) => WorkerThreadsClient | undefined;
 }
-
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
-interface StartDeps {}
 
 const ROUTER_POOL = 'router_pool';
 /** @internal */
@@ -66,7 +64,11 @@ export class WorkerThreadsService
   private log: Logger;
 
   private pools: Map<string, Piscina> = new Map();
+  private clients: Map<string, WorkerThreadsClient> = new Map();
   private lastUsedTimestamps: Map<string, number> = new Map();
+  private completedTaskByPool: Map<string, number> = new Map();
+
+  private timeoutInterval: number = 5000;
 
   constructor(private readonly coreContext: CoreContext) {
     this.log = coreContext.logger.get('worker-threads-service');
@@ -80,12 +82,21 @@ export class WorkerThreadsService
 
     if (!this.pools.has(name)) {
       const pool = new Piscina({
-        ...piscinaConfig,
         filename: piscinaConfig.filename ?? Path.join(__dirname, './basic_worker_entry.js'),
         workerData: {
           services,
         } satisfies InternalWorkerData,
+        maxThreads: piscinaConfig.maxWorkers,
+        maxQueue: piscinaConfig.maxQueue,
+        minThreads: piscinaConfig.minWorkers,
+        idleTimeout: piscinaConfig.idleTimeout,
+        concurrentTasksPerWorker: piscinaConfig.concurrentTasksPerWorker,
+        resourceLimits: piscinaConfig.resourceLimits,
       });
+
+      // pool.on('message', ({ message }) => {
+      //   this.log.info(message);
+      // });
 
       this.pools.set(name, pool);
 
@@ -93,16 +104,23 @@ export class WorkerThreadsService
     }
   }
 
-  getClient(name: string) {
+  getClient(name: string): WorkerThreadsClient | undefined {
     const pool = this.pools.get(name);
 
     if (!pool) {
-      throw new Error(`Pool '${name}' not found`);
+      this.log.info(`Pool '${name}' not found`);
+      return;
     }
 
     this.lastUsedTimestamps.set(name, Date.now());
 
-    return new BasicWorkerThreadsClient({ pool });
+    if (this.clients.has(name)) {
+      return this.clients.get(name);
+    }
+
+    const client = new BasicWorkerThreadsClient({ pool });
+    this.clients.set(name, client);
+    return client;
   }
 
   public async preboot(): Promise<InternalWorkerThreadsServicePreboot> {
@@ -140,23 +158,23 @@ export class WorkerThreadsService
       const { rss, heapTotal, heapUsed } = process.memoryUsage();
 
       const workerStats = Array.from(this.pools.entries()).reduce((acc, [name, pool]) => {
-        const lastUsedTimestamp = this.lastUsedTimestamps.get(name);
-        const idleTime = lastUsedTimestamp ? Date.now() - lastUsedTimestamp : 0;
+        const currentCompletedTask = this.completedTaskByPool.get(name);
+        const tasksCompletedThisInterval = pool.completed - (currentCompletedTask ?? 0);
+
+        const throughput = tasksCompletedThisInterval / (this.timeoutInterval / 1000);
 
         acc[name] = {
           size: pool.threads.length,
           queueSize: pool.queueSize,
-          completed: pool.completed,
-          idleTime,
+          totalCompleted: pool.completed,
+          completedThisCycle: tasksCompletedThisInterval,
+          throughputPerSecond: throughput,
         };
 
-        // do something ?
-        if (idleTime > 10 * 60 * 1000) {
-          this.log.info(`worker pool '${name}' idle`);
-        }
+        this.completedTaskByPool.set(name, pool.completed);
 
         return acc;
-      }, {} as Record<string, { size: number; queueSize: number; completed: number; idleTime: number }>);
+      }, {} as Record<string, { size: number; queueSize: number; totalCompleted: number; completedThisCycle: number; throughputPerSecond: number }>);
 
       this.log.info(
         `Main thread stats: ${JSON.stringify({
@@ -166,7 +184,7 @@ export class WorkerThreadsService
           workers: workerStats,
         })}`
       );
-    }, 5000).unref();
+    }, this.timeoutInterval).unref();
 
     // const tmpDir = await Fs.mkdtemp(Path.join(Os.tmpdir(), 'worker-heapsnapshots'));
 

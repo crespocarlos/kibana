@@ -23,11 +23,11 @@ export interface WorkerThreadsClient {
   run<TInput extends WorkerParams, TOutput extends WorkerParams>(
     filename: string | Promise<Worker<TInput, TOutput>>,
     { input, signal }: { input: TInput; signal: AbortSignal }
-  ): Promise<WorkerParams>;
+  ): Promise<TOutput>;
 }
 
 export interface Worker<
-  TInput extends WorkerParams = WorkerParams,
+  TInput extends WorkerParams | MessagePort = WorkerParams,
   TOutput extends WorkerParams = WorkerParams,
   TContext extends Record<string, any> = {}
 > {

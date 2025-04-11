@@ -93,9 +93,9 @@ export class ElasticsearchService
     this.log.debug('Prebooting elasticsearch service');
 
     await workerThreads?.registerPool(ESQL_PARSER_POOL, {
-      minWorkers: 4,
-      maxWorkers: 8,
-      idleTimeout: 2000,
+      minWorkers: 1,
+      maxWorkers: 20,
+      idleTimeout: 500,
       enabled: true,
       concurrentTasksPerWorker: 1,
     });

@@ -6,21 +6,52 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
+const { parentPort, threadId } = require('worker_threads');
+const { RecordBatchStreamWriter, tableFromIPC, RecordBatchStreamReader } = require('apache-arrow');
+const {
+  Observable,
+  fromEvent,
+  map,
+  scan,
+  lastValueFrom,
+  filter,
+  EMPTY,
+  takeUntil,
+} = require('rxjs');
 
-import { Worker } from '@kbn/core-worker-threads-server';
-import { RecordBatch, RecordBatchStreamReader, RecordBatchStreamWriter } from 'apache-arrow';
-import { fromEvent, lastValueFrom, scan, map, takeUntil } from 'rxjs';
+function streamIntoObservable(readable) {
+  if (!readable) {
+    return new Observable((subscriber) => {
+      subscriber.complete();
+    });
+  }
+  return new Observable((subscriber) => {
+    const decodedStream = readable;
 
-import { parentPort, threadId } from 'worker_threads';
+    async function process() {
+      for await (const item of decodedStream) {
+        subscriber.next(item);
+      }
+    }
 
-const worker: Worker<any, SharedArrayBuffer> = {
+    process()
+      .then(() => {
+        subscriber.complete();
+      })
+      .catch((error) => {
+        subscriber.error(error);
+      });
+  });
+}
+
+const worker = {
   run: async ({ input }) => {
-    const start = performance.now();
-
     const streamed = await lastValueFrom(
-      fromEvent<{ data: Uint8Array }>(input, 'message').pipe(
-        map((message) => message.data),
-        scan((acc: Uint8Array, current: Uint8Array) => {
+      fromEvent(input, 'message').pipe(
+        map(({ data }) => {
+          return data;
+        }),
+        scan((acc, current) => {
           const concatenated = new Uint8Array(acc.length + current.length);
           concatenated.set(acc, 0);
           concatenated.set(current, acc.length);
@@ -31,32 +62,22 @@ const worker: Worker<any, SharedArrayBuffer> = {
     );
 
     const reader = await RecordBatchStreamReader.from(streamed);
-
-    const batches: RecordBatch[] = [];
-    for await (const batch of reader) {
-      batches.push(batch);
-    }
-    const writer = RecordBatchStreamWriter.writeAll(batches);
-
+    const table = tableFromIPC(new Uint8Array(reader));
+    const writer = RecordBatchStreamWriter.writeAll(table);
     const serializedBuffer = await writer.toUint8Array();
 
+    // eslint-disable-next-line no-undef
     const sharedBuffer = new SharedArrayBuffer(serializedBuffer.byteLength);
     const sharedResponse = new Uint8Array(sharedBuffer);
     sharedResponse.set(serializedBuffer);
 
-    // return sharedBuffer;
-    const mem = process.memoryUsage();
     parentPort?.postMessage({
       type: 'metrics',
-      message: `Worker ${threadId} stats: ${JSON.stringify({
-        heapTotal: (mem.heapTotal / 1024 / 1024).toFixed(2),
-        heapUsed: (mem.heapUsed / 1024 / 1024).toFixed(2),
-        totalTime: performance.now() - start,
-      })}`,
+      message: `Worker ${threadId} finished`,
     });
 
     return sharedBuffer;
   },
 };
 
-export const run = worker.run;
+module.exports = { run: worker.run };

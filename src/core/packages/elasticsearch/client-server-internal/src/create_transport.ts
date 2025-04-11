@@ -17,6 +17,8 @@ import {
   type TransportResult,
 } from '@elastic/elasticsearch';
 import { isUnauthorizedError } from '@kbn/es-errors';
+import { defer, from } from 'rxjs';
+import { PassThrough } from 'stream';
 import { InternalUnauthorizedErrorHandler, isRetryResult } from './retry_unauthorized';
 
 type TransportClass = typeof Transport;
@@ -77,13 +79,33 @@ export const createTransport = ({
           (params.querystring as { format: string } | undefined)?.format === 'arrow' &&
           workerThreadsClient
         ) {
-          const response = (await super.request(params, opts)) as ArrayBuffer;
-          const controller = new AbortController();
+          const stream = new PassThrough();
 
-          return workerThreadsClient.run(import('./worker_thread/esql_parse_response.worker'), {
-            input: response,
-            signal: controller.signal,
-          }) as unknown as TransportResult<any, any>;
+          defer(() => from(super.request(params, opts))).subscribe({
+            next: (event) => {
+              if (!stream.write(event)) {
+                stream.pause();
+                stream.once('drain', () => {
+                  stream.resume();
+                });
+              }
+            },
+            error: () => {
+              stream.end();
+            },
+            complete: () => {
+              stream.end();
+            },
+          });
+
+          const controller = new AbortController();
+          return await workerThreadsClient.run(
+            import('./worker_thread/esql_parse_response.worker'),
+            {
+              input: stream,
+              signal: controller.signal,
+            }
+          );
         }
 
         return (await super.request(params, opts)) as TransportResult<any, any>;
