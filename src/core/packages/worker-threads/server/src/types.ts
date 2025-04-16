@@ -16,6 +16,7 @@ import { SavedObjectsRequestHandlerContext } from '@kbn/core-saved-objects-serve
 import { UiSettingsRequestHandlerContext } from '@kbn/core-ui-settings-server';
 import { Logger } from '@kbn/logging';
 import { Observable } from 'rxjs';
+import { PassThrough } from 'stream';
 
 type Primitive = string | number | boolean | null | undefined;
 
@@ -27,7 +28,7 @@ export interface WorkerThreadsClient {
 }
 
 export interface Worker<
-  TInput extends WorkerParams | MessagePort = WorkerParams,
+  TInput extends WorkerParams | MessagePort | PassThrough = WorkerParams,
   TOutput extends WorkerParams = WorkerParams,
   TContext extends Record<string, any> = {}
 > {
@@ -56,7 +57,7 @@ export interface WorkerThreadsRequestClient {
 }
 
 export interface WorkerThreadsClient {
-  run<TInput extends WorkerParams, TOutput extends WorkerParams>(
+  run<TInput extends WorkerParams | PassThrough, TOutput extends WorkerParams>(
     filename: Promise<Worker<TInput, TOutput>>,
     options: { input: TInput; signal?: AbortSignal }
   ): Promise<TOutput>;

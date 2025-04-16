@@ -38,11 +38,8 @@ export class BasicWorkerThreadsClient implements WorkerThreadsClient {
     const isStream = this.isReadable(input);
     const messageChannel = new MessageChannel();
     if (isStream) {
-      input.on('data', (chunk) => {
-        messageChannel.port1.postMessage(chunk);
-      });
-      input.on('end', () => {
-        messageChannel.port1.close();
+      input.on('data', (chunk: Uint8Array) => {
+        messageChannel.port1.postMessage(chunk, [chunk.buffer]);
       });
     }
 

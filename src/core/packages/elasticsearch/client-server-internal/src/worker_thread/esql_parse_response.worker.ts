@@ -8,38 +8,39 @@
  */
 
 import { Worker } from '@kbn/core-worker-threads-server';
-import { RecordBatch, RecordBatchStreamReader, RecordBatchStreamWriter } from 'apache-arrow';
-import { fromEvent, lastValueFrom, scan, map, takeUntil } from 'rxjs';
+import { RecordBatchStreamReader, RecordBatchStreamWriter } from 'apache-arrow';
 
 import { parentPort, threadId } from 'worker_threads';
 
-const worker: Worker<any, SharedArrayBuffer> = {
+const worker: Worker<MessagePort, SharedArrayBuffer> = {
   run: async ({ input }) => {
     const start = performance.now();
 
-    const streamed = await lastValueFrom(
-      fromEvent<{ data: Uint8Array }>(input, 'message').pipe(
-        map((message) => message.data),
-        scan((acc: Uint8Array, current: Uint8Array) => {
-          const concatenated = new Uint8Array(acc.length + current.length);
-          concatenated.set(acc, 0);
-          concatenated.set(current, acc.length);
-          return concatenated;
-        }, new Uint8Array()),
-        takeUntil(fromEvent(input, 'close'))
-      )
-    );
+    const outputChunks: Buffer[] = [];
 
-    const reader = await RecordBatchStreamReader.from(streamed);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        input.addEventListener('message', (event: MessageEvent<Uint8Array>) => {
+          controller.enqueue(event.data);
+        });
+        input.addEventListener('close', () => {
+          controller.close();
+        });
+      },
+    });
 
-    const batches: RecordBatch[] = [];
-    for await (const batch of reader) {
-      batches.push(batch);
-    }
-    const writer = RecordBatchStreamWriter.writeAll(batches);
+    const writable = new WritableStream<Uint8Array>({
+      write(chunk) {
+        outputChunks.push(Buffer.from(chunk));
+      },
+    });
 
-    const serializedBuffer = await writer.toUint8Array();
+    const reader = RecordBatchStreamReader.from(stream);
+    const writer = await RecordBatchStreamWriter.writeAll(reader);
 
+    await writer.pipeTo(writable);
+
+    const serializedBuffer = Buffer.concat(outputChunks);
     const sharedBuffer = new SharedArrayBuffer(serializedBuffer.byteLength);
     const sharedResponse = new Uint8Array(sharedBuffer);
     sharedResponse.set(serializedBuffer);

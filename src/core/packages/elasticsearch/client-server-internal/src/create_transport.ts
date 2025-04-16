@@ -8,7 +8,7 @@
  */
 
 import type { IncomingHttpHeaders } from 'http';
-import { WorkerThreadsRequestClient } from '@kbn/core-worker-threads-server/src/types';
+import { WorkerThreadsClient } from '@kbn/core-worker-threads-server/src/types';
 import {
   Transport,
   type TransportOptions,
@@ -34,7 +34,7 @@ export const createTransport = ({
 }: {
   getExecutionContext?: () => string | undefined;
   getUnauthorizedErrorHandler?: ErrorHandlerAccessor;
-  workerThreadsClient?: WorkerThreadsRequestClient;
+  workerThreadsClient?: WorkerThreadsClient;
 }): TransportClass => {
   class KibanaTransport extends Transport {
     private headers: IncomingHttpHeaders = {};
