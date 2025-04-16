@@ -16,7 +16,7 @@ import { SavedObjectsRequestHandlerContext } from '@kbn/core-saved-objects-serve
 import { UiSettingsRequestHandlerContext } from '@kbn/core-ui-settings-server';
 import { Logger } from '@kbn/logging';
 import { Observable } from 'rxjs';
-import { PassThrough } from 'stream';
+import { Readable } from 'stream';
 
 type Primitive = string | number | boolean | null | undefined;
 
@@ -28,7 +28,7 @@ export interface WorkerThreadsClient {
 }
 
 export interface Worker<
-  TInput extends WorkerParams | MessagePort | PassThrough = WorkerParams,
+  TInput extends WorkerParams | Buffer | Readable | MessagePort = WorkerParams,
   TOutput extends WorkerParams = WorkerParams,
   TContext extends Record<string, any> = {}
 > {
@@ -57,7 +57,7 @@ export interface WorkerThreadsRequestClient {
 }
 
 export interface WorkerThreadsClient {
-  run<TInput extends WorkerParams | PassThrough, TOutput extends WorkerParams>(
+  run<TInput extends WorkerParams, TOutput extends WorkerParams>(
     filename: Promise<Worker<TInput, TOutput>>,
     options: { input: TInput; signal?: AbortSignal }
   ): Promise<TOutput>;
@@ -68,7 +68,9 @@ export type WorkerParams =
       [x: string]: Primitive | Primitive[];
     }
   | SharedArrayBuffer
-  | ArrayBuffer;
+  | ArrayBuffer
+  | Readable
+  | MessagePort;
 
 export interface RouteWorkerCoreRequestContext {
   elasticsearch: Promise<ElasticsearchRequestHandlerContext>;

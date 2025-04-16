@@ -23,11 +23,11 @@ export interface BasicWorkerThreadsClientConfig {
   pool?: Piscina;
 }
 
+const isReadable = (obj: any): obj is Readable =>
+  obj instanceof Readable && typeof obj._read === 'function';
+
 export class BasicWorkerThreadsClient implements WorkerThreadsClient {
   constructor(private readonly config: BasicWorkerThreadsClientConfig) {}
-
-  isReadable = (obj: any): obj is Readable =>
-    obj instanceof Readable && typeof obj._read === 'function';
 
   async run<TInput extends WorkerParams, TOutput extends WorkerParams>(
     filenameOrImport: string | Promise<Worker<TInput, TOutput, BaseWorkerParams>>,
@@ -35,11 +35,15 @@ export class BasicWorkerThreadsClient implements WorkerThreadsClient {
   ) {
     const { pool } = this.config;
 
-    const isStream = this.isReadable(input);
-    const messageChannel = new MessageChannel();
+    const isStream = isReadable(input);
+    const streamChannel = new MessageChannel();
     if (isStream) {
       input.on('data', (chunk: Uint8Array) => {
-        messageChannel.port1.postMessage(chunk, [chunk.buffer]);
+        streamChannel.port1.postMessage(chunk.buffer, [chunk.buffer]);
+      });
+
+      input.on('end', () => {
+        streamChannel.port1.close();
       });
     }
 
@@ -51,7 +55,7 @@ export class BasicWorkerThreadsClient implements WorkerThreadsClient {
         : filenameOrImport);
 
       return worker.run({
-        input: isStream ? messageChannel.port2 : input,
+        input: isStream ? streamChannel.port2 : input,
         signal,
       });
     }
@@ -59,11 +63,15 @@ export class BasicWorkerThreadsClient implements WorkerThreadsClient {
     const result = await pool.run(
       {
         filename: filenameOrImport,
-        input: isStream ? messageChannel.port2 : input,
+        input: isStream ? streamChannel.port2 : input,
       },
       {
         signal,
-        transferList: isStream ? [messageChannel.port2] : undefined,
+        transferList: isStream
+          ? [streamChannel.port2]
+          : Buffer.isBuffer(input)
+          ? [input.buffer]
+          : undefined,
       }
     );
 

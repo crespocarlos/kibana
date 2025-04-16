@@ -23,9 +23,6 @@ const worker: Worker<MessagePort, SharedArrayBuffer> = {
         input.addEventListener('message', (event: MessageEvent<Uint8Array>) => {
           controller.enqueue(event.data);
         });
-        input.addEventListener('close', () => {
-          controller.close();
-        });
       },
     });
 
