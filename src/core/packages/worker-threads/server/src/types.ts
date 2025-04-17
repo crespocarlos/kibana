@@ -68,9 +68,7 @@ export type WorkerParams =
       [x: string]: Primitive | Primitive[];
     }
   | SharedArrayBuffer
-  | ArrayBuffer
-  | Readable
-  | MessagePort;
+  | ArrayBuffer;
 
 export interface RouteWorkerCoreRequestContext {
   elasticsearch: Promise<ElasticsearchRequestHandlerContext>;

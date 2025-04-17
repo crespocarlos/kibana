@@ -23,9 +23,7 @@ export interface BasicWorkerThreadsClientConfig {
   pool?: Piscina;
 }
 
-const isReadable = (obj: any): obj is Readable =>
-  obj instanceof Readable && typeof obj._read === 'function';
-
+const isReadable = (obj: any): obj is Readable => obj instanceof Readable;
 export class BasicWorkerThreadsClient implements WorkerThreadsClient {
   constructor(private readonly config: BasicWorkerThreadsClientConfig) {}
 
@@ -67,11 +65,7 @@ export class BasicWorkerThreadsClient implements WorkerThreadsClient {
       },
       {
         signal,
-        transferList: isStream
-          ? [streamChannel.port2]
-          : Buffer.isBuffer(input)
-          ? [input.buffer]
-          : undefined,
+        transferList: isStream ? [streamChannel.port2] : [input as ArrayBufferLike],
       }
     );
 

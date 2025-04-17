@@ -6,27 +6,21 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
-const start = performance.now();
 
-if (process.env.NODE_ENV !== 'production') {
-  // eslint-disable-next-line @kbn/imports/no_boundary_crossing
-  require('../../../../../setup_node_env');
-} else {
-  // eslint-disable-next-line @kbn/imports/no_boundary_crossing
-  require('../../../../../setup_node_env/dist');
-}
+// const { workerData } = require('piscina');
 
-const { waitUntilStdoutCompleted } = require('./sync_console');
+// You can now write your handler as an asynchronous function
+const getWorkerHandler = () => {
+  return ({ filename, input, signal }) => {
+    // eslint-disable-next-line import/no-dynamic-require
+    const worker = require(filename);
+    return worker.run({
+      filename,
+      input,
+      signal,
+    });
+  };
+};
 
-const afterSetup = performance.now();
-
-const initialize = require('./basic_worker').getWorkerHandler();
-const setup = Math.round(performance.now() - afterSetup);
-
-module.exports = initialize.finally(async () => {
-  const total = Math.round(performance.now() - start);
-
-  process.stdout.write(`Worker initialized in ${total}ms, setup time was ${setup}ms\n`);
-
-  await waitUntilStdoutCompleted();
-});
+const initialize = getWorkerHandler();
+module.exports = initialize;

@@ -17,6 +17,7 @@ import {
   type TransportResult,
 } from '@elastic/elasticsearch';
 import { isUnauthorizedError } from '@kbn/es-errors';
+import { Readable } from 'stream';
 import { InternalUnauthorizedErrorHandler, isRetryResult } from './retry_unauthorized';
 
 type TransportClass = typeof Transport;
@@ -75,18 +76,22 @@ export const createTransport = ({
       try {
         const isArrow = (params.querystring as { format: string } | undefined)?.format === 'arrow';
 
-        const response = await super.request(params, {
-          ...opts,
-          asStream: isArrow,
-        });
+        // const response = await super.request(params, opts);
+
+        // stream
+        const response = await super.request(params, { ...opts, asStream: isArrow });
 
         if (isArrow && workerThreadsClient) {
           const controller = new AbortController();
 
           return await workerThreadsClient.run(
-            import('./worker_thread/esql_parse_response.worker'),
+            // import('./worker_thread/esql_parse_response.worker'),
+            import('./worker_thread/esql_parse_response_stream.worker'),
             {
-              input: response as any,
+              // input: (response as Buffer).buffer,
+
+              // stream
+              input: response as Readable,
               signal: controller.signal,
             }
           );

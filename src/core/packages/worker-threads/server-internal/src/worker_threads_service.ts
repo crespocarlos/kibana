@@ -94,9 +94,9 @@ export class WorkerThreadsService
         resourceLimits: piscinaConfig.resourceLimits,
       });
 
-      // pool.on('message', ({ message }) => {
-      //   this.log.info(message);
-      // });
+      pool.on('message', ({ message }) => {
+        this.log.info(message);
+      });
 
       this.pools.set(name, pool);
 
@@ -166,6 +166,9 @@ export class WorkerThreadsService
         acc[name] = {
           size: pool.threads.length,
           queueSize: pool.queueSize,
+          rss: bytes(rss).toString(),
+          heapTotal: bytes(heapTotal).toString(),
+          heapUsed: bytes(heapUsed).toString(),
           totalCompleted: pool.completed,
           completedThisCycle: tasksCompletedThisInterval,
           throughputPerSecond: throughput,
@@ -174,7 +177,7 @@ export class WorkerThreadsService
         this.completedTaskByPool.set(name, pool.completed);
 
         return acc;
-      }, {} as Record<string, { size: number; queueSize: number; totalCompleted: number; completedThisCycle: number; throughputPerSecond: number }>);
+      }, {} as Record<string, { size: number; queueSize: number; totalCompleted: number; completedThisCycle: number; throughputPerSecond: number; rss: string; heapUsed: string; heapTotal: string }>);
 
       this.log.info(
         `Main thread stats: ${JSON.stringify({

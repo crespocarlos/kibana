@@ -8,36 +8,18 @@
  */
 
 import { Worker } from '@kbn/core-worker-threads-server';
-import { RecordBatchStreamReader, RecordBatchStreamWriter } from 'apache-arrow';
+import { tableFromIPC, RecordBatchStreamWriter } from 'apache-arrow';
 
 import { parentPort, threadId } from 'worker_threads';
 
-const worker: Worker<MessagePort, SharedArrayBuffer> = {
+const worker: Worker<ArrayBufferLike, SharedArrayBuffer> = {
   run: async ({ input }) => {
     const start = performance.now();
 
-    const outputChunks: Buffer[] = [];
+    const table = tableFromIPC(input);
+    const writer = RecordBatchStreamWriter.writeAll(table);
 
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        input.addEventListener('message', (event: MessageEvent<Uint8Array>) => {
-          controller.enqueue(event.data);
-        });
-      },
-    });
-
-    const writable = new WritableStream<Uint8Array>({
-      write(chunk) {
-        outputChunks.push(Buffer.from(chunk));
-      },
-    });
-
-    const reader = RecordBatchStreamReader.from(stream);
-    const writer = await RecordBatchStreamWriter.writeAll(reader);
-
-    await writer.pipeTo(writable);
-
-    const serializedBuffer = Buffer.concat(outputChunks);
+    const serializedBuffer = await writer.toUint8Array();
     const sharedBuffer = new SharedArrayBuffer(serializedBuffer.byteLength);
     const sharedResponse = new Uint8Array(sharedBuffer);
     sharedResponse.set(serializedBuffer);
