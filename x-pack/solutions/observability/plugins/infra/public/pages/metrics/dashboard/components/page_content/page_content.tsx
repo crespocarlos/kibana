@@ -12,7 +12,6 @@ import { useMetricsDataView } from '../../../../../containers/metrics_source';
 import { useKibanaContextForPlugin } from '../../../../../hooks/use_kibana';
 import { useTimeRangeMetadataContext } from '../../../../../hooks/use_timerange_metadata';
 import { RenderDashboard } from '../dashboard/render_dashboard';
-import { EntityTable } from '../entity_table/entity_table';
 
 export const PageContent = ({
   dashboardId,
@@ -57,10 +56,7 @@ export const PageContent = ({
         {status === 'loading' ? (
           <EuiLoadingSpinner size="xl" />
         ) : (
-          <>
-            {entityId ? <EntityTable entityId={entityId} /> : null}
-            <RenderDashboard dashboardId={dashboardId} kuery={kuery} />
-          </>
+          <RenderDashboard dashboardId={dashboardId} kuery={kuery} />
         )}
       </EuiFlexItem>
     </EuiFlexGroup>
