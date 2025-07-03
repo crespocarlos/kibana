@@ -24,7 +24,6 @@ import {
   DATE_WITH_HOSTS_DATA_FROM,
   DATE_WITH_HOSTS_DATA_TO,
 } from './constants';
-import { getInfraSynthtraceEsClient } from '../../../common/utils/synthtrace/infra_es_client';
 import {
   generateDockerContainersData,
   generateHostData,
@@ -81,6 +80,8 @@ export default ({ getPageObjects, getService }: FtrProviderContext) => {
   const esClient = getService('es');
   const retry = getService('retry');
   const testSubjects = getService('testSubjects');
+  const synthtraceClient = getService('synthtraceClient');
+
   const pageObjects = getPageObjects([
     'assetDetails',
     'common',
@@ -135,7 +136,9 @@ export default ({ getPageObjects, getService }: FtrProviderContext) => {
   describe.skip('Node Details', () => {
     let synthEsClient: InfraSynthtraceEsClient;
     before(async () => {
-      synthEsClient = await getInfraSynthtraceEsClient(esClient);
+      const clients = await synthtraceClient.getClients(['infraEsClient']);
+      synthEsClient = clients.infraEsClient;
+
       await kibanaServer.savedObjects.cleanStandardList();
       await browser.setWindowSize(1600, 1200);
 
