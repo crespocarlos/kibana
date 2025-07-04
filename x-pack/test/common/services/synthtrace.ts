@@ -56,6 +56,10 @@ export function SynthtraceClientProvider({ getService }: FtrProviderContext) {
         },
       });
 
+      clientManager.initFleetPackageForClient({
+        clients,
+      });
+
       return clients;
     },
   };
