@@ -64,12 +64,12 @@ export interface BaseMetricsCatalog<
   getAll(): TResolved;
 }
 
-export type AggregationMetricsCatalog = BaseMetricsCatalog<
+export type MetricsAggregationsCatalog = BaseMetricsCatalog<
   AggregationConfig,
   ResolvedMetricMap<AggregationConfig>
 >;
 
-export type LensMetricsCatalog = BaseMetricsCatalog<
+export type MetricsFormulasCatalog = BaseMetricsCatalog<
   Record<string, LensFormulaConfig>,
   ResolvedMetricMap<Record<string, LensFormulaConfig>>
 >;
