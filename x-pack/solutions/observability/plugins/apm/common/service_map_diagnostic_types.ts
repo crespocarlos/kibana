@@ -8,16 +8,16 @@
 import type { ESSearchResponse, ESSearchRequest } from '@kbn/es-types';
 
 export interface ExitSpanFields {
-  destinationService?: string;
-  spanSubType?: string;
-  spanId?: string;
-  spanType?: string;
-  transactionId?: string;
-  serviceNodeName?: string;
-  traceId?: string;
-  agentName?: string;
-  docCount?: number;
-  isOtel?: boolean;
+  destinationService: string;
+  spanSubType: string;
+  spanId: string;
+  spanType: string;
+  transactionId: string;
+  serviceNodeName: string;
+  traceId: string;
+  agentName: string;
+  docCount: number;
+  isOtel: boolean;
 }
 
 export interface ServiceMapDiagnosticResponse {

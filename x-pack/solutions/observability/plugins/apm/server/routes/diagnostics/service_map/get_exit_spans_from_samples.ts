@@ -23,6 +23,7 @@ import {
   SPAN_DESTINATION_SERVICE_RESOURCE,
 } from '@kbn/apm-types';
 import type { APMEventClient } from '@kbn/apm-data-access-plugin/server';
+import type { ExitSpanFields } from '../../../../common/service_map_diagnostic_types';
 import { asMutableArray } from '../../../../common/utils/as_mutable_array';
 
 export async function getExitSpans({
@@ -30,14 +31,14 @@ export async function getExitSpans({
   start,
   end,
   destinationNode,
-  ids,
+  parentSpans,
 }: {
   apmEventClient: APMEventClient;
   start: number;
   end: number;
   sourceNode: string;
   destinationNode: string;
-  ids: string[];
+  parentSpans: Map<string, string | undefined>;
 }) {
   const requiredFields = asMutableArray([
     SERVICE_NAME,
@@ -48,6 +49,7 @@ export async function getExitSpans({
     TRANSACTION_ID,
     SPAN_NAME,
     SERVICE_NODE_NAME,
+    PARENT_ID,
     AGENT_NAME,
   ] as const);
 
@@ -59,7 +61,7 @@ export async function getExitSpans({
     size: 0,
     query: {
       bool: {
-        filter: [...rangeQuery(start, end), ...termsQuery(PARENT_ID, ...ids)],
+        filter: [...rangeQuery(start, end), ...termsQuery(PARENT_ID, ...Object.keys(parentSpans))],
       },
     },
     aggs: {
@@ -72,20 +74,7 @@ export async function getExitSpans({
         aggs: {
           sample_docs: {
             top_hits: {
-              size: 5,
-            },
-          },
-        },
-      },
-      destination_services: {
-        terms: {
-          field: SERVICE_NAME,
-          size: 50,
-        },
-        aggs: {
-          sample_docs: {
-            top_hits: {
-              size: 5,
+              size: 50,
               fields: [...requiredFields],
             },
           },
@@ -94,9 +83,15 @@ export async function getExitSpans({
     },
   });
 
-  const apmExitSpans =
-    response?.aggregations?.destination_services?.buckets?.map((item) => {
-      const fields = unflattenKnownApmEventFields(item?.sample_docs?.hits?.hits?.[0]?.fields);
+  const apmExitSpans = (
+    response?.aggregations?.matching_destination_resources?.sample_docs?.hits?.hits ?? []
+  )
+    .map((p) => {
+      const fields = unflattenKnownApmEventFields(p?.fields);
+
+      if (!fields.parent?.id || !parentSpans.get(fields?.parent?.id)) {
+        return;
+      }
 
       return {
         destinationService: fields?.service?.name,
@@ -107,18 +102,17 @@ export async function getExitSpans({
         serviceNodeName: fields?.service?.node?.name ?? '',
         traceId: fields?.trace?.id ?? '',
         agentName: fields?.agent?.name ?? '',
-        docCount: item?.doc_count ?? 0,
+        docCount: 100,
         isOtel: false,
       };
-    }) ?? [];
+    })
+    .filter((p): p is ExitSpanFields => !!p);
 
-  const matchingCount =
-    response?.aggregations?.matching_destination_resources?.sample_docs?.hits?.total?.value || 0;
   return {
     apmExitSpans,
     totalConnections: apmExitSpans.length,
     rawResponse: response,
-    hasMatchingDestinationResources: matchingCount > 0,
+    hasMatchingDestinationResources: apmExitSpans.length > 0,
   };
 }
 
@@ -135,10 +129,11 @@ export async function getSourceSpanIds({
   sourceNode: string;
   traceIds: string[];
 }): Promise<{
-  spanIds: string[];
+  spanIds: Map<string, string | undefined>;
   sourceSpanIdsRawResponse: ESSearchResponse<unknown, ESSearchRequest>;
 }> {
   const requiredFields = asMutableArray([SPAN_ID] as const);
+  const optionalFields = asMutableArray([SPAN_DESTINATION_SERVICE_RESOURCE] as const);
   const response = await apmEventClient.search('diagnostics_get_source_node_span_samples', {
     apm: {
       events: [ProcessorEvent.span],
@@ -147,24 +142,27 @@ export async function getSourceSpanIds({
     size: 0,
     query: {
       bool: {
-        filter: [
-          ...rangeQuery(start, end),
-          ...termsQuery(SERVICE_NAME, sourceNode),
-          ...termsQuery(TRACE_ID, ...traceIds),
-        ],
+        filter: [...rangeQuery(start, end), ...termsQuery(TRACE_ID, ...traceIds)],
       },
     },
     aggs: {
       sample_docs: {
-        terms: {
-          field: SPAN_NAME,
+        composite: {
+          sources: asMutableArray([
+            { serviceName: { terms: { field: SERVICE_NAME } } },
+            {
+              spanName: {
+                terms: { field: SPAN_NAME },
+              },
+            },
+          ] as const),
           size: 500,
         },
         aggs: {
           top_span_ids: {
             top_hits: {
               size: 10,
-              fields: [...requiredFields],
+              fields: [...requiredFields, ...optionalFields],
             },
           },
         },
@@ -172,17 +170,20 @@ export async function getSourceSpanIds({
     },
   });
 
+  const map = new Map<string, string | undefined>();
   return {
     sourceSpanIdsRawResponse: response,
     spanIds:
-      response.aggregations?.sample_docs?.buckets?.flatMap((bucket) => {
+      response.aggregations?.sample_docs?.buckets?.reduce((acc, bucket) => {
         const event = unflattenKnownApmEventFields(
           bucket.top_span_ids.hits.hits[0].fields,
           requiredFields
         );
 
-        return event.span.id ?? [];
-      }) ?? [],
+        acc.set(event.span.id, event.span?.destination?.service?.resource);
+
+        return acc;
+      }, map) ?? map,
   };
 }
 

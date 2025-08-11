@@ -142,13 +142,13 @@ const getServiceMapDiagnosticsRoute = createApmServerRoute({
         end,
         sourceNode,
         destinationNode,
-        ids: sourceSpanIds.spanIds,
+        parentSpans: sourceSpanIds.spanIds,
       }),
       getDestinationParentIds({
         apmEventClient,
         start,
         end,
-        ids: sourceSpanIds.spanIds,
+        ids: Object.keys(sourceSpanIds.spanIds),
         destinationNode,
       }),
     ]);
@@ -164,7 +164,7 @@ const getServiceMapDiagnosticsRoute = createApmServerRoute({
         parentRelationships: {
           found: destinationParentIds.hasParent,
           documentCount: destinationParentIds.rawResponse?.hits?.hits?.length || 0,
-          sourceSpanIds: [...sourceSpanIds.spanIds],
+          sourceSpanIds: [...Object.keys(sourceSpanIds.spanIds)],
         },
         ...(traceId && {
           traceCorrelation: {
