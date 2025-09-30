@@ -101,7 +101,12 @@ export const SearchButton = ({
                 css={css`
                   border-top-right-radius: 0;
                   border-bottom-right-radius: 0;
+                  border-right: 0;
                   min-width: 200px;
+
+                  &::after {
+                    border-right: 0;
+                  }
                 `}
               />
             </EuiFlexItem>
@@ -116,7 +121,6 @@ export const SearchButton = ({
                 size="s"
                 css={css`
                   border: ${euiTheme.border.thin};
-                  border-right: none;
                   border-top-right-radius: 0;
                   border-bottom-right-radius: 0;
                 `}
