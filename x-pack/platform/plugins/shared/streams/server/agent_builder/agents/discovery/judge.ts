@@ -8,6 +8,7 @@
 import type { BuiltInAgentDefinition } from '@kbn/agent-builder-server/agents';
 import instructions from './instructions/judge.md.text';
 import { SIGNIFICANT_EVENTS_DISCOVERY_TOOL_IDS } from './constants';
+import { SIGNIFICANT_EVENTS_DISCOVERY_SKILL_ID } from '../../skills/significant_events/significant_events_discovery_skill';
 import type { StreamsServer } from '../../../types';
 import { getSignificantEventsAvailability } from '../../../routes/utils/assert_significant_events_access';
 
@@ -41,6 +42,7 @@ export const createSignificantEventsJudgeAgent = ({
     },
     configuration: {
       instructions,
+      skill_ids: [SIGNIFICANT_EVENTS_DISCOVERY_SKILL_ID],
       tools: [
         {
           tool_ids: [...SIGNIFICANT_EVENTS_DISCOVERY_TOOL_IDS],

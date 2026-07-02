@@ -10,32 +10,41 @@ import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinToolDefinition, StaticToolRegistration } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/core/server';
 import { i18n } from '@kbn/i18n';
-import { significantEventStatusSchema } from '@kbn/significant-events-schema';
+import {
+  significantEventSchema,
+  significantEventStatusSchema,
+} from '@kbn/significant-events-schema';
 import { z } from '@kbn/zod/v4';
 import dedent from 'dedent';
-import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
-import type { GetScopedClients } from '../../../routes/types';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
-import type { StreamsServer } from '../../../types';
-import { createSignificantEventsAvailability } from '../significant_events_availability';
+import type { EbtTelemetryClient } from '../../../../lib/telemetry/ebt';
+import type { GetScopedClients } from '../../../../routes/types';
+import { assertSignificantEventsAccess } from '../../../../routes/utils/assert_significant_events_access';
+import type { StreamsServer } from '../../../../types';
+import { createSignificantEventsAvailability } from '../../significant_events_availability';
 import { createEventToolHandler } from './handler';
 
-export const STREAMS_CREATE_EVENT_TOOL_ID = platformSignificantEventsTools.createEvent;
+export const SIGNIFICANT_EVENTS_CREATE_EVENT_TOOL_ID = platformStreamsSigEventsTools.createEvent;
 
-const createEventSchema = z.object({
-  status: significantEventStatusSchema.optional().describe(
-    i18n.translate('xpack.streams.agentBuilder.tools.eventCreate.schema.status', {
-      defaultMessage: 'Status for the new event.',
-    })
-  ),
-  title: z.string().max(500),
-  summary: z.string().max(4000),
-  root_cause: z.string().max(4000),
-  stream_names: z.array(z.string().max(255)).min(1).max(100),
-  criticality: z.number().min(0).max(100),
-  confidence: z.number().min(0).max(1),
-  recommendations: z.array(z.string().max(1000)).min(1).max(50),
-});
+const createEventSchema = significantEventSchema
+  .pick({
+    status: true,
+    title: true,
+    summary: true,
+    root_cause: true,
+    stream_names: true,
+    criticality: true,
+    confidence: true,
+    recommendations: true,
+  })
+  .extend({
+    status: significantEventStatusSchema.optional().describe(
+      i18n.translate('xpack.streams.agentBuilder.tools.eventCreate.schema.status', {
+        defaultMessage: 'Status for the new event.',
+      })
+    ),
+    criticality: z.number().int().min(0).max(100),
+    confidence: z.number().min(0).max(1),
+  });
 
 export function createEventTool({
   getScopedClients,
@@ -49,7 +58,7 @@ export function createEventTool({
   telemetry: EbtTelemetryClient;
 }): StaticToolRegistration<typeof createEventSchema> {
   const toolDefinition: BuiltinToolDefinition<typeof createEventSchema> = {
-    id: STREAMS_CREATE_EVENT_TOOL_ID,
+    id: SIGNIFICANT_EVENTS_CREATE_EVENT_TOOL_ID,
     type: ToolType.builtin,
     description: dedent`
       ${i18n.translate('xpack.streams.agentBuilder.tools.eventCreate.description', {

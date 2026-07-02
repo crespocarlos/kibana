@@ -13,14 +13,15 @@ import { i18n } from '@kbn/i18n';
 import { significantEventStatusSchema } from '@kbn/significant-events-schema';
 import { z } from '@kbn/zod/v4';
 import dedent from 'dedent';
-import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
-import type { GetScopedClients } from '../../../routes/types';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
-import type { StreamsServer } from '../../../types';
-import { createSignificantEventsAvailability } from '../significant_events_availability';
+import type { EbtTelemetryClient } from '../../../../lib/telemetry/ebt';
+import type { GetScopedClients } from '../../../../routes/types';
+import { assertSignificantEventsAccess } from '../../../../routes/utils/assert_significant_events_access';
+import type { StreamsServer } from '../../../../types';
+import { createSignificantEventsAvailability } from '../../significant_events_availability';
 import { updateEventStatusToolHandler } from './handler';
 
-export const STREAMS_EVENT_STATUS_UPDATE_TOOL_ID = platformSignificantEventsTools.updateEventStatus;
+export const SIGNIFICANT_EVENTS_STATUS_UPDATE_TOOL_ID =
+  platformStreamsSigEventsTools.updateEventStatus;
 
 const eventStatusUpdateSchema = z.object({
   event_id: z.string().describe(
@@ -47,7 +48,7 @@ export function createEventStatusUpdateTool({
   telemetry: EbtTelemetryClient;
 }): StaticToolRegistration<typeof eventStatusUpdateSchema> {
   const toolDefinition: BuiltinToolDefinition<typeof eventStatusUpdateSchema> = {
-    id: STREAMS_EVENT_STATUS_UPDATE_TOOL_ID,
+    id: SIGNIFICANT_EVENTS_STATUS_UPDATE_TOOL_ID,
     type: ToolType.builtin,
     description: dedent`
       ${i18n.translate('xpack.streams.agentBuilder.tools.eventStatusUpdate.description', {

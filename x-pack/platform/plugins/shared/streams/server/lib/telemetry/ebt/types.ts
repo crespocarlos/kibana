@@ -109,6 +109,24 @@ interface StreamsAgentToolEventInvestigationAttachProps {
   error_message?: string;
 }
 
+interface StreamsAgentToolEventsWriteProps {
+  success: boolean;
+  discovery_slug: string;
+  status: SignificantEventStatus;
+  written: boolean;
+  stream_names: string[];
+  error_message?: string;
+}
+
+interface StreamsAgentToolDiscoveryWriteProps {
+  success: boolean;
+  kind: 'discovery' | 'clearance' | 'handled';
+  discovery_slug: string;
+  stream_names: string[];
+  written: boolean;
+  error_message?: string;
+}
+
 interface StreamsCodeAnalysisGroundingProps {
   stream_name: string;
   stream_type: string;
@@ -169,6 +187,8 @@ export {
   type StreamsAgentToolEventCreateProps,
   type StreamsAgentToolEventStatusUpdateProps,
   type StreamsAgentToolEventInvestigationAttachProps,
+  type StreamsAgentToolEventsWriteProps,
+  type StreamsAgentToolDiscoveryWriteProps,
   type StreamsCodeAnalysisGroundingProps,
   type StreamsSignificantEventsDiscoveryTriggeredProps,
   type StreamsSignificantEventsDetectionScanProps,

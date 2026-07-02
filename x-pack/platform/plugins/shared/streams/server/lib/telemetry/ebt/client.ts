@@ -18,6 +18,8 @@ import type {
   StreamsAgentToolEventCreateProps,
   StreamsAgentToolEventStatusUpdateProps,
   StreamsAgentToolEventInvestigationAttachProps,
+  StreamsAgentToolEventsWriteProps,
+  StreamsAgentToolDiscoveryWriteProps,
   StreamsCodeAnalysisGroundingProps,
   StreamsSignificantEventsDiscoveryTriggeredProps,
   StreamsSignificantEventsDetectionScanProps,
@@ -35,6 +37,8 @@ import {
   STREAMS_AGENT_TOOL_EVENT_CREATE_EVENT_TYPE,
   STREAMS_AGENT_TOOL_EVENT_STATUS_UPDATE_EVENT_TYPE,
   STREAMS_AGENT_TOOL_EVENT_INVESTIGATION_ATTACH_EVENT_TYPE,
+  STREAMS_AGENT_TOOL_EVENTS_WRITE_EVENT_TYPE,
+  STREAMS_AGENT_TOOL_DISCOVERY_WRITE_EVENT_TYPE,
   STREAMS_CODE_ANALYSIS_GROUNDING_EVENT_TYPE,
   STREAMS_SIGNIFICANT_EVENTS_DISCOVERY_TRIGGERED_EVENT_TYPE,
   STREAMS_SIGNIFICANT_EVENTS_DETECTION_SCAN_EVENT_TYPE,
@@ -130,6 +134,14 @@ export class EbtTelemetryClient {
     params: StreamsAgentToolEventInvestigationAttachProps
   ) {
     this.analytics.reportEvent(STREAMS_AGENT_TOOL_EVENT_INVESTIGATION_ATTACH_EVENT_TYPE, params);
+  }
+
+  public trackAgentToolEventsWrite(params: StreamsAgentToolEventsWriteProps) {
+    this.analytics.reportEvent(STREAMS_AGENT_TOOL_EVENTS_WRITE_EVENT_TYPE, params);
+  }
+
+  public trackAgentToolDiscoveryWrite(params: StreamsAgentToolDiscoveryWriteProps) {
+    this.analytics.reportEvent(STREAMS_AGENT_TOOL_DISCOVERY_WRITE_EVENT_TYPE, params);
   }
 
   public trackCodeAnalysisGrounding(params: StreamsCodeAnalysisGroundingProps) {

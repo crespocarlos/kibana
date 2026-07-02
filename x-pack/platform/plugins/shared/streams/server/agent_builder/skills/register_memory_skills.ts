@@ -8,7 +8,7 @@
 import type { AgentBuilderPluginStart } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/core/server';
 import type { MemoryToolsOptions } from '../tools/memory';
-import { createSignificantEventsMemorySkill } from './significant_events_memory_skill';
+import { createSignificantEventsMemorySkill } from './significant_events/significant_events_memory_skill';
 import {
   createMemorySynthesisSkill,
   createMemoryConsolidationSkill,

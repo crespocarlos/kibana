@@ -20,7 +20,7 @@ import {
   MAX_TEXT_LENGTH,
 } from '../constants';
 
-const discoveryDetectionSchema = z.object({
+export const discoveryDetectionSchema = z.object({
   kind: z.enum(['detection', 'quiet', 'handled']),
   detection_id: z.string().max(MAX_ID_LENGTH).optional(),
   rule_name: z.string().max(MAX_RULE_NAME_LENGTH).optional(),
@@ -44,7 +44,7 @@ export const discoverySchema = z.object({
   summary: z.string().max(MAX_TEXT_LENGTH),
   root_cause: z.string().max(MAX_TEXT_LENGTH),
   criticality: z.number(),
-  confidence: z.number(),
+  confidence: z.number().min(0).max(1),
   impact: z.string().max(MAX_TEXT_LENGTH),
   detections: z.array(discoveryDetectionSchema),
   dependency_edges: z.array(dependencyEdgeSchema).optional(),

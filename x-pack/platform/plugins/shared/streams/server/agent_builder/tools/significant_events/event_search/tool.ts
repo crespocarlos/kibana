@@ -13,13 +13,13 @@ import { i18n } from '@kbn/i18n';
 import { significantEventStatusSchema } from '@kbn/significant-events-schema';
 import { z } from '@kbn/zod/v4';
 import dedent from 'dedent';
-import type { GetScopedClients } from '../../../routes/types';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
-import type { StreamsServer } from '../../../types';
-import { createSignificantEventsAvailability } from '../significant_events_availability';
+import type { GetScopedClients } from '../../../../routes/types';
+import { assertSignificantEventsAccess } from '../../../../routes/utils/assert_significant_events_access';
+import type { StreamsServer } from '../../../../types';
+import { createSignificantEventsAvailability } from '../../significant_events_availability';
 import { searchEventsToolHandler } from './handler';
 
-export const STREAMS_SEARCH_EVENTS_TOOL_ID = platformSignificantEventsTools.searchEvent;
+export const SIGNIFICANT_EVENTS_SEARCH_TOOL_ID = platformStreamsSigEventsTools.searchEvent;
 
 const searchEventsSchema = z.object({
   query: z
@@ -48,6 +48,16 @@ const searchEventsSchema = z.object({
     ),
   page: z.number().int().min(1).optional().default(1),
   per_page: z.number().int().min(1).max(100).optional().default(20),
+  include_episodes: z
+    .boolean()
+    .optional()
+    .describe(
+      i18n.translate('xpack.streams.agentBuilder.tools.eventSearch.schema.includeEpisodes', {
+        defaultMessage:
+          'When true, also returns open discovery documents linked to the matched events. ' +
+          'Use this for episode continuation checks in the discovery workflow.',
+      })
+    ),
 });
 
 export function createSearchEventsTool({
@@ -60,7 +70,7 @@ export function createSearchEventsTool({
   logger: Logger;
 }): StaticToolRegistration<typeof searchEventsSchema> {
   const toolDefinition: BuiltinToolDefinition<typeof searchEventsSchema> = {
-    id: STREAMS_SEARCH_EVENTS_TOOL_ID,
+    id: SIGNIFICANT_EVENTS_SEARCH_TOOL_ID,
     type: ToolType.builtin,
     description: dedent`
       ${i18n.translate('xpack.streams.agentBuilder.tools.eventSearch.description.line1', {
@@ -71,6 +81,12 @@ export function createSearchEventsTool({
         defaultMessage:
           'Use this before creating or updating events to understand current event state.',
       })}
+
+      ${i18n.translate('xpack.streams.agentBuilder.tools.eventSearch.description.line3', {
+        defaultMessage:
+          'Set include_episodes: true to also fetch open discovery documents for the matched events, ' +
+          'enabling deduplication and episode continuation in the discovery workflow.',
+      })}
     `,
     schema: searchEventsSchema,
     tags: ['streams', 'significant_events'],
@@ -79,11 +95,13 @@ export function createSearchEventsTool({
       const { request } = context;
 
       try {
-        const { getEventClient, licensing, uiSettingsClient } = await getScopedClients({ request });
+        const { getEventClient, getDiscoveryClient, licensing, uiSettingsClient } =
+          await getScopedClients({ request });
         await assertSignificantEventsAccess({ server, licensing, uiSettingsClient });
 
         const data = await searchEventsToolHandler({
           eventClient: getEventClient(),
+          discoveryClient: toolParams.include_episodes ? getDiscoveryClient() : undefined,
           params: toolParams,
         });
 

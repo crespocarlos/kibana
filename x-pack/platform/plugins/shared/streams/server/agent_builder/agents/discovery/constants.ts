@@ -21,4 +21,7 @@ export const OBSERVABILITY_GET_TRACES_TOOL_ID = 'observability.get_traces';
 export const SIGNIFICANT_EVENTS_DISCOVERY_TOOL_IDS = [
   platformSignificantEventsTools.searchKnowledgeIndicators,
   platformCoreTools.executeEsql,
+  platformStreamsSigEventsTools.searchEvent,
+  platformStreamsSigEventsTools.discoveryWrite,
+  platformStreamsSigEventsTools.eventsWrite,
 ] as const;

@@ -18,6 +18,8 @@ import type {
   StreamsAgentToolEventCreateProps,
   StreamsAgentToolEventStatusUpdateProps,
   StreamsAgentToolEventInvestigationAttachProps,
+  StreamsAgentToolEventsWriteProps,
+  StreamsAgentToolDiscoveryWriteProps,
   StreamsCodeAnalysisGroundingProps,
   StreamsSignificantEventsDetectionScanProps,
   StreamsOnboardingScheduledProps,
@@ -658,6 +660,85 @@ const streamsAgentToolEventInvestigationAttachSchema: RootSchema<StreamsAgentToo
     },
   };
 
+const streamsAgentToolEventsWriteSchema: RootSchema<StreamsAgentToolEventsWriteProps> = {
+  success: {
+    type: 'boolean',
+    _meta: {
+      description: 'Whether the workflow event write succeeded',
+    },
+  },
+  discovery_slug: {
+    type: 'keyword',
+    _meta: {
+      description: 'The discovery episode slug associated with the written event',
+    },
+  },
+  status: {
+    type: 'keyword',
+    _meta: {
+      description: 'The status value set on the significant event',
+    },
+  },
+  written: {
+    type: 'boolean',
+    _meta: {
+      description: 'Whether a new event version was actually written (false when status unchanged)',
+    },
+  },
+  stream_names: {
+    type: 'array',
+    items: {
+      type: 'keyword',
+      _meta: {
+        description: 'A stream name',
+      },
+    },
+    _meta: {
+      description: 'The names of the streams associated with the event',
+    },
+  },
+  error_message: {
+    type: 'text',
+    _meta: {
+      description: 'Error message when the workflow event write fails',
+      optional: true,
+    },
+  },
+};
+
+const streamsAgentToolDiscoveryWriteSchema: RootSchema<StreamsAgentToolDiscoveryWriteProps> = {
+  success: {
+    type: 'boolean',
+    _meta: { description: 'Whether the discovery write succeeded' },
+  },
+  kind: {
+    type: 'keyword',
+    _meta: {
+      description: 'The kind of discovery document written: discovery, clearance, or handled',
+    },
+  },
+  discovery_slug: {
+    type: 'keyword',
+    _meta: { description: 'The discovery episode slug' },
+  },
+  stream_names: {
+    type: 'array',
+    items: {
+      type: 'keyword',
+      _meta: { description: 'A stream name' },
+    },
+    _meta: { description: 'The streams associated with the discovery' },
+  },
+  written: {
+    type: 'boolean',
+    _meta: { description: 'Whether a document was actually written (false when deduplicated)' },
+  },
+  error_message: {
+    type: 'text',
+    _meta: { description: 'Error message when the discovery write fails', optional: true },
+  },
+};
+
 export {
   streamsEndpointLatencySchema,
   streamsStateErrorSchema,
@@ -670,6 +751,8 @@ export {
   streamsAgentToolEventCreateSchema,
   streamsAgentToolEventStatusUpdateSchema,
   streamsAgentToolEventInvestigationAttachSchema,
+  streamsAgentToolEventsWriteSchema,
+  streamsAgentToolDiscoveryWriteSchema,
   streamsCodeAnalysisGroundingSchema,
   streamsSignificantEventsDiscoveryTriggeredSchema,
   streamsSignificantEventsDetectionScanSchema,

@@ -74,6 +74,9 @@ export const platformSignificantEventsTools = {
   createEvent: `${internalNamespaces.platformSignificantEvents}.event_create`,
   updateEventStatus: `${internalNamespaces.platformSignificantEvents}.event_status_update`,
   attachInvestigation: `${internalNamespaces.platformStreams}.sig_events.event_investigation_attach`,
+  // Discovery workflow tools
+  discoveryWrite: `${internalNamespaces.platformSignificantEvents}.discovery_write`,
+  eventsWrite: `${internalNamespaces.platformSignificantEvents}.events_write`,
 } as const;
 
 export const attachmentTools = {
