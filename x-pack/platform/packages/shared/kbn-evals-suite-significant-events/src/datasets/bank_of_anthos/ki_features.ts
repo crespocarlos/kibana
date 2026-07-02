@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import { DEFAULT_SIGNIFICANT_EVENTS_TUNING_CONFIG } from '@kbn/streams-plugin/common/significant_events_tuning_config';
+import { DEFAULT_SIGNIFICANT_EVENTS_TUNING_CONFIG } from '@kbn/significant-events-schema';
 import type { DatasetConfig } from '../types';
 
 export const kiFeatureExtraction: DatasetConfig['kiFeatureExtraction'] = [
