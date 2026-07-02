@@ -7,12 +7,8 @@
 
 import type { InvestigatorEvaluator } from '../../types';
 
-/**
- * Returns a stable identifier for a detection — `rule_uuid` when present (survives rule renames
- * and snapshot catalog variants), falling back to `rule_name`.
- */
-function detectionKey(d: { rule_uuid?: string; rule_name?: string }): string {
-  return d.rule_uuid ?? d.rule_name ?? '';
+function detectionKey(d: { rule_uuid?: string }): string {
+  return d.rule_uuid ?? '';
 }
 
 /** Unordered same-group detection-key pairs ("a|b", a<b), order/count-independent. */

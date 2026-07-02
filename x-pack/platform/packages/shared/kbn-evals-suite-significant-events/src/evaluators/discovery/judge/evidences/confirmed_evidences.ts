@@ -28,7 +28,10 @@ export const confirmedEvidencesEvaluator: JudgeEvaluator = {
       });
     }
 
-    const esqlRan = summarizeEsqlGrounding(steps ?? []).calls > 0;
+    const esqlCallCount = summarizeEsqlGrounding(steps ?? []).calls;
+    // Require at least one execute_esql call per promoted event. A single call shared
+    // across all promotions cannot guarantee that each event was individually re-verified.
+    const sufficientEsqlCoverage = esqlCallCount >= promoted.length;
 
     let satisfied = 0;
     const issues: string[] = [];
@@ -37,10 +40,12 @@ export const confirmedEvidencesEvaluator: JudgeEvaluator = {
       const evidences = event.evidences ?? [];
       const hasConfirmed = evidences.some((ev) => ev.confirmed === true);
 
-      if (hasConfirmed && esqlRan) {
+      if (hasConfirmed && sufficientEsqlCoverage) {
         satisfied++;
-      } else if (!esqlRan) {
-        issues.push(`[${i}] promoted but the judge never ran execute_esql`);
+      } else if (!sufficientEsqlCoverage) {
+        issues.push(
+          `[${i}] judge ran ${esqlCallCount} execute_esql call(s) for ${promoted.length} promoted event(s) — insufficient per-event coverage`
+        );
       } else {
         issues.push(`[${i}] promoted with no confirmed:true evidence`);
       }

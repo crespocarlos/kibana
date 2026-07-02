@@ -26,7 +26,10 @@ export const createToolUsageEvaluator = (): JudgeEvaluator => ({
       discoveries.length > 0 &&
       discoveries.every((d) => {
         const evidences = d.evidences ?? [];
-        return evidences.length > 0 && evidences.every((e) => e.esql_query != null);
+        return (
+          evidences.length > 0 &&
+          evidences.every((e) => e.esql_query != null && e.esql_query !== '')
+        );
       });
 
     const calledTools = new Set(extractToolCallIds(output.steps ?? []));

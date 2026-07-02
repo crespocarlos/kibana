@@ -8,8 +8,8 @@
 import type { Discovery, Detection } from '@kbn/significant-events-schema';
 import { groupingCorrectnessEvaluator } from './grouping_correctness';
 
-const buildDiscovery = (...ruleNames: string[]): Partial<Discovery> => ({
-  detections: ruleNames.map((rule_name) => ({ kind: 'detection', rule_name })),
+const buildDiscovery = (...ruleUuids: string[]): Partial<Discovery> => ({
+  detections: ruleUuids.map((rule_uuid) => ({ kind: 'detection', rule_uuid })),
 });
 
 // The expected grouping is derived from `expected_discoveries`, so build them from the gold groups.
@@ -23,7 +23,7 @@ const evaluate = (discoveries: Array<Partial<Discovery>>, expectedGroups?: strin
     output: { discoveries: discoveries as unknown as Discovery[], steps: [] },
     expected: {
       expected_discoveries: expectedGroups?.map((group) => ({
-        detections: group.map((rule_name) => ({ kind: 'detection' as const, rule_name })),
+        detections: group.map((rule_uuid) => ({ kind: 'detection' as const, rule_uuid })),
       })) as unknown as Discovery[],
     },
     metadata: null,

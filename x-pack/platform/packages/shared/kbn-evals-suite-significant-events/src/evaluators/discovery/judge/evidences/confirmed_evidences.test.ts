@@ -48,11 +48,21 @@ describe('confirmedEvidencesEvaluator', () => {
     expect((await evaluate(events, [])).score).toBe(0);
   });
 
-  it('gives partial credit across multiple promoted events', async () => {
+  it('scores 0 when fewer esql calls than promoted events', async () => {
+    const events = [
+      { status: 'promoted', evidences: [{ confirmed: true }] },
+      { status: 'promoted', evidences: [{ confirmed: true }] },
+    ];
+    // Only 1 esql call for 2 promoted events — insufficient per-event coverage
+    expect((await evaluate(events, [esqlStep])).score).toBe(0);
+  });
+
+  it('gives partial credit when some promoted events lack confirmed evidence', async () => {
     const events = [
       { status: 'promoted', evidences: [{ confirmed: true }] },
       { status: 'promoted', evidences: [{ result: 'empty' }] },
     ];
-    expect((await evaluate(events, [esqlStep])).score).toBe(0.5);
+    const twoEsqlSteps = [esqlStep, { ...esqlStep, tool_call_id: 'e2' }];
+    expect((await evaluate(events, twoEsqlSteps)).score).toBe(0.5);
   });
 });
