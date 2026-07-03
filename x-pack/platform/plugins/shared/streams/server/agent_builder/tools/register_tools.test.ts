@@ -15,6 +15,10 @@ import {
   SIGNIFICANT_EVENTS_SEARCH_TOOL_ID,
   STREAMS_SEARCH_KNOWLEDGE_INDICATORS_TOOL_ID,
 } from './register_tools';
+import {
+  SIGNIFICANT_EVENTS_DISCOVERY_WRITE_TOOL_ID,
+  SIGNIFICANT_EVENTS_EVENTS_WRITE_TOOL_ID,
+} from './significant_events/tool_ids';
 import { createMockGetScopedClients } from '../utils/test_helpers';
 import type { StreamsServer } from '../../types';
 import type { EbtTelemetryClient } from '../../lib/telemetry/ebt';
@@ -56,6 +60,8 @@ describe('registerAgentBuilderTools', () => {
     expect(registeredIds).toContain(SIGNIFICANT_EVENTS_SEARCH_TOOL_ID);
     expect(registeredIds).toContain(SIGNIFICANT_EVENTS_CREATE_EVENT_TOOL_ID);
     expect(registeredIds).toContain(SIGNIFICANT_EVENTS_STATUS_UPDATE_TOOL_ID);
+    expect(registeredIds).toContain(SIGNIFICANT_EVENTS_DISCOVERY_WRITE_TOOL_ID);
+    expect(registeredIds).toContain(SIGNIFICANT_EVENTS_EVENTS_WRITE_TOOL_ID);
   });
 
   it('registers tools with non-empty descriptions and schemas', () => {

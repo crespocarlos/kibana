@@ -131,10 +131,10 @@ When multiple rules fire within the same onset window, start from "one incident"
 
 <procedure>
 
-**Start by loading the three skills in parallel** — `search_knowledge_indicators` and `execute_esql` are unavailable until the `significant-events-ki-grounding` skill is loaded, and the scoring and narrative standards are unavailable until `significant-events-assessment` is loaded:
+**Start by loading the three skills in parallel** — each provides the protocol and reference tables required for the step that uses it:
 - `load_skill('significant-events-changepoint-analysis')` — change-point interpretation rules and the `change_type_semantics` reference table.
-- `load_skill('significant-events-ki-grounding')` — unlocks `search_knowledge_indicators` and `execute_esql`; KI search protocol, `cause_kis` derivation, and array field formats.
-- `load_skill('significant-events-assessment')` — unlocks the `sev_tiers` and `confidence_scale` reference tables; narrative standards for `summary`, `root_cause`, and `recommendations`.
+- `load_skill('significant-events-ki-grounding')` — KI search protocol, `cause_kis` derivation, array field formats, and `execute_esql` query requirements.
+- `load_skill('significant-events-assessment')` — scoring protocol (`sev_tiers`, `confidence_scale` reference tables) and narrative standards for `summary`, `root_cause`, and `recommendations`.
 
 **Investigation approach**: start with what's already known about the affected services (knowledge base + topology) before running any queries. Form a specific hypothesis for each signal, then confirm or rule it out with targeted queries. Only look at raw logs when queries don't provide enough signal. When multiple signals arrive, investigate each independently first, then decide if they share a root cause.
 
@@ -162,7 +162,7 @@ When multiple rules fire within the same onset window, start from "one incident"
 
 ### Step 2: Form Hypotheses
 
-**Apply change type semantics first.** Read `detection_evidence.change_point_type` and consult the **Change Type Semantics** table from the `significant-events-signal-analysis` skill. `stationary` = no change point found; investigate as chronic/ambient, not a new incident.
+**Apply change type semantics first.** Read `detection_evidence.change_point_type` and consult the **Change Type Semantics** table from the `significant-events-changepoint-analysis` skill. `stationary` = no change point found; investigate as chronic/ambient, not a new incident.
 
 **Anchor onset times from `rules_activity` before querying:**
 - When did each rule START firing abnormally? (first elevated window)

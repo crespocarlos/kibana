@@ -13,7 +13,7 @@ import content from './significant_events_ki_grounding.skill.md.text';
 
 export const SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID = 'significant-events-ki-grounding' as const;
 
-export const significantEventsKIGroudingSkill = defineSkillType({
+export const significantEventsKIGroundingSkill = defineSkillType({
   id: SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID,
   name: 'significant-events-ki-grounding',
   basePath: 'skills/platform/streams',

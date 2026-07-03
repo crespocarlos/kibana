@@ -13,7 +13,7 @@ export {
   SIGNIFICANT_EVENTS_CHANGEPOINT_ANALYSIS_SKILL_ID,
 } from './significant_events_changepoint_analysis_skill';
 export {
-  significantEventsKIGroudingSkill,
+  significantEventsKIGroundingSkill,
   SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID,
 } from './significant_events_ki_grounding_skill';
 export {

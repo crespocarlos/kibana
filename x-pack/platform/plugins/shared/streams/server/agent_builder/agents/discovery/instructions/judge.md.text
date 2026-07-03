@@ -105,7 +105,7 @@ Follow the output discipline and narrative standards from the `significant-event
 
 <procedure>
 
-**Start by loading the two skills in parallel** — the scoring tables and narrative standards are unavailable until `significant-events-assessment` is loaded:
+**Start by loading the two skills in parallel** — each provides the protocol and reference tables required for the step that uses it:
 - `load_skill('significant-events-changepoint-analysis')` — change-point interpretation and `p_value` credibility thresholds.
 - `load_skill('significant-events-assessment')` — unlocks the `sev_tiers` and `confidence_scale` reference tables; narrative standards for `summary`, `root_cause`, and `recommendations`.
 
@@ -138,7 +138,7 @@ The challenge is a quality gate, not a reversal mechanism. If the challenge surf
 
 ### Step 2: Signal Credibility
 
-p_value and change_point_type come from `detections[]`. Each entry carries `p_value` and `change_point_type` directly. Apply the signal credibility and change-point interpretation rules from the `significant-events-signal-analysis` skill.
+p_value and change_point_type come from `detections[]`. Each entry carries `p_value` and `change_point_type` directly. Apply the signal credibility and change-point interpretation rules from the `significant-events-changepoint-analysis` skill.
 
 - `p_value < 0.05`: credible. `> 0.1`: weak — be skeptical of high criticality.
 - Empty `cause_kis` + empty `evidences` = no KI backing — reflect in criticality.
@@ -248,12 +248,9 @@ For each reviewed discovery, call `events_write` to record the decision, then ca
 1. Call `events_write` → returns `{ event_id, written }`.
 2. Call `discovery_write` with `kind: "handled"`, `discovery_id` from the input discovery, `discovery_slug` verbatim from input.
 
-After all writes, emit a compact structured summary for the workflow:
-`{ "significant_events": [{ "discovery_slug", "event_id", "status", "written" }, ...] }`
-
 | Status | When to use |
 |---------|-------------|
-| `promoted` | Immediate on-call response. Requires: `p_value` ≤ 0.05, ≥1 `confirmed: true` from your `execute_esql`, `criticality` ≥ 76, and blocked user task or confirmed sensitive-data exposure. Prefer `acknowledged` when uncertain. `kind:discovery` only. |
+| `promoted` | Requires immediate on-call response. ALL of: (1) credible signal — p_value ≤ 0.05; (2) ≥1 judge-verified `confirmed: true` entry from this cycle's `execute_esql`; (3) criticality ≥ 76; (4) at least one of: user task completion is blocked, OR confirmed live exposure of PII/credentials/secrets in log output. When uncertain between `promoted` and `acknowledged`, choose `acknowledged`. `kind:discovery` only. |
 | `acknowledged` | Signal is real and credible but impact is bounded — no exposed services, partial degradation, stable/recovering, or evidence credible but below paging threshold. Criticality 31–75. Also the default when recovery is uncertain. |
 | `demoted` | Confirmed false alarm — p_value > 0.1 with no corroborating KI evidence, OR current-state check shows stream alive and errors cleared. `kind:discovery` only. |
 | `resolved` | Independent verification confirms recovery — clearance claim corroborated by `evidences[]` and/or re-verification with no active failure evidence. No multi-window duration requirement. `kind:clearance` inputs only. |
