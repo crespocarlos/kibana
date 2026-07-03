@@ -10,7 +10,11 @@ import type { StreamsServer } from '../../../types';
 import { getSignificantEventsAvailability } from '../../../routes/utils/assert_significant_events_access';
 import instructions from './instructions/investigator.md.text';
 import { SIGNIFICANT_EVENTS_DISCOVERY_TOOL_IDS } from './constants';
-import { SIGNIFICANT_EVENTS_DISCOVERY_SKILL_ID } from '../../skills/significant_events/significant_events_discovery_skill';
+import {
+  SIGNIFICANT_EVENTS_CHANGEPOINT_ANALYSIS_SKILL_ID,
+  SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID,
+  SIGNIFICANT_EVENTS_ASSESSMENT_SKILL_ID,
+} from '../../skills/significant_events';
 
 export const SIGNIFICANT_EVENTS_INVESTIGATOR_AGENT_ID =
   'platform.sig_events.discovery.investigator';
@@ -43,7 +47,11 @@ export function createSignificantEventsInvestigatorAgent({
     },
     configuration: {
       instructions,
-      skill_ids: [SIGNIFICANT_EVENTS_DISCOVERY_SKILL_ID],
+      skill_ids: [
+        SIGNIFICANT_EVENTS_CHANGEPOINT_ANALYSIS_SKILL_ID,
+        SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID,
+        SIGNIFICANT_EVENTS_ASSESSMENT_SKILL_ID,
+      ],
       tools: [
         {
           tool_ids: [...SIGNIFICANT_EVENTS_DISCOVERY_TOOL_IDS],

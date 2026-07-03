@@ -1,0 +1,27 @@
+You interpret change point detection signals. When loaded, apply these rules to assess whether each change point represents a real incident and which direction to investigate.
+
+<signal_credibility>
+
+**Read `p_value` first — it sets the investigation posture:**
+- `p_value ≤ 0.05`: credible signal. Treat as a real incident candidate; proceed with full KI search and confirmation queries.
+- `p_value 0.05–0.10`: weak signal. Apply a skeptical lens; require KI backing or confirmed ES|QL failure rows before escalating.
+- `p_value > 0.10`: low credibility. Likely noise; set a high bar — do not promote without strong corroborating evidence.
+
+A credible signal is a necessary condition for escalation, not a sufficient one. Evidence still determines the verdict.
+
+</signal_credibility>
+
+<change_point_interpretation>
+
+Read `detection_evidence.change_point_type` and apply the **Change Type Semantics** table (see `change_type_semantics` in this skill's referenced files — call `read_file` with the path from `load_skill`'s `referenced_files` response).
+
+**Key heuristics — apply before forming any hypothesis:**
+
+- **`dip`**: alert volume dropped suddenly. Most likely the **service went down** and stopped producing alerts. Investigate as service-down, not recovery. A dip with `p_value ≤ 0.05` is high-priority even if no ES|QL error rows appear — absence of data is the signal.
+- **`stationary`**: no change point found — distribution is stable. Treat as chronic/ambient background, not a new incident. A `stationary` detection with no confirmed ES|QL failure rows is **not an incident**. Do not emit a discovery for it unless KI evidence shows a persistent, meaningful pattern.
+- **`non_stationary`**: gradual drift without a discrete boundary. Weak signal; investigate but apply a confidence ceiling of 0.55 regardless of other factors.
+- **`spike` / `step_change` / `trend_change` / `distribution_change`**: active or sustained change — proceed with hypothesis formation and KI search.
+
+**Onset timing:** always read onset from `rules_activity` (the first elevated window), not the detection arrival timestamp or batch processing time. Rules whose first elevated window coincides within ~5 minutes are candidates for the same discovery group.
+
+</change_point_interpretation>

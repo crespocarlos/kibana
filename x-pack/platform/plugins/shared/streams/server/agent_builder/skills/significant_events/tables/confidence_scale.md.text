@@ -1,0 +1,25 @@
+## Confidence scale
+
+**Base from p_value (failure hypotheses):**
+- `p_value ≤ 0.01` → 0.55–0.65
+- `p_value 0.01–0.05` → 0.40–0.55
+- `p_value 0.05–0.1` → 0.25–0.40
+- `p_value > 0.1` → below 0.25
+
+**Corroboration bonuses** (additive, max +0.10 each):
+- ≥2 evidences with `row_count > 0` confirming the failure pattern
+- KI backing present and causal chain aligns
+- Failure spans ≥2 detection windows with no recovery sign
+
+**Downward adjusters:**
+- Queries with `row_count = 0` outnumber confirmed (−0.10)
+- No KI match found (−0.10)
+- Single evidence only (−0.05)
+
+**Hard caps:**
+- All evidences have `row_count = 0` → cap at 0.40
+- No evidence calls made → cap at 0.40
+- No KI match for any cause → cap at 0.65
+- 0.90+ requires: `p_value ≤ 0.01`, ≥2 confirmed evidences, KI backing
+
+**`cause_kis` ceiling:** without KI backing you cannot confirm which user journey is at risk. Cap at 0.65 when `cause_kis` is empty.

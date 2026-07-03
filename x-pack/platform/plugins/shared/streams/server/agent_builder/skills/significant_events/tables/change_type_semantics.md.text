@@ -1,0 +1,11 @@
+| Value | Meaning | Likely causes |
+|---|---|---|
+| `spike` | Sudden increase in alert volume | Load surge, cascading failure, noisy rule |
+| `dip` | Sudden decrease in alert volume | Service down (no data to alert on), rule disabled, data pipeline failure |
+| `step_change` | Sustained level shift | Config change, new deployment, capacity change |
+| `trend_change` | Gradual directional shift | Growing workload, degrading performance, slow leak |
+| `distribution_change` | Overall distribution shifted | Mixed traffic pattern change, deployment rollout |
+| `non_stationary` | No discrete change point, but not stationary | Gradual drift, chronic instability — weak signal |
+| `stationary` | No change point found — distribution stable | Rule returned to normal, false positive, or noise |
+
+A `dip` is especially important — it often means a **service went DOWN** and stopped producing alerts. Investigate as service-down, not noise.

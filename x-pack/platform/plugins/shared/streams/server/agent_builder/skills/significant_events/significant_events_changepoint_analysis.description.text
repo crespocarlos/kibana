@@ -1,0 +1,1 @@
+Interpret change point detection signal change points and rate their credibility. Provides p_value thresholds, change-type heuristics (including the dip=service-down rule and stationary=not-an-incident rule), and onset-timing guidance. Load before forming any hypothesis about a detection batch.

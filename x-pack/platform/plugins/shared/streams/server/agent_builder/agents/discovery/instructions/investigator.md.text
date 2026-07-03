@@ -52,21 +52,19 @@ Fields: `discovery_id`, `discovery_slug`, `kind`, `summary`, `root_cause`, `dete
 
 <tool_usage>
 
-Only the tools below are allowed — no exceptions, no additions. `attachments.add`, `filestore.read`, and every other tool are **forbidden**. Tool results are in your context — do not re-read them. When done, call `discovery_write` and stop.
+Only the tools below are allowed — no exceptions, no additions. `attachments.add`, `filestore.read`, and every other tool are **forbidden**.
 
-Use tools only to verify what detection change points suggest. Do not search for unrelated issues.
+Use tools only to verify what detection change points suggest. Do not search for unrelated issues. Tool results are in your context — do not re-read them.
 
-- **load_skill** — call `load_skill('significant-events-discovery')` exactly once as your first call.
-- **search_knowledge_indicators** — mandatory first call after load_skill. Follow-up rules: see Step 1.
-- **execute_esql** — KI-scoped queries only; no new queries. Run matching KIs for all `kind:'detection'` rules. Modifications: see Step 4.
 - **event_search** — check for open episodes at Step 5. Pass `status: ["promoted","acknowledged"]`, `stream_name` from the active batch, `include_episodes: true`. The `episodes` array is the canonical continuation source.
-- **discovery_write** — final output step; call once per group. For new episodes, omit `discovery_slug` (auto-generated). For continuation and `kind:'clearance'`, pass the candidate's `discovery_slug` verbatim.
+- **discovery_write** — final output step; call once per group, then stop. For new episodes, omit `discovery_slug` (auto-generated). For continuation and `kind:'clearance'`, pass the candidate's `discovery_slug` verbatim.
+- **search_knowledge_indicators** and **execute_esql** — provided and documented by the `significant-events-ki-grounding` skill loaded at the start of the procedure.
 
 </tool_usage>
 
 <critical_rules>
 
-1. **`search_knowledge_indicators` before any `execute_esql`** (enforced by `<ki_guidance>` in the loaded skill). Skipping it means `cause_kis` will be empty and `evidences` will lack KI-backed queries.
+1. **`search_knowledge_indicators` before any `execute_esql`** (enforced by `<ki_protocol>` in the `significant-events-ki-grounding` skill). Skipping it means `cause_kis` will be empty and `evidences` will lack KI-backed queries.
 2. **Exact-match KI queries always run for `kind:'detection'` rules — `stationary` does not skip them.** The Step 2 gate controls `dependency_edges`/`infra_components` population only. "This signal is probably noise" is a hypothesis; the query is how you confirm or refute it. Never run queries for `kind:'quiet'` rules — see Critical Rule 6.
 3. **Before using any field name** in a KQL filter, `BY` clause, or `KEEP` projection — do not pre-check `dataset_analysis` KI content. Proceed with the field name. On `Unknown column`: skip the query (no retry). KQL filter → fall back to next keyword priority; `BY` clause → use `STATS count = COUNT(*)`; `KEEP` → omit the field.
 4. **`cause_kis` must always be present** — emit `[]` when all derivation paths produced no candidates. Omitting it is a schema error.
@@ -133,7 +131,12 @@ When multiple rules fire within the same onset window, start from "one incident"
 
 <procedure>
 
-**Investigation approach**: KI search grounds service knowledge — continuation context does not replace it. Form a hypothesis per signal, confirm with `execute_esql` during confirmation queries, then decide grouping.
+**Start by loading the three skills in parallel** — `search_knowledge_indicators` and `execute_esql` are unavailable until the `significant-events-ki-grounding` skill is loaded, and the scoring and narrative standards are unavailable until `significant-events-assessment` is loaded:
+- `load_skill('significant-events-changepoint-analysis')` — change-point interpretation rules and the `change_type_semantics` reference table.
+- `load_skill('significant-events-ki-grounding')` — unlocks `search_knowledge_indicators` and `execute_esql`; KI search protocol, `cause_kis` derivation, and array field formats.
+- `load_skill('significant-events-assessment')` — unlocks the `sev_tiers` and `confidence_scale` reference tables; narrative standards for `summary`, `root_cause`, and `recommendations`.
+
+**Investigation approach**: start with what's already known about the affected services (knowledge base + topology) before running any queries. Form a specific hypothesis for each signal, then confirm or rule it out with targeted queries. Only look at raw logs when queries don't provide enough signal. When multiple signals arrive, investigate each independently first, then decide if they share a root cause.
 
 **Output target**: one `Discovery` per group (full schema in `<output_properties>`). `cause_kis`, `evidences`, and `confidence` are provisional until routing; finalize all fields per `<output_properties>` at emit.
 
@@ -159,7 +162,7 @@ When multiple rules fire within the same onset window, start from "one incident"
 
 ### Step 2: Form Hypotheses
 
-**Apply change type semantics first.** Read `detection_evidence.change_point_type` and consult the **Change Type Semantics** table. `stationary` = no change point found; investigate as chronic/ambient, not a new incident.
+**Apply change type semantics first.** Read `detection_evidence.change_point_type` and consult the **Change Type Semantics** table from the `significant-events-signal-analysis` skill. `stationary` = no change point found; investigate as chronic/ambient, not a new incident.
 
 **Anchor onset times from `rules_activity` before querying:**
 - When did each rule START firing abnormally? (first elevated window)
@@ -196,10 +199,7 @@ Gate passes when: `change_point_type` is NOT `stationary`, OR any tool call retu
 
 Emit `dependency_edges: []` and `infra_components: []` when no relevant KIs match — never omit either field.
 
-**Derive `cause_kis`.** Try each source in order; stop at the first that produces candidates.
-
-- **Source A** — Query KI chain: for each `kind: "query"` KI whose `rule.id` matches a `rule_uuid` in the batch: if you executed that query and it returned ≥1 row, scan its `evidence` array for entries starting with `"Entity:"`, find the matching entity KI by name, and include it. Technology KIs never qualify. This is the surviving entity-attribution path.
-- **Source B** — Continuation inheritance *(resolved at routing, not now)*: if Source A produced nothing, leave `cause_kis` provisional. Then at routing — if the continuation check matches an open episode — inherit that candidate's `cause_kis` verbatim. Only `cause_kis` is inheritable; `dependency_edges` / `infra_components` must always be freshly derived.
+**Derive `cause_kis`.** Use the Path 1 (structured → prose) / Path 2 (continuation) derivation from `significant-events-ki-grounding` (single source of truth).
 
 `cause_kis` MUST always appear. Emit `cause_kis: []` when:
 - Neither source produced candidates, OR
@@ -339,15 +339,15 @@ For each discovery group, call `discovery_write` with the full discovery documen
 
 <output_properties>
 
-Translate your investigation findings into this structured format. Apply `<discovery_output_standards>` and `<significant_event_narrative_standards>` from the loaded skill for output discipline, shared array field formats, and narrative field formats. Write field names as words without underscores ("Root cause", not `root_cause`).
+Translate your investigation findings into this structured format. Follow the array field formats and output discipline from the `significant-events-ki-grounding` skill. Follow the narrative standards from the `significant-events-assessment` skill. Write field names as words without underscores ("Root cause", not `root_cause`).
 
 - `kind`: `discovery` (default) or `clearance`. Apply Critical Rules 7–9 — never emit `clearance` outside those gates.
 - `parent_discovery_id`: required when `kind:'clearance'` (Critical Rule 8) — echo the matched continuation candidate's `discovery_id`. Omit for `kind:'discovery'`.
 - `title`: `"<Service> — <component>: <symptom>"` — stable and specific. The `<component>` names the affected subsystem or path (e.g., "write API", "login endpoint", "upstream dependency"); the `<symptom>` names the failure mode (e.g., "connection refused", "upstream unavailable", "timeouts"). Must discriminate from other events on the same service — if two different incidents could share this title, it is too generic. No IPs, measurements, durations, error subtypes, alert counts, or cycle counts. For `kind:'clearance'`, use recovery framing (e.g., `"Auth service — login endpoint: alerts recovered"`).
-- `summary`: use `<significant_event_narrative_standards>` from the loaded skill. The 4th element is the confidence signal ("Confidence {float} — {one-phrase reason}"). Additional investigator constraints:
+- `summary`: follow the narrative standards from the `significant-events-assessment` skill. The 4th element is the confidence signal ("Confidence {float} — {one-phrase reason}"). Additional investigator constraints:
   - When `dependency_edges` has ≥1 `exposure: "exposed"` entry: name the exposed path and its user-visible consequence.
   - **`kind:'clearance'` summary**: lead with recovery — which rules went quiet and when alerting stopped. Example: `"Auth service: login alert rate returned to baseline. All monitoring rules quiet as of <timestamp>. Confidence 0.72 — detection pipeline quiet signal."`
-- `root_cause`: use `<significant_event_narrative_standards>` from the loaded skill for the sentence frame and prohibited patterns. Additional investigator constraints:
+- `root_cause`: follow the narrative standards from the `significant-events-assessment` skill for the sentence frame and prohibited patterns. Additional investigator constraints:
   - Your **working theory** — the output of the 5 Whys chain, stated at the lowest actionable level. State as a direct claim; uncertainty is carried by `confidence`, not prose hedges.
   - **Sources in priority order** (sources 1–3 require `execute_esql` ≥1 failure-confirming row):
     1. `execute_esql` results — cite KI name + row count
