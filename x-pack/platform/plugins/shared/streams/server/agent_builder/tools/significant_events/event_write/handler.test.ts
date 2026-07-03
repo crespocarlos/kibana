@@ -43,23 +43,28 @@ describe('eventsWriteHandler', () => {
     expect(typeof result.event_id).toBe('string');
   });
 
-  it('skips write when status is unchanged', async () => {
+  it('skips write when status is unchanged, comparing against the latest version', async () => {
+    // hits[0] is the oldest version (status: acknowledged), hits[1] is the latest (status: promoted).
+    // The handler must compare against hits.at(-1) — not hits[0] — to detect the true current status.
     const eventClient = {
       findByDiscoverySlug: jest.fn().mockResolvedValue({
-        hits: [{ event_id: 'existing-id', status: 'promoted' }],
+        hits: [
+          { event_id: 'old-id', status: 'acknowledged' },
+          { event_id: 'latest-id', status: 'promoted' },
+        ],
       }),
       bulkCreate: jest.fn(),
     };
 
     const result = await eventsWriteHandler({
       eventClient: eventClient as never,
-      input: { ...baseInput, discovery_slug: 'checkout__latency-abc12345' },
+      input: { ...baseInput, discovery_slug: 'checkout__latency-abc12345', status: 'promoted' },
     });
 
     expect(eventClient.bulkCreate).not.toHaveBeenCalled();
     expect(result.written).toBe(false);
     expect(result.reason).toBe('status_unchanged');
-    expect(result.event_id).toBe('existing-id');
+    expect(result.event_id).toBe('latest-id');
   });
 
   it('generates a synthetic slug and skips dedup lookup when discovery_slug is absent', async () => {
@@ -78,10 +83,14 @@ describe('eventsWriteHandler', () => {
     expect(result.discovery_slug).toMatch(/^agent-event-[a-f0-9]{8}$/);
   });
 
-  it('writes even when previous event exists with a different status', async () => {
+  it('sets previous_event_id to the latest version, not the oldest', async () => {
+    // hits are sorted ASC by @timestamp — hits.at(-1) is the tip of the version chain.
     const eventClient = {
       findByDiscoverySlug: jest.fn().mockResolvedValue({
-        hits: [{ event_id: 'prev-id', status: 'acknowledged' }],
+        hits: [
+          { event_id: 'oldest-id', status: 'acknowledged' },
+          { event_id: 'latest-id', status: 'acknowledged' },
+        ],
       }),
       bulkCreate: jest.fn().mockResolvedValue(undefined),
     };
@@ -93,7 +102,7 @@ describe('eventsWriteHandler', () => {
 
     expect(eventClient.bulkCreate).toHaveBeenCalledTimes(1);
     const written = eventClient.bulkCreate.mock.calls[0][0][0];
-    expect(written.previous_event_id).toBe('prev-id');
+    expect(written.previous_event_id).toBe('latest-id');
     expect(result.written).toBe(true);
   });
 });

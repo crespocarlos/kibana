@@ -63,7 +63,7 @@ export async function eventsWriteHandler({
   const isSynthetic = !input.discovery_slug;
 
   const existing = isSynthetic ? null : await eventClient.findByDiscoverySlug(slug);
-  const latestEvent = existing?.hits[0];
+  const latestEvent = existing?.hits.at(-1);
 
   // Skip write if status unchanged
   if (latestEvent && latestEvent.status === input.status) {
