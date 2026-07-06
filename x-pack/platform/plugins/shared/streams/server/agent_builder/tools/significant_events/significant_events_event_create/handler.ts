@@ -6,7 +6,10 @@
  */
 
 import type { EventClient } from '../../../../lib/significant_events/events';
-import { eventsWriteHandler, type EventsWriteInput } from '../event_write/handler';
+import {
+  eventsWriteHandler,
+  type EventsWriteInput,
+} from '../significant_events_event_write/handler';
 
 /**
  * Chat-initiated event input — a subset of EventsWriteInput without workflow-specific fields.

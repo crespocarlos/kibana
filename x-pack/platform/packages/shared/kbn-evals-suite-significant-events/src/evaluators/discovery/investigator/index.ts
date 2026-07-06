@@ -16,7 +16,6 @@ import {
   createConfidenceCalibrationEvaluator,
 } from '../common/scores_calibration';
 import { createEvidenceDescriptionEvaluator } from '../common/evidence_quality';
-import { schemaValidityInvestigatorEvaluator } from './schema/schema_validity';
 import { groupingCorrectnessEvaluator } from './grouping/grouping_correctness';
 import { evidenceCollectionEvaluator } from './evidences/evidence_collection';
 
@@ -27,7 +26,6 @@ export const createInvestigatorEvaluators = (
   scenarioCriteria?: CreateScenarioCriteriaLlmEvaluatorOptions
 ): InvestigatorEvaluator[] => {
   const codeEvaluators: InvestigatorEvaluator[] = [
-    schemaValidityInvestigatorEvaluator,
     groupingCorrectnessEvaluator,
     evidenceCollectionEvaluator,
     createInvestigatorToolUsageEvaluator(),

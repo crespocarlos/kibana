@@ -18,7 +18,7 @@ import {
 import {
   SIGNIFICANT_EVENTS_DISCOVERY_WRITE_TOOL_ID,
   SIGNIFICANT_EVENTS_EVENTS_WRITE_TOOL_ID,
-} from './significant_events/tool_ids';
+} from './significant_events';
 import { createMockGetScopedClients } from '../utils/test_helpers';
 import type { StreamsServer } from '../../types';
 import type { EbtTelemetryClient } from '../../lib/telemetry/ebt';

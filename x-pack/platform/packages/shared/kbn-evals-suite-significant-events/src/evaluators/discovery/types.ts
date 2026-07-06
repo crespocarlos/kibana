@@ -31,9 +31,7 @@ export interface InvestigatorAgentOutput extends AgentOutputBase {
 
 export interface InvestigatorEvaluationExample {
   input: {
-    episodeSuffix?: string;
     detections: Array<Partial<Detection>>;
-    continuationCandidates?: Array<Partial<Discovery>>;
   };
   output: ExampleOutputBase & {
     /**

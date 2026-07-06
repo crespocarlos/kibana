@@ -5,12 +5,45 @@
  * 2.0.
  */
 
-import { platformCoreTools, platformSignificantEventsTools } from '@kbn/agent-builder-common';
+import {
+  internalTools,
+  platformCoreTools,
+  platformStreamsSigEventsTools,
+} from '@kbn/agent-builder-common';
 import { extractToolCallIds } from '../../utils/tool_usage';
 
 const { executeEsql: TOOL_ID_EXECUTE_ESQL } = platformCoreTools;
-const { searchKnowledgeIndicators: TOOL_ID_KI_SEARCH } = platformSignificantEventsTools;
+const {
+  searchKnowledgeIndicators: TOOL_ID_KI_SEARCH,
+  eventsWrite: TOOL_ID_EVENTS_WRITE,
+  discoveryWrite: TOOL_ID_DISCOVERY_WRITE,
+} = platformStreamsSigEventsTools;
+const { readFile: TOOL_ID_READ_FILE } = internalTools;
 import type { DiscoveryJudgeEvaluator } from '../../types';
+
+/** Score the output-tool pair (events_write + discovery_write) proportionally. */
+const scoreOutputTools = (
+  calledEventsWrite: boolean,
+  calledDiscoveryWrite: boolean
+): { score: number; label: string; explanation: string } | null => {
+  if (calledEventsWrite && calledDiscoveryWrite) {
+    return null; // pass through — let the trajectory score stand
+  }
+  if (!calledEventsWrite && !calledDiscoveryWrite) {
+    return {
+      score: 0,
+      label: 'missing-output-write',
+      explanation:
+        'Neither events_write nor discovery_write was called — both are required to persist the decision and stamp the episode',
+    };
+  }
+  const missing = !calledEventsWrite ? 'events_write' : 'discovery_write';
+  return {
+    score: 0.5,
+    label: 'partial-output-write',
+    explanation: `${missing} was not called — both events_write (persist decision) and discovery_write (stamp episode) are required`,
+  };
+};
 
 export const createToolUsageEvaluator = (): DiscoveryJudgeEvaluator => ({
   name: 'trajectory',
@@ -36,6 +69,18 @@ export const createToolUsageEvaluator = (): DiscoveryJudgeEvaluator => ({
     const calledTools = new Set(extractToolCallIds(output.steps ?? []));
     const calledKiSearch = calledTools.has(TOOL_ID_KI_SEARCH);
     const calledEsql = calledTools.has(TOOL_ID_EXECUTE_ESQL);
+    const calledReadFile = calledTools.has(TOOL_ID_READ_FILE);
+    const calledEventsWrite = calledTools.has(TOOL_ID_EVENTS_WRITE);
+    const calledDiscoveryWrite = calledTools.has(TOOL_ID_DISCOVERY_WRITE);
+
+    if (!calledReadFile) {
+      return Promise.resolve({
+        score: 0,
+        label: 'missing-read-file',
+        explanation:
+          'read_file was not called — required to load skill reference tables (change_type_semantics, sev_tiers, confidence_scale)',
+      });
+    }
 
     if (allEvidencesHaveQuery) {
       // All evidences already carry queries — judge should re-verify directly via execute_esql
@@ -64,6 +109,10 @@ export const createToolUsageEvaluator = (): DiscoveryJudgeEvaluator => ({
             'execute_esql called correctly but search_knowledge_indicators was also called — all input evidences carried esql_query, so KI search was unnecessary',
         });
       }
+      const outputCheck = scoreOutputTools(calledEventsWrite, calledDiscoveryWrite);
+      if (outputCheck) {
+        return Promise.resolve(outputCheck);
+      }
       return Promise.resolve({
         score: 1,
         label: 'correct',
@@ -74,13 +123,20 @@ export const createToolUsageEvaluator = (): DiscoveryJudgeEvaluator => ({
 
     const expected = [TOOL_ID_KI_SEARCH, TOOL_ID_EXECUTE_ESQL];
     const missing = expected.filter((t) => !calledTools.has(t));
-    const score = (expected.length - missing.length) / expected.length;
+    const trajectoryScore = (expected.length - missing.length) / expected.length;
+
+    const outputCheck = scoreOutputTools(calledEventsWrite, calledDiscoveryWrite);
+    if (outputCheck) {
+      return Promise.resolve(outputCheck);
+    }
 
     return Promise.resolve({
-      score,
-      label: score === 1 ? 'correct' : 'missing-tools',
+      score: trajectoryScore,
+      label: trajectoryScore === 1 ? 'correct' : 'missing-tools',
       explanation:
-        score === 1 ? 'Correctly called all tools' : `Missing tools: ${missing.join(', ')}`,
+        trajectoryScore === 1
+          ? 'Correctly called all tools'
+          : `Missing tools: ${missing.join(', ')}`,
     });
   },
 });

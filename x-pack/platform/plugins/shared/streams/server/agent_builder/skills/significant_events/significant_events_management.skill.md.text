@@ -15,7 +15,7 @@ Examples of conversation signals that may indicate a SignificantEvent:
 </significant_events_concept>
 
 <tools>
-- **event_search** — search existing significant events by query, stream, and/or status. Always run this first before creating an event to avoid duplicates. `query` is optional; omit `stream_name` for cross-stream searches.
+- **event_search** — search existing significant events by query, stream, and/or latest `state`. Always run this first before creating an event to avoid duplicates. `query` is optional; omit `stream_names` for cross-stream searches. Use `state: "open"` to focus on active episodes.
 - **event_create** — create a new significant event. Only after confirming no similar event exists. The system generates internal identifiers and timestamps automatically.
 - **event_status_update** — update an existing event's status to `promoted`, `acknowledged`, or `demoted`. Creates a new event version on success.
 </tools>
@@ -111,22 +111,22 @@ Example: search existing events first
 Tool: `event_search`
 {
   "query": "checkout latency spike with timeout burst",
-  "stream_name": "logs.checkout",
-  "status": ["promoted", "acknowledged"]
+  "stream_names": ["logs.checkout"],
+  "state": "open"
 }
 
 Example: filter-only search (no query text)
 Tool: `event_search`
 {
-  "stream_name": "logs.checkout",
-  "status": ["promoted", "acknowledged"]
+  "stream_names": ["logs.checkout"],
+  "state": "open"
 }
 
-Example: cross-stream search (no stream_name)
+Example: cross-stream search (no stream_names)
 Tool: `event_search`
 {
   "query": "timeout burst",
-  "status": ["promoted", "acknowledged"]
+  "state": "open"
 }
 
 Example: create a new significant event

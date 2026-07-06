@@ -53,6 +53,7 @@ const eventsWriteSchema = significantEventSchema
     ),
     criticality: z.number().int().min(0).max(100),
     confidence: z.number().min(0).max(1),
+    root_cause: z.string().optional(),
     conversation_id: z.string().optional(),
   });
 

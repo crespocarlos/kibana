@@ -20,6 +20,7 @@
 - All evidences have `row_count = 0` → cap at 0.40
 - No evidence calls made → cap at 0.40
 - No KI match for any cause → cap at 0.65
+- `change_point_type: "non_stationary"` (gradual drift, no discrete boundary) → cap at 0.55
 - 0.90+ requires: `p_value ≤ 0.01`, ≥2 confirmed evidences, KI backing
 
-**`cause_kis` ceiling:** without KI backing you cannot confirm which user journey is at risk. Cap at 0.65 when `cause_kis` is empty.
+**`cause_kis` ceiling:** without KI backing you cannot confirm which user journey is at risk. Cap at 0.65 when `cause_kis` is empty. This ceiling applies to active events (`promoted`/`acknowledged`) only — it does not apply when confirming recovery (`demoted`/`resolved`).

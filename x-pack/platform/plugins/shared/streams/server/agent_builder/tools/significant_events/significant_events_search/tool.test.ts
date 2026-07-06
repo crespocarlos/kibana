@@ -10,39 +10,31 @@ import { createMockToolContext, invokeHandler } from '../../../utils/test_helper
 import type { GetScopedClients } from '../../../../routes/types';
 import type { StreamsServer } from '../../../../types';
 import { assertSignificantEventsAccess } from '../../../../routes/utils/assert_significant_events_access';
-import { eventsWriteHandler } from '../event_write/handler';
-import { createEventTool, SIGNIFICANT_EVENTS_CREATE_EVENT_TOOL_ID } from './tool';
+import { searchEventsToolHandler } from './handler';
+import { createSearchEventsTool, SIGNIFICANT_EVENTS_SEARCH_TOOL_ID } from './tool';
 
 jest.mock('../../../../routes/utils/assert_significant_events_access', () => ({
   assertSignificantEventsAccess: jest.fn(),
 }));
 
-jest.mock('../event_write/handler', () => ({
-  eventsWriteHandler: jest.fn(),
+jest.mock('./handler', () => ({
+  searchEventsToolHandler: jest.fn(),
 }));
 
-describe('event_create tool', () => {
-  const telemetry = { trackAgentToolEventCreate: jest.fn() };
-
+describe('event_search tool', () => {
   it('uses expected tool id', () => {
-    const tool = createEventTool({
+    const tool = createSearchEventsTool({
       getScopedClients: jest.fn() as unknown as GetScopedClients,
       server: {} as StreamsServer,
       logger: loggingSystemMock.createLogger(),
-      telemetry: telemetry as never,
     });
 
-    expect(tool.id).toBe(SIGNIFICANT_EVENTS_CREATE_EVENT_TOOL_ID);
+    expect(tool.id).toBe(SIGNIFICANT_EVENTS_SEARCH_TOOL_ID);
   });
 
-  it('returns success result', async () => {
+  it('returns events on success', async () => {
     (assertSignificantEventsAccess as jest.Mock).mockResolvedValue(undefined);
-    (eventsWriteHandler as jest.Mock).mockResolvedValue({
-      event_id: 'e1',
-      discovery_slug: 'agent-event-abcd1234',
-      status: 'promoted',
-      written: true,
-    });
+    (searchEventsToolHandler as jest.Mock).mockResolvedValue({ events: [{ event_id: 'e1' }] });
 
     const getScopedClients = jest.fn().mockResolvedValue({
       getEventClient: jest.fn().mockReturnValue({}),
@@ -50,24 +42,42 @@ describe('event_create tool', () => {
       uiSettingsClient: {},
     });
 
-    const tool = createEventTool({
+    const tool = createSearchEventsTool({
       getScopedClients: getScopedClients as unknown as GetScopedClients,
       server: {} as StreamsServer,
       logger: loggingSystemMock.createLogger(),
-      telemetry: telemetry as never,
     });
 
     const result = await invokeHandler(
       tool as never,
-      {
-        title: 'T',
-        summary: 'S',
-        root_cause: 'R',
-        stream_names: ['logs.a'],
-        criticality: 40,
-        confidence: 0.8,
-        recommendations: ['open incident'],
-      },
+      { stream_names: ['logs.checkout'], state: 'open' },
+      createMockToolContext()
+    );
+
+    if ('results' in result) {
+      expect(result.results[0].type).toBe('other');
+    }
+  });
+
+  it('accepts cross-stream searches without stream_names', async () => {
+    (assertSignificantEventsAccess as jest.Mock).mockResolvedValue(undefined);
+    (searchEventsToolHandler as jest.Mock).mockResolvedValue({ events: [{ event_id: 'e2' }] });
+
+    const getScopedClients = jest.fn().mockResolvedValue({
+      getEventClient: jest.fn().mockReturnValue({}),
+      licensing: {},
+      uiSettingsClient: {},
+    });
+
+    const tool = createSearchEventsTool({
+      getScopedClients: getScopedClients as unknown as GetScopedClients,
+      server: {} as StreamsServer,
+      logger: loggingSystemMock.createLogger(),
+    });
+
+    const result = await invokeHandler(
+      tool as never,
+      { query: 'latency', state: 'closed' },
       createMockToolContext()
     );
 

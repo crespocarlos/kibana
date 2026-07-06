@@ -8,7 +8,7 @@
 import { SIGNIFICANT_EVENTS_INVESTIGATOR_AGENT_ID } from '@kbn/streams-plugin/server';
 import { tags } from '@kbn/scout';
 import { getCurrentTraceId } from '@kbn/evals';
-import type { Detection, Discovery } from '@kbn/significant-events-schema';
+import type { Detection } from '@kbn/significant-events-schema';
 import type { GcsConfig } from '../../src/data_generators/replay';
 import {
   replayIntoManagedStream,
@@ -35,15 +35,15 @@ import {
   createInvestigatorEvaluators,
   createContinuationEvaluators,
 } from '../../src/evaluators/discovery';
-import { parseDiscoveries } from '../../src/evaluators/discovery/utils/parse_agent_output';
+import { extractDiscoveriesFromToolCall } from '../../src/evaluators/discovery/utils/parse_agent_output';
 import { buildInvestigatorInput } from '../../src/evaluators/discovery/investigator/build_agent_input';
-import {
-  toContinuationCandidate,
-  mergeContinuationCandidates,
-} from '../../src/evaluators/discovery/investigator/continuation/continuation_candidate';
+import { toSignificantEventSeed } from '../../src/evaluators/discovery/investigator/continuation/continuation_candidate';
 import type { ContinuationCycle } from '../../src/evaluators/discovery/investigator/continuation/continuation_stability';
 
 const TRUST_UPSTREAM = process.env.SIGEVENTS_TRUST_UPSTREAM === 'true';
+
+/** Events data stream — the same index the judge writes to via events_write. */
+const SIGNIFICANT_EVENTS_EVENTS_DATA_STREAM = '.significant_events-events';
 
 evaluate.describe(
   'Significant Events Discovery - Investigator',
@@ -251,11 +251,7 @@ evaluate.describe(
                     );
 
                     // Same message shape as the production batch.
-                    const agentInput = buildInvestigatorInput({
-                      episodeSuffix: Date.now().toString(36).slice(-8),
-                      detections,
-                      continuationCandidates: input.continuation_candidates ?? [],
-                    });
+                    const agentInput = buildInvestigatorInput({ detections });
 
                     const converseResult = await agentBuilderClient.converse({
                       agentId: SIGNIFICANT_EVENTS_INVESTIGATOR_AGENT_ID,
@@ -263,8 +259,8 @@ evaluate.describe(
                     });
 
                     return {
-                      // Agent returns JSON in the final message (no emit tool on converse); parse it.
-                      discoveries: parseDiscoveries(converseResult.message),
+                      // Agent outputs via discovery_write tool calls; extract discoveries from steps.
+                      discoveries: extractDiscoveriesFromToolCall(converseResult.steps),
                       // Thread the input detections through so snapshot-mode evaluators can access them.
                       inputDetections: detections,
                       // Raw steps — trajectory/grounding evaluators read tool calls from these.
@@ -411,47 +407,48 @@ evaluate.describe(
                     );
 
                     const cycles: ContinuationCycle[] = [];
-                    let continuationCandidates: Array<Partial<Discovery>> = [];
 
-                    // Feed one detection per cycle, oldest first, threading prior discoveries back as
-                    // candidates. A fresh detection_id per firing simulates re-arrival (and lets the
-                    // rule-uuid path re-fire the same rule); a unique episode suffix per cycle makes any
-                    // wrongly-minted slug observable.
+                    // Feed one detection per cycle, oldest first. After each cycle, seed a
+                    // SignificantEvent into the events data stream for each produced discovery so the
+                    // next cycle's `event_search state: "open"` call finds it — mirroring what the
+                    // judge would write between investigator invocations in production.
                     for (let i = 0; i < run.sequence.length; i++) {
                       const base = run.sequence[i];
                       const detection: Detection = {
                         ...base,
                         detection_id: `${base.detection_id ?? base.rule_uuid}-fire-${i}`,
                       };
-                      const agentInput = buildInvestigatorInput({
-                        episodeSuffix: `${Date.now().toString(36).slice(-6)}${i}`,
-                        detections: [detection],
-                        continuationCandidates,
-                      });
+                      const agentInput = buildInvestigatorInput({ detections: [detection] });
 
                       const converseResult = await agentBuilderClient.converse({
                         agentId: SIGNIFICANT_EVENTS_INVESTIGATOR_AGENT_ID,
                         input: agentInput,
                       });
 
-                      const discoveries = parseDiscoveries(converseResult.message);
+                      const discoveries = extractDiscoveriesFromToolCall(converseResult.steps);
                       const producedSlugs = discoveries
                         .map((discovery) => discovery.discovery_slug)
                         .filter((slug): slug is string => Boolean(slug));
 
                       cycles.push({ ruleName: detection.rule_name, producedSlugs });
 
-                      // Thread produced discoveries into the next cycle's candidates, latest per slug.
-                      const produced = discoveries.map((discovery, idx) =>
-                        toContinuationCandidate({
-                          discovery,
-                          discoveryId: `${discovery.discovery_slug ?? 'unknown'}-cycle-${i}-${idx}`,
-                        })
-                      );
-                      continuationCandidates = mergeContinuationCandidates([
-                        ...continuationCandidates,
-                        ...produced,
-                      ]);
+                      // Seed a SignificantEvent per produced discovery so event_search resolves it
+                      // as an open episode in subsequent cycles.
+                      for (const [idx, discovery] of discoveries.entries()) {
+                        if (!discovery.discovery_slug) continue;
+                        await esClient.index({
+                          index: SIGNIFICANT_EVENTS_EVENTS_DATA_STREAM,
+                          document: toSignificantEventSeed({
+                            discovery,
+                            eventId: `${discovery.discovery_slug}-cycle-${i}-${idx}`,
+                          }),
+                        });
+                      }
+                      if (producedSlugs.length > 0) {
+                        await esClient.indices.refresh({
+                          index: SIGNIFICANT_EVENTS_EVENTS_DATA_STREAM,
+                        });
+                      }
                     }
 
                     return { cycles, traceId: getCurrentTraceId() };

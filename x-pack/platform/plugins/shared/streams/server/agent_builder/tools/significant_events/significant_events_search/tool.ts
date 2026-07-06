@@ -10,7 +10,6 @@ import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinToolDefinition, StaticToolRegistration } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/core/server';
 import { i18n } from '@kbn/i18n';
-import { significantEventStatusSchema } from '@kbn/significant-events-schema';
 import { z } from '@kbn/zod/v4';
 import dedent from 'dedent';
 import type { GetScopedClients } from '../../../../routes/types';
@@ -27,37 +26,32 @@ const searchEventsSchema = z.object({
     .optional()
     .describe(
       i18n.translate('xpack.streams.agentBuilder.tools.eventSearch.schema.query', {
-        defaultMessage: 'Optional text search in event title.',
+        defaultMessage:
+          'Optional substring search over the event title and summary fields. ' +
+          'Use it to narrow results to a known incident phrase or service name. ' +
+          'Matching is case-insensitive and not semantic — omit it when you want all episodes for a stream or state.',
       })
     ),
-  stream_name: z
-    .string()
+  stream_names: z
+    .array(z.string())
     .optional()
     .describe(
-      i18n.translate('xpack.streams.agentBuilder.tools.eventSearch.schema.streamName', {
-        defaultMessage: 'Optional stream name to scope the search.',
+      i18n.translate('xpack.streams.agentBuilder.tools.eventSearch.schema.streamNames', {
+        defaultMessage:
+          'Optional list of stream names to scope the search. Omit to search across all streams.',
       })
     ),
-  status: z
-    .array(significantEventStatusSchema)
+  state: z
+    .enum(['open', 'closed'])
     .optional()
     .describe(
-      i18n.translate('xpack.streams.agentBuilder.tools.eventSearch.schema.status', {
-        defaultMessage: 'Optional event status filters.',
+      i18n.translate('xpack.streams.agentBuilder.tools.eventSearch.schema.state', {
+        defaultMessage:
+          'Optional latest-event state filter. `open` matches latest status promoted/acknowledged; `closed` matches any latest status not in that open set.',
       })
     ),
   page: z.number().int().min(1).optional().default(1),
   per_page: z.number().int().min(1).max(100).optional().default(20),
-  include_episodes: z
-    .boolean()
-    .optional()
-    .describe(
-      i18n.translate('xpack.streams.agentBuilder.tools.eventSearch.schema.includeEpisodes', {
-        defaultMessage:
-          'When true, also returns open discovery documents linked to the matched events. ' +
-          'Use this for episode continuation checks in the discovery workflow.',
-      })
-    ),
 });
 
 export function createSearchEventsTool({
@@ -74,18 +68,15 @@ export function createSearchEventsTool({
     type: ToolType.builtin,
     description: dedent`
       ${i18n.translate('xpack.streams.agentBuilder.tools.eventSearch.description.line1', {
-        defaultMessage: 'Search significant events across all streams or a specific stream.',
+        defaultMessage:
+          'Search latest significant events per slug across all streams or a filtered set.',
       })}
 
       ${i18n.translate('xpack.streams.agentBuilder.tools.eventSearch.description.line2', {
         defaultMessage:
-          'Use this before creating or updating events to understand current event state.',
-      })}
-
-      ${i18n.translate('xpack.streams.agentBuilder.tools.eventSearch.description.line3', {
-        defaultMessage:
-          'Set include_episodes: true to also fetch open discovery documents for the matched events, ' +
-          'enabling deduplication and episode continuation in the discovery workflow.',
+          'Use `state: "open"` to return latest episodes whose status is promoted/acknowledged. ' +
+          'Use `state: "closed"` to return latest episodes whose status is not promoted/acknowledged. ' +
+          'If `state` is omitted, returns all latest episodes.',
       })}
     `,
     schema: searchEventsSchema,
@@ -95,13 +86,11 @@ export function createSearchEventsTool({
       const { request } = context;
 
       try {
-        const { getEventClient, getDiscoveryClient, licensing, uiSettingsClient } =
-          await getScopedClients({ request });
+        const { getEventClient, licensing, uiSettingsClient } = await getScopedClients({ request });
         await assertSignificantEventsAccess({ server, licensing, uiSettingsClient });
 
         const data = await searchEventsToolHandler({
           eventClient: getEventClient(),
-          discoveryClient: toolParams.include_episodes ? getDiscoveryClient() : undefined,
           params: toolParams,
         });
 
