@@ -1,1 +1,0 @@
-Produce calibrated scores and operator-facing narratives for significant events. Provides criticality and confidence calibration rules (with SEV-tier and confidence-scale reference tables), narrative standards for summary/root_cause/recommendations, and output discipline (no PII/payloads). Load when scoring findings and writing event fields.

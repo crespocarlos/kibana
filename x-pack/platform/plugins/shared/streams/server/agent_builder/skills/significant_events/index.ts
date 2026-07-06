@@ -12,14 +12,6 @@ export {
 export { createSignificantEventsMemorySkill } from './significant_events_memory_skill';
 export { createSignificantEventsOnboardingSkill } from './significant_events_onboarding_skill';
 export {
-  significantEventsChangepointAnalysisSkill,
-  SIGNIFICANT_EVENTS_CHANGEPOINT_ANALYSIS_SKILL_ID,
-} from './significant_events_changepoint_analysis_skill';
-export {
   significantEventsKIGroundingSkill,
   SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID,
 } from './significant_events_ki_grounding_skill';
-export {
-  significantEventsAssessmentSkill,
-  SIGNIFICANT_EVENTS_ASSESSMENT_SKILL_ID,
-} from './significant_events_assessment_skill';

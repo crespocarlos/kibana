@@ -27,6 +27,7 @@ const discoveryWriteSchema = discoverySchema
   .pick({
     kind: true,
     discovery_id: true,
+    discovery_slug: true,
     title: true,
     summary: true,
     root_cause: true,
@@ -47,21 +48,8 @@ const discoveryWriteSchema = discoverySchema
     workflow_execution_id: true,
     conversation_id: true,
   })
+  .partial({ discovery_slug: true, discovery_id: true })
   .extend({
-    discovery_slug: discoverySchema.shape.discovery_slug.optional().describe(
-      i18n.translate('xpack.streams.agentBuilder.tools.discoveryWrite.schema.discoverySlug', {
-        defaultMessage:
-          'Episode identifier. Omit for new episodes — the tool generates a unique slug from the primary stream and rule names. Pass verbatim for continuation writes (reuse the slug returned by a prior discovery_write or from event_search results).',
-      })
-    ),
-    discovery_id: discoverySchema.shape.discovery_id.optional().describe(
-      i18n.translate('xpack.streams.agentBuilder.tools.discoveryWrite.schema.discoveryId', {
-        defaultMessage:
-          'Optional explicit discovery_id. Auto-generated when omitted. Required for "handled" kind to reference the discovery being stamped.',
-      })
-    ),
-    criticality: z.number().int().min(0).max(100),
-    confidence: z.number().min(0).max(1),
     dedup_window: z
       .string()
       .default('now-1h')

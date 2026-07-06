@@ -10,11 +10,7 @@ import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinToolDefinition, StaticToolRegistration } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/core/server';
 import { i18n } from '@kbn/i18n';
-import {
-  significantEventSchema,
-  significantEventStatusSchema,
-} from '@kbn/significant-events-schema';
-import { z } from '@kbn/zod/v4';
+import { significantEventSchema } from '@kbn/significant-events-schema';
 import dedent from 'dedent';
 import type { EbtTelemetryClient } from '../../../../lib/telemetry/ebt';
 import type { GetScopedClients } from '../../../../routes/types';
@@ -36,15 +32,7 @@ const createEventSchema = significantEventSchema
     confidence: true,
     recommendations: true,
   })
-  .extend({
-    status: significantEventStatusSchema.optional().describe(
-      i18n.translate('xpack.streams.agentBuilder.tools.eventCreate.schema.status', {
-        defaultMessage: 'Status for the new event.',
-      })
-    ),
-    criticality: z.number().int().min(0).max(100),
-    confidence: z.number().min(0).max(1),
-  });
+  .partial({ status: true });
 
 export function createEventTool({
   getScopedClients,

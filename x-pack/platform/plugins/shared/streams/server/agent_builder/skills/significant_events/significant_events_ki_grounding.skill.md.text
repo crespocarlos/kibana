@@ -54,7 +54,7 @@ You perform knowledge-indicator-grounded investigation for the Significant Event
 
 `"<rule_uuid> → <query_ki.id>"` (match) or `"<rule_uuid> → NO MATCH"`
 
-Match criteria: `query_ki.rule.id` equals `rule_uuid` **exactly** (character for character) AND `query_ki.rule.backed` is `true`. `backed: false` entries are rules never promoted to active alerts — skip them.
+Match criteria: `query_ki.rule.id` equals `rule_uuid` **exactly** AND `query_ki.rule.backed` is `true`. `backed: false` entries are rules never promoted to active alerts — skip them.
 
 Scan the **entire** query KI list for each rule before writing NO MATCH. A "no confirming query available" disposition is only valid once the scan is complete and no match was found.
 
@@ -81,7 +81,6 @@ After:  FROM logs.* | WHERE @timestamp >= "2026-06-11T15:03:00Z" AND @timestamp 
 
 **`result: found`** means the query returned rows consistent with the failure hypothesis. Healthy transaction logs are NOT confirmation — describe as: "Testing: [hypothesis]. Expected if true: [error pattern]. Found: [N rows, no error signature]. Verdict: refutes or inconclusive."
 
-**`description` format (required per evidence entry):** document a hypothesis test, not just an observation. Structure: `"Testing: [what hypothesis this query tests]. Expected if true: [what rows would look like]. Found: [count, pattern, or 'no matching rows']. Verdict: [confirms / refutes / inconclusive — and why]."` No payload values.
 
 **Deduplication before executing:**
 - Identical query bodies (METADATA stripped, KEEP/SORT/LIMIT appended): execute once, write one `evidences` entry per KI.
@@ -111,7 +110,7 @@ Emit these consistently in every `discovery_write` call:
 - `cause_kis` — always emit; `[]` when no path produced candidates. Each entry: `name` (from `feature.id`), `stream_name` (from `feature.stream_name`). Never add a `confirmed` field.
 - `dependency_edges` — always emit; `[]` when empty. Each entry: `source`, `target`, `protocol` (omit if absent), `exposure`.
 - `infra_components` — always emit; `[]` when empty. Each entry: `title` (omit if absent), `workloads`, `exposure`.
-- `evidences` — always emit; `[]` only when no tool calls were made. Each entry: `rule_name`, `rule_uuid`, `stream_name`, `result`, `row_count`, `esql_query` (exact string as sent; `null` for quiet-rule dispositions), `description`, `collected_at`. No payload values in `description`.
+- `evidences` — always emit; `[]` only when no tool calls were made. Each entry: `rule_name`, `rule_uuid`, `stream_name`, `result`, `row_count`, `esql_query` (exact string as sent; `null` for quiet-rule dispositions), `description`, `collected_at`.
 
 **Secondary topology signals** (only when no Dependency-type KI covers the edge):
 - `meta.downstream_services` on entity KIs: emit edges `source` = entity name, `target` = service (strip `:port`).

@@ -84,9 +84,8 @@ Verify in uncertainty order: `empty/error` first, then stale, then fresh `found`
 
 <procedure>
 
-**Start by loading the two skills in parallel:**
-- `load_skill('significant-events-changepoint-analysis')`
-- `load_skill('significant-events-assessment')`
+**Start by loading the skill:**
+- `load_skill('significant-events-ki-grounding')`
 
 **Review approach**: read all hypotheses before reaching for any tool. For each item, check `kind` first — it determines which evaluation path to follow.
 
@@ -107,7 +106,7 @@ If the challenge surfaces a clear error, correct the lean. Remaining uncertainty
 
 ### Step 1: Signal Credibility
 
-p_value and change_point_type come from `detections[]`. Each entry carries `p_value` and `change_point_type` directly. Apply the signal credibility and change-type interpretation guidelines from the loaded `significant-events-changepoint-analysis` skill; read the `change_type_semantics` referenced file for change-type heuristics.
+p_value and change_point_type come from `detections[]`. Each entry carries `p_value` and `change_point_type` directly. Consult the `p_value` and `change_point_type` field descriptions in the `discovery_write` tool schema for credibility thresholds and type semantics.
 
 - Empty `cause_kis` + empty `evidences` = no KI backing — reflect in criticality.
 
@@ -123,11 +122,10 @@ Dispatch is simultaneous for all items in the batch — classify every item befo
 - `kind:discovery`: re-verify evidences[] in uncertainty order — `empty/error` first, then stale, then fresh `found`. Use the batched budget. `promoted` needs ≥1 `confirmed: true`.
 - `kind:clearance`: re-run ONLY when all evidences[] have `result: "error"`. Do not re-run for age or `result: "empty"`.
 
-**`execute_esql` modifications — apply before every call:**
-- Strip `METADATA _id, _source` from every query.
-- Row-level queries (no `STATS`, no `BY`, no `LIMIT`): append `| KEEP @timestamp, <text-field> | SORT @timestamp DESC | LIMIT 3`. Text field: ONLY `body.text` (OTel) or `message` (ECS). Retry on 0 rows + unknown schema: replace `body.text` with `message`.
-- Time scoping: insert `| WHERE @timestamp >= "<@timestamp>" AND @timestamp <= NOW()` immediately after `FROM`. Use the earliest `@timestamp` across all `detections[]` entries. Never use `NOW() - N minutes`.
-- Never modify `WHERE`, field names, or `FROM` except for the broad liveness `COUNT(*)`.
+**`execute_esql` modifications** — apply the full protocol from the loaded `significant-events-ki-grounding` skill with these judge-specific overrides:
+- Row-level queries: use `SORT @timestamp DESC | LIMIT 3` (not `ASC | LIMIT 1`) — retrieve the most recent rows for current-state assessment.
+- Time scoping: use the earliest `@timestamp` across all `detections[]` entries (not per-detection).
+- Retry on 0 rows + unknown schema: replace `body.text` with `message`.
 
 **KI enrichment**: when `execute_esql` stamps ≥1 `confirmed: true`, enrich from the stream's KI set. Reuse `search_knowledge_indicators` results from context if already fetched — do not re-call.
 
@@ -152,7 +150,6 @@ For `kind:clearance`: `result: "empty"` at any age is recovery confirmation — 
 
 **Merge evidences**: start from input `evidences[]`. Replace entries you re-ran with fresh results; append entries for new calls. Dedup by `esql_query` (or `rule_name` when `esql_query` is null). No tool calls → echo input verbatim.
 
-**`description` format**: `"Testing: [what]. Expected: [signal]. Found: [result]. Verdict: [confirms / refutes / inconclusive]."` No payload values.
 
 ### Step 4: Correlation Quality
 
@@ -171,7 +168,7 @@ Dedup compares across the full batch — every item must be assessed before comp
 
 ### Step 6: Criticality Calibration
 
-Read the `sev_tiers` referenced file from the `significant-events-assessment` skill for tier definitions. **When uncertain, choose the higher tier** — IC conservative override: err toward paging rather than missing an incident (`sev_tiers` default is lower; this step intentionally overrides it).
+Consult the `criticality` field description in the tool schema for tier definitions. **When uncertain, choose the higher tier** — IC conservative override: err toward paging rather than missing an incident (default is lower; this step intentionally overrides it).
 
 Judge-specific calibration factors (apply in priority order):
 
@@ -187,8 +184,7 @@ Judge-specific calibration factors (apply in priority order):
 **Pre-emit gate — verify for EVERY event before any tool call. A violation is invalid output; fix it before proceeding:**
 
 1. **`evidences[]` is present and non-empty** on every event — `promoted`, `acknowledged`, `demoted`, and `resolved` alike. Never omit the key; never emit `[]`. If you ran no new query, echo the input entries verbatim. A narrated trail in `assessment_note` does NOT satisfy this — the structured array must be there.
-2. **`cause_kis` confidence ceiling** — apply the `cause_kis` ceiling from the `confidence_scale` referenced file of the `significant-events-assessment` skill. For `demoted`/`resolved` this ceiling does not apply.
-3. **Required fields per status** are all present: `promoted`/`acknowledged` carry `summary`, `recommendations`, `assessment_note`, and ≥1 `evidences[]` entry (with `confirmed: true` for `promoted`).
+2. **Required fields per status** are all present: `promoted`/`acknowledged` carry `summary`, `recommendations`, `assessment_note`, and ≥1 `evidences[]` entry (with `confirmed: true` for `promoted`).
 
 For each discovery, complete this two-step sequence before moving to the next:
 1. `events_write` — record the decision.
@@ -201,17 +197,15 @@ Emit only fields defined in this schema. Output discipline applies to all narrat
 - `discovery_id`, `discovery_slug`: echo verbatim.
 - `status`: one of `promoted`, `acknowledged`, `demoted`, `resolved`. `kind:discovery` allows promoted/acknowledged/demoted; `kind:clearance` allows resolved/acknowledged only.
 - `cause_kis`, `dependency_edges`, `infra_components`: read-only — echo verbatim. Never add, remove, or modify.
-- `criticality`: read the `sev_tiers` referenced file from the `significant-events-assessment` skill.
-- `confidence`: read the `confidence_scale` referenced file from the `significant-events-assessment` skill. Judge-specific adjustments:
-  - **Prior**: start from the discovery's `confidence` value.
-  - **`cause_kis` ceiling (`promoted`/`acknowledged` only)**: apply the cause_kis confidence ceiling from the `significant-events-assessment` skill.
+- `confidence`: start from the discovery's `confidence` value (prior). Judge-specific adjustments:
+  - **`cause_kis` ceiling (`promoted`/`acknowledged` only)**: apply the cause_kis ceiling from the `confidence` field description.
   - **Increase when**: independent verification confirms root_cause (+0.05–0.10); multiple confirmed evidences with no contradiction (+0.05); KI backing aligns (+0.05).
   - **Decrease when**: key queries have `row_count = 0` (−0.10 each, not for healthy-row refutations); no confirmed evidence entries (−0.15); root_cause correction issued (−0.10); clearance re-verification contradicts recovery (−0.10).
   - **Hard caps**: no `confirmed: true` in merged output `evidences[]` → cap at 0.55; stale evidences only (all `collected_at` > 1h) → cap at 0.65; root_cause correction → cap at 0.75.
   - **Ceiling**: 0.90+ requires discovery confidence ≥ 0.70, multiple confirmed evidences, no contradiction, no correction. Do not exceed 0.85 when any evidence gap exists.
-- `summary` — consult the narrative standards in the `significant-events-assessment` skill. Required for `promoted` and `acknowledged`; optional for `demoted`/`resolved`.
-- `root_cause` (optional — correction only): emit ONLY when current-state evidence materially contradicts the working theory in a way that would send on-call to the wrong service. Must cite KI + row_count. Correction test: *"My check showed ___, which means the theory is wrong because ___."* If you cannot fill both blanks with specific findings, omit. Consult the narrative standards in the `significant-events-assessment` skill.
-- `recommendations` — consult the narrative standards in the `significant-events-assessment` skill. Required for `promoted` and `acknowledged`; omit for `demoted` and `resolved`.
+- `summary` — never lead with detection mechanics (rule names, alert_count, p_value, change_point_type). Required for `promoted` and `acknowledged`; optional for `demoted`/`resolved`.
+- `root_cause` (optional — correction only): emit ONLY when current-state evidence materially contradicts the working theory in a way that would send on-call to the wrong service. Must cite KI + row_count. Correction test: *"My check showed ___, which means the theory is wrong because ___."* If you cannot fill both blanks with specific findings, omit. Never use hedging phrases like "results indicate" or "consistent with the detection".
+- `recommendations` — each action must name the specific service/endpoint and include the exact operational command (kubectl, helm, systemctl, CLI). Never include ES|QL or diagnostic queries — act-now commands only. Prefer scoped actions (one service/flag) over broad ones (restart-all, redeploy-everything). Required for `promoted` and `acknowledged`; omit for `demoted` and `resolved`.
 - `assessment_note`: your adversarial reasoning trace — what you independently verified, what signals confirmed or contradicted the discovery, and how you calibrated criticality and status. Not operator-facing. Required for `promoted` and `acknowledged`; brief for `demoted` and `resolved`.
 - `evidences` (**required on every event — never omit, never empty**): the merged evidence trail built this cycle.
   - Per entry: `rule_name`, `rule_uuid`, `stream_name`, `result`, `row_count`, `esql_query` (exact string as sent), `description`, `collected_at`. No payload values in `description`.

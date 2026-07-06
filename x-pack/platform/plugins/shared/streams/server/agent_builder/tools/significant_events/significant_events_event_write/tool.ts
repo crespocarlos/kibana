@@ -10,10 +10,7 @@ import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinToolDefinition, StaticToolRegistration } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/core/server';
 import { i18n } from '@kbn/i18n';
-import {
-  significantEventSchema,
-  significantEventStatusSchema,
-} from '@kbn/significant-events-schema';
+import { significantEventSchema } from '@kbn/significant-events-schema';
 import { z } from '@kbn/zod/v4';
 import dedent from 'dedent';
 import type { EbtTelemetryClient } from '../../../../lib/telemetry/ebt';
@@ -45,15 +42,6 @@ const eventsWriteSchema = significantEventSchema
     workflow_execution_id: true,
   })
   .extend({
-    status: significantEventStatusSchema.describe(
-      i18n.translate('xpack.streams.agentBuilder.tools.eventsWrite.schema.status', {
-        defaultMessage:
-          'Event status: "promoted" for actionable incidents, "acknowledged" for known events, "demoted" for false positives, "resolved" for closed incidents.',
-      })
-    ),
-    criticality: z.number().int().min(0).max(100),
-    confidence: z.number().min(0).max(1),
-    root_cause: z.string().optional(),
     conversation_id: z.string().optional(),
   });
 
