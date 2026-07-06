@@ -5,9 +5,12 @@
  * 2.0.
  */
 
-export { sigEventsManagementSkill } from './significant_events_management_skill';
-export { createSigEventsMemorySkill } from './significant_events_memory_skill';
-export { createSigEventsOnboardingSkill } from './significant_events_onboarding_skill';
+export {
+  significantEventsManagementSkill,
+  SIGNIFICANT_EVENTS_MANAGEMENT_SKILL_ID,
+} from './significant_events_management_skill';
+export { createSignificantEventsMemorySkill } from './significant_events_memory_skill';
+export { createSignificantEventsOnboardingSkill } from './significant_events_onboarding_skill';
 export {
   significantEventsChangepointAnalysisSkill,
   SIGNIFICANT_EVENTS_CHANGEPOINT_ANALYSIS_SKILL_ID,

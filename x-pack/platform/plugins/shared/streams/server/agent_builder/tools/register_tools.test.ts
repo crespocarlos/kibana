@@ -18,6 +18,7 @@ import {
 import {
   SIGNIFICANT_EVENTS_DISCOVERY_WRITE_TOOL_ID,
   SIGNIFICANT_EVENTS_EVENTS_WRITE_TOOL_ID,
+  SIGNIFICANT_EVENTS_INVESTIGATION_ATTACH_TOOL_ID,
 } from './significant_events';
 import { createMockGetScopedClients } from '../utils/test_helpers';
 import type { StreamsServer } from '../../types';
@@ -62,6 +63,7 @@ describe('registerAgentBuilderTools', () => {
     expect(registeredIds).toContain(SIGNIFICANT_EVENTS_STATUS_UPDATE_TOOL_ID);
     expect(registeredIds).toContain(SIGNIFICANT_EVENTS_DISCOVERY_WRITE_TOOL_ID);
     expect(registeredIds).toContain(SIGNIFICANT_EVENTS_EVENTS_WRITE_TOOL_ID);
+    expect(registeredIds).toContain(SIGNIFICANT_EVENTS_INVESTIGATION_ATTACH_TOOL_ID);
   });
 
   it('registers tools with non-empty descriptions and schemas', () => {

@@ -18,6 +18,7 @@ Examples of conversation signals that may indicate a SignificantEvent:
 - **event_search** — search existing significant events by query, stream, and/or latest `state`. Always run this first before creating an event to avoid duplicates. `query` is optional; omit `stream_names` for cross-stream searches. Use `state: "open"` to focus on active episodes.
 - **event_create** — create a new significant event. Only after confirming no similar event exists. The system generates internal identifiers and timestamps automatically.
 - **event_status_update** — update an existing event's status to `promoted`, `acknowledged`, or `demoted`. Creates a new event version on success.
+- **search_knowledge_indicators** — query the service knowledge base for feature and query KIs. Use before writing `root_cause` or `criticality` to ground your assessment in known service topology and failure patterns. For the full investigation protocol (confirmation queries, cause_kis derivation, array field formats), load `significant-events-ki-grounding`.
 </tools>
 
 <criticality_and_confidence>
@@ -88,9 +89,7 @@ Using KIs for context:
 - Reuse KI terminology in `summary` and `root_cause` when relevant.
 
 Using ES|QL for confirmation:
-- Run focused ES|QL queries that directly test the suspected issue.
-- Capture concise evidence in narrative form inside `summary` and `root_cause`.
-- If detailed evidence structures are needed, ensure tool support exists before attempting to submit them.
+- Load `significant-events-ki-grounding` before running any ES|QL queries — it provides the mandatory pre-flight checks, required query modifications, and exact confirmation protocol. Do not author freeform queries without it.
 </ki_and_evidence_guidance>
 
 <significant_event_property_guidance>
