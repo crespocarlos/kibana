@@ -13,15 +13,15 @@ import { i18n } from '@kbn/i18n';
 import { significantEventInvestigationStatusSchema } from '@kbn/significant-events-schema';
 import { z } from '@kbn/zod/v4';
 import dedent from 'dedent';
-import type { EbtTelemetryClient } from '../../../../lib/telemetry/ebt';
-import type { GetScopedClients } from '../../../../routes/types';
-import { assertSignificantEventsAccess } from '../../../../routes/utils/assert_significant_events_access';
-import type { StreamsServer } from '../../../../types';
-import { createSignificantEventsAvailability } from '../../significant_events_availability';
+import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
+import type { GetScopedClients } from '../../../routes/types';
+import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
+import type { StreamsServer } from '../../../types';
+import { createSignificantEventsAvailability } from '../significant_events_availability';
 import { attachEventInvestigationToolHandler } from './handler';
 
-export const SIGNIFICANT_EVENTS_INVESTIGATION_ATTACH_TOOL_ID =
-  platformStreamsSigEventsTools.attachInvestigation;
+export const STREAMS_EVENT_INVESTIGATION_ATTACH_TOOL_ID =
+  platformSignificantEventsTools.attachInvestigation;
 
 const eventInvestigationAttachSchema = z.object({
   event_id: z.string().describe(
@@ -76,7 +76,7 @@ export const createEventInvestigationAttachTool = ({
   telemetry: EbtTelemetryClient;
 }): StaticToolRegistration<typeof eventInvestigationAttachSchema> => {
   const toolDefinition: BuiltinToolDefinition<typeof eventInvestigationAttachSchema> = {
-    id: SIGNIFICANT_EVENTS_INVESTIGATION_ATTACH_TOOL_ID,
+    id: STREAMS_EVENT_INVESTIGATION_ATTACH_TOOL_ID,
     type: ToolType.builtin,
     description: dedent`
       ${i18n.translate('xpack.streams.agentBuilder.tools.eventInvestigationAttach.description', {

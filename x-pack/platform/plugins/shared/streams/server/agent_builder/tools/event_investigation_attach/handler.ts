@@ -6,8 +6,8 @@
  */
 
 import type { SignificantEventInvestigationStatus } from '@kbn/significant-events-schema';
-import { attachInvestigationToEvent } from '../../../../lib/significant_events/events/attach_investigation';
-import type { EventClient } from '../../../../lib/significant_events/events';
+import { attachInvestigationToEvent } from '../../../lib/significant_events/events/attach_investigation';
+import type { EventClient } from '../../../lib/significant_events/events';
 
 export const attachEventInvestigationToolHandler = async ({
   eventClient,

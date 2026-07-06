@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import { platformStreamsSigEventsTools, ToolType } from '@kbn/agent-builder-common';
+import { platformSignificantEventsTools, ToolType } from '@kbn/agent-builder-common';
 import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinToolDefinition, StaticToolRegistration } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/core/server';
@@ -13,14 +13,14 @@ import { i18n } from '@kbn/i18n';
 import { significantEventSchema } from '@kbn/significant-events-schema';
 import { z } from '@kbn/zod/v4';
 import dedent from 'dedent';
-import type { EbtTelemetryClient } from '../../../../lib/telemetry/ebt';
-import type { GetScopedClients } from '../../../../routes/types';
-import { assertSignificantEventsAccess } from '../../../../routes/utils/assert_significant_events_access';
-import type { StreamsServer } from '../../../../types';
-import { createSignificantEventsAvailability } from '../../significant_events_availability';
+import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
+import type { GetScopedClients } from '../../../routes/types';
+import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
+import type { StreamsServer } from '../../../types';
+import { createSignificantEventsAvailability } from '../significant_events_availability';
 import { eventsWriteHandler } from './handler';
 
-export const SIGNIFICANT_EVENTS_EVENTS_WRITE_TOOL_ID = platformStreamsSigEventsTools.eventsWrite;
+export const SIGNIFICANT_EVENTS_EVENTS_WRITE_TOOL_ID = platformSignificantEventsTools.eventsWrite;
 
 const eventsWriteSchema = significantEventSchema
   .pick({

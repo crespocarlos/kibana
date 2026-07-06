@@ -8,8 +8,8 @@
 import { defineSkillType } from '@kbn/agent-builder-server/skills/type_definition';
 import { platformCoreTools } from '@kbn/agent-builder-common/tools';
 import { STREAMS_SEARCH_KNOWLEDGE_INDICATORS_TOOL_ID } from '../../tools/register_tools';
-import description from './significant_events_ki_grounding.description.text';
-import content from './significant_events_ki_grounding.skill.md.text';
+import description from './description.text';
+import content from './skill.md.text';
 
 export const SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID = 'significant-events-ki-grounding' as const;
 

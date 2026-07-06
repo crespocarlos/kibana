@@ -7,13 +7,13 @@
 
 import { defineSkillType } from '@kbn/agent-builder-server/skills/type_definition';
 import {
-  SIGNIFICANT_EVENTS_CREATE_EVENT_TOOL_ID,
-  SIGNIFICANT_EVENTS_STATUS_UPDATE_TOOL_ID,
-  SIGNIFICANT_EVENTS_SEARCH_TOOL_ID,
-} from '../../tools/significant_events';
-import { STREAMS_SEARCH_KNOWLEDGE_INDICATORS_TOOL_ID } from '../../tools/register_tools';
-import description from './significant_events_management.description.text';
-import content from './significant_events_management.skill.md.text';
+  STREAMS_CREATE_EVENT_TOOL_ID,
+  STREAMS_EVENT_STATUS_UPDATE_TOOL_ID,
+  STREAMS_SEARCH_EVENTS_TOOL_ID,
+  STREAMS_SEARCH_KNOWLEDGE_INDICATORS_TOOL_ID,
+} from '../../tools/register_tools';
+import description from './description.text';
+import content from './skill.md.text';
 
 export const SIGNIFICANT_EVENTS_MANAGEMENT_SKILL_ID = 'significant-events-management' as const;
 
@@ -24,9 +24,9 @@ export const significantEventsManagementSkill = defineSkillType({
   description,
   content,
   getRegistryTools: () => [
-    SIGNIFICANT_EVENTS_SEARCH_TOOL_ID,
-    SIGNIFICANT_EVENTS_CREATE_EVENT_TOOL_ID,
-    SIGNIFICANT_EVENTS_STATUS_UPDATE_TOOL_ID,
+    STREAMS_CREATE_EVENT_TOOL_ID,
+    STREAMS_EVENT_STATUS_UPDATE_TOOL_ID,
+    STREAMS_SEARCH_EVENTS_TOOL_ID,
     STREAMS_SEARCH_KNOWLEDGE_INDICATORS_TOOL_ID,
   ],
 });

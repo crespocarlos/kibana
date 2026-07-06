@@ -5,15 +5,15 @@
  * 2.0.
  */
 
-import { platformStreamsSigEventsTools } from '@kbn/agent-builder-common';
+import { platformSignificantEventsTools } from '@kbn/agent-builder-common';
 import type { ConverseStep } from '@kbn/evals';
 import {
   extractDiscoveriesFromToolCall,
   extractSignificantEventsFromToolCall,
 } from './parse_agent_output';
 
-const TOOL_ID_DISCOVERY_WRITE = platformStreamsSigEventsTools.discoveryWrite;
-const TOOL_ID_EVENTS_WRITE = platformStreamsSigEventsTools.eventsWrite;
+const TOOL_ID_DISCOVERY_WRITE = platformSignificantEventsTools.discoveryWrite;
+const TOOL_ID_EVENTS_WRITE = platformSignificantEventsTools.eventsWrite;
 
 describe('extractDiscoveriesFromToolCall', () => {
   it('extracts discoveries from discovery_write tool calls', () => {

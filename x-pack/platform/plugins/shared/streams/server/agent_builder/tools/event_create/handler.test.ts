@@ -6,9 +6,9 @@
  */
 
 import { createEventToolHandler } from './handler';
-import { eventsWriteHandler } from '../significant_events_event_write/handler';
+import { eventsWriteHandler } from '../event_write/handler';
 
-jest.mock('../significant_events_event_write/handler', () => ({
+jest.mock('../event_write/handler', () => ({
   eventsWriteHandler: jest.fn(),
 }));
 

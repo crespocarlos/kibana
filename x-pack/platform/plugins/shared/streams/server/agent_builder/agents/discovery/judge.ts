@@ -9,7 +9,7 @@ import type { BuiltInAgentDefinition } from '@kbn/agent-builder-server/agents';
 import instructions from './instructions/judge.md.text';
 import { SIGNIFICANT_EVENTS_DISCOVERY_TOOL_IDS } from './constants';
 import type { StreamsServer } from '../../../types';
-import { SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID } from '../../skills/significant_events';
+import { SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID } from '../../skills/significant_events_ki_grounding';
 import { getSignificantEventsAvailability } from '../../../routes/utils/assert_significant_events_access';
 
 export const SIGNIFICANT_EVENTS_JUDGE_AGENT_ID = 'platform.sig_events.discovery.judge';

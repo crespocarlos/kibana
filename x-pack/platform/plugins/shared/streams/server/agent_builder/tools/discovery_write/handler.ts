@@ -7,7 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import type { Discovery } from '@kbn/significant-events-schema';
-import type { DiscoveryClient } from '../../../../lib/significant_events/discoveries';
+import type { DiscoveryClient } from '../../../lib/significant_events/discoveries';
 
 /**
  * Normalises a free-text string into a slug fragment:

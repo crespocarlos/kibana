@@ -12,14 +12,14 @@ import type { Logger } from '@kbn/core/server';
 import { i18n } from '@kbn/i18n';
 import { significantEventSchema } from '@kbn/significant-events-schema';
 import dedent from 'dedent';
-import type { EbtTelemetryClient } from '../../../../lib/telemetry/ebt';
-import type { GetScopedClients } from '../../../../routes/types';
-import { assertSignificantEventsAccess } from '../../../../routes/utils/assert_significant_events_access';
-import type { StreamsServer } from '../../../../types';
-import { createSignificantEventsAvailability } from '../../significant_events_availability';
+import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
+import type { GetScopedClients } from '../../../routes/types';
+import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
+import type { StreamsServer } from '../../../types';
+import { createSignificantEventsAvailability } from '../significant_events_availability';
 import { createEventToolHandler } from './handler';
 
-export const SIGNIFICANT_EVENTS_CREATE_EVENT_TOOL_ID = platformStreamsSigEventsTools.createEvent;
+export const STREAMS_CREATE_EVENT_TOOL_ID = platformSignificantEventsTools.createEvent;
 
 const createEventSchema = significantEventSchema
   .pick({
@@ -46,7 +46,7 @@ export function createEventTool({
   telemetry: EbtTelemetryClient;
 }): StaticToolRegistration<typeof createEventSchema> {
   const toolDefinition: BuiltinToolDefinition<typeof createEventSchema> = {
-    id: SIGNIFICANT_EVENTS_CREATE_EVENT_TOOL_ID,
+    id: STREAMS_CREATE_EVENT_TOOL_ID,
     type: ToolType.builtin,
     description: dedent`
       ${i18n.translate('xpack.streams.agentBuilder.tools.eventCreate.description', {

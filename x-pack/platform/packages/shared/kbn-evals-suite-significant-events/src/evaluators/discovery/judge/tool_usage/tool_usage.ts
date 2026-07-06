@@ -8,7 +8,7 @@
 import {
   internalTools,
   platformCoreTools,
-  platformStreamsSigEventsTools,
+  platformSignificantEventsTools,
 } from '@kbn/agent-builder-common';
 import { extractToolCallIds } from '../../utils/tool_usage';
 
@@ -17,7 +17,7 @@ const {
   searchKnowledgeIndicators: TOOL_ID_KI_SEARCH,
   eventsWrite: TOOL_ID_EVENTS_WRITE,
   discoveryWrite: TOOL_ID_DISCOVERY_WRITE,
-} = platformStreamsSigEventsTools;
+} = platformSignificantEventsTools;
 const { readFile: TOOL_ID_READ_FILE } = internalTools;
 import type { DiscoveryJudgeEvaluator } from '../../types';
 

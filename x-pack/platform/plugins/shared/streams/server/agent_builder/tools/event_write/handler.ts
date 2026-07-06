@@ -7,7 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import type { SignificantEvent } from '@kbn/significant-events-schema';
-import type { EventClient } from '../../../../lib/significant_events/events';
+import type { EventClient } from '../../../lib/significant_events/events';
 
 /**
  * Input for writing a significant event document. Derived from the canonical SignificantEvent

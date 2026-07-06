@@ -13,11 +13,9 @@ import { streamsManagementSkill } from './streams_management_skill';
 import { knowledgeIndicatorsManagementSkill } from './knowledge_indicators_management';
 import { createKiIdentificationManagementSkill } from './ki_identification_management';
 import { createGapDetectionSkill } from './memory';
-import {
-  significantEventsManagementSkill,
-  significantEventsKIGroundingSkill,
-  createSignificantEventsOnboardingSkill,
-} from './significant_events';
+import { significantEventsManagementSkill } from './significant_events_management';
+import { createSignificantEventsOnboardingSkill } from './significant_events_onboarding_skill';
+import { significantEventsKIGroundingSkill } from './significant_events_ki_grounding';
 
 export const registerAgentBuilderSkills = ({
   agentBuilder,

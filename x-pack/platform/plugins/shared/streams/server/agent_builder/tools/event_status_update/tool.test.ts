@@ -6,42 +6,42 @@
  */
 
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
-import { createMockToolContext, invokeHandler } from '../../../utils/test_helpers';
-import type { GetScopedClients } from '../../../../routes/types';
-import type { StreamsServer } from '../../../../types';
-import { assertSignificantEventsAccess } from '../../../../routes/utils/assert_significant_events_access';
-import { eventsWriteHandler } from '../significant_events_event_write/handler';
-import { createEventTool, SIGNIFICANT_EVENTS_CREATE_EVENT_TOOL_ID } from './tool';
+import { createMockToolContext, invokeHandler } from '../../utils/test_helpers';
+import type { GetScopedClients } from '../../../routes/types';
+import type { StreamsServer } from '../../../types';
+import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
+import { updateEventStatusToolHandler } from './handler';
+import { createEventStatusUpdateTool, STREAMS_EVENT_STATUS_UPDATE_TOOL_ID } from './tool';
 
-jest.mock('../../../../routes/utils/assert_significant_events_access', () => ({
+jest.mock('../../../routes/utils/assert_significant_events_access', () => ({
   assertSignificantEventsAccess: jest.fn(),
 }));
 
-jest.mock('../significant_events_event_write/handler', () => ({
-  eventsWriteHandler: jest.fn(),
+jest.mock('./handler', () => ({
+  updateEventStatusToolHandler: jest.fn(),
 }));
 
-describe('event_create tool', () => {
-  const telemetry = { trackAgentToolEventCreate: jest.fn() };
+describe('event_status_update tool', () => {
+  const telemetry = { trackAgentToolEventStatusUpdate: jest.fn() };
 
   it('uses expected tool id', () => {
-    const tool = createEventTool({
+    const tool = createEventStatusUpdateTool({
       getScopedClients: jest.fn() as unknown as GetScopedClients,
       server: {} as StreamsServer,
       logger: loggingSystemMock.createLogger(),
       telemetry: telemetry as never,
     });
 
-    expect(tool.id).toBe(SIGNIFICANT_EVENTS_CREATE_EVENT_TOOL_ID);
+    expect(tool.id).toBe(STREAMS_EVENT_STATUS_UPDATE_TOOL_ID);
   });
 
   it('returns success result', async () => {
     (assertSignificantEventsAccess as jest.Mock).mockResolvedValue(undefined);
-    (eventsWriteHandler as jest.Mock).mockResolvedValue({
+    (updateEventStatusToolHandler as jest.Mock).mockResolvedValue({
       event_id: 'e1',
-      discovery_slug: 'agent-event-abcd1234',
-      status: 'promoted',
-      written: true,
+      updated: 1,
+      ignored: 0,
+      status: 'acknowledged',
     });
 
     const getScopedClients = jest.fn().mockResolvedValue({
@@ -50,7 +50,7 @@ describe('event_create tool', () => {
       uiSettingsClient: {},
     });
 
-    const tool = createEventTool({
+    const tool = createEventStatusUpdateTool({
       getScopedClients: getScopedClients as unknown as GetScopedClients,
       server: {} as StreamsServer,
       logger: loggingSystemMock.createLogger(),
@@ -59,15 +59,7 @@ describe('event_create tool', () => {
 
     const result = await invokeHandler(
       tool as never,
-      {
-        title: 'T',
-        summary: 'S',
-        root_cause: 'R',
-        stream_names: ['logs.a'],
-        criticality: 40,
-        confidence: 0.8,
-        recommendations: ['open incident'],
-      },
+      { event_id: 'e1', status: 'acknowledged' },
       createMockToolContext()
     );
 

@@ -6,14 +6,14 @@
  */
 
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
-import { createMockToolContext, invokeHandler } from '../../../utils/test_helpers';
-import type { GetScopedClients } from '../../../../routes/types';
-import type { StreamsServer } from '../../../../types';
-import { assertSignificantEventsAccess } from '../../../../routes/utils/assert_significant_events_access';
+import { createMockToolContext, invokeHandler } from '../../utils/test_helpers';
+import type { GetScopedClients } from '../../../routes/types';
+import type { StreamsServer } from '../../../types';
+import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
 import { searchEventsToolHandler } from './handler';
-import { createSearchEventsTool, SIGNIFICANT_EVENTS_SEARCH_TOOL_ID } from './tool';
+import { createSearchEventsTool, STREAMS_SEARCH_EVENTS_TOOL_ID } from './tool';
 
-jest.mock('../../../../routes/utils/assert_significant_events_access', () => ({
+jest.mock('../../../routes/utils/assert_significant_events_access', () => ({
   assertSignificantEventsAccess: jest.fn(),
 }));
 
@@ -29,7 +29,7 @@ describe('event_search tool', () => {
       logger: loggingSystemMock.createLogger(),
     });
 
-    expect(tool.id).toBe(SIGNIFICANT_EVENTS_SEARCH_TOOL_ID);
+    expect(tool.id).toBe(STREAMS_SEARCH_EVENTS_TOOL_ID);
   });
 
   it('returns events on success', async () => {

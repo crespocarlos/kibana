@@ -10,7 +10,7 @@ import type { StreamsServer } from '../../../types';
 import { getSignificantEventsAvailability } from '../../../routes/utils/assert_significant_events_access';
 import instructions from './instructions/investigator.md.text';
 import { SIGNIFICANT_EVENTS_DISCOVERY_TOOL_IDS } from './constants';
-import { SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID } from '../../skills/significant_events';
+import { SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID } from '../../skills/significant_events_ki_grounding';
 
 export const SIGNIFICANT_EVENTS_INVESTIGATOR_AGENT_ID =
   'platform.sig_events.discovery.investigator';

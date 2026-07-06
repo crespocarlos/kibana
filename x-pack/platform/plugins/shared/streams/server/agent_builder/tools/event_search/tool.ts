@@ -12,13 +12,13 @@ import type { Logger } from '@kbn/core/server';
 import { i18n } from '@kbn/i18n';
 import { z } from '@kbn/zod/v4';
 import dedent from 'dedent';
-import type { GetScopedClients } from '../../../../routes/types';
-import { assertSignificantEventsAccess } from '../../../../routes/utils/assert_significant_events_access';
-import type { StreamsServer } from '../../../../types';
-import { createSignificantEventsAvailability } from '../../significant_events_availability';
+import type { GetScopedClients } from '../../../routes/types';
+import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
+import type { StreamsServer } from '../../../types';
+import { createSignificantEventsAvailability } from '../significant_events_availability';
 import { searchEventsToolHandler } from './handler';
 
-export const SIGNIFICANT_EVENTS_SEARCH_TOOL_ID = platformStreamsSigEventsTools.searchEvent;
+export const STREAMS_SEARCH_EVENTS_TOOL_ID = platformSignificantEventsTools.searchEvent;
 
 const searchEventsSchema = z.object({
   query: z
@@ -64,7 +64,7 @@ export function createSearchEventsTool({
   logger: Logger;
 }): StaticToolRegistration<typeof searchEventsSchema> {
   const toolDefinition: BuiltinToolDefinition<typeof searchEventsSchema> = {
-    id: SIGNIFICANT_EVENTS_SEARCH_TOOL_ID,
+    id: STREAMS_SEARCH_EVENTS_TOOL_ID,
     type: ToolType.builtin,
     description: dedent`
       ${i18n.translate('xpack.streams.agentBuilder.tools.eventSearch.description.line1', {

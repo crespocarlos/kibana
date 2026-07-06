@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import { platformStreamsSigEventsTools } from '@kbn/agent-builder-common';
+import { platformSignificantEventsTools } from '@kbn/agent-builder-common';
 import type { ConverseStep } from '@kbn/evals';
 import type { Discovery, SignificantEvent } from '@kbn/significant-events-schema';
 
@@ -20,7 +20,7 @@ const toolCallSteps = (steps: ConverseStep[], toolId: string) =>
  * Extract discoveries from `discovery_write` tool call steps.
  */
 export const extractDiscoveriesFromToolCall = (steps: ConverseStep[]): Discovery[] =>
-  toolCallSteps(steps, platformStreamsSigEventsTools.discoveryWrite).map((step) => {
+  toolCallSteps(steps, platformSignificantEventsTools.discoveryWrite).map((step) => {
     const slug = (step.results?.[0] as DiscoveryWriteToolResult | undefined)?.data?.discovery_slug;
     return { ...step.params, ...(slug ? { discovery_slug: slug } : {}) } as Discovery;
   });
@@ -29,6 +29,6 @@ export const extractDiscoveriesFromToolCall = (steps: ConverseStep[]): Discovery
  * Extract significant events from `events_write` tool call steps.
  */
 export const extractSignificantEventsFromToolCall = (steps: ConverseStep[]): SignificantEvent[] =>
-  toolCallSteps(steps, platformStreamsSigEventsTools.eventsWrite).map(
+  toolCallSteps(steps, platformSignificantEventsTools.eventsWrite).map(
     (step) => step.params as SignificantEvent
   );
