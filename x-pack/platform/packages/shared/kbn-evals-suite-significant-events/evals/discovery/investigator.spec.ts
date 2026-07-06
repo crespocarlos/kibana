@@ -407,46 +407,61 @@ evaluate.describe(
                     );
 
                     const cycles: ContinuationCycle[] = [];
+                    // Tracks event_ids seeded by this run so they can be deleted after all cycles
+                    // complete. Without this cleanup the next run's cycle-0 event_search would
+                    // find the previous run's open episodes and either reuse a foreign slug or
+                    // produce spurious noise. Deleting by explicit IDs is safer than wiping the
+                    // entire stream and works correctly even when concurrency > 1.
+                    const seededEventIds: string[] = [];
 
-                    // Feed one detection per cycle, oldest first. After each cycle, seed a
-                    // SignificantEvent into the events data stream for each produced discovery so the
-                    // next cycle's `event_search state: "open"` call finds it — mirroring what the
-                    // judge would write between investigator invocations in production.
-                    for (let i = 0; i < run.sequence.length; i++) {
-                      const base = run.sequence[i];
-                      const detection: Detection = {
-                        ...base,
-                        detection_id: `${base.detection_id ?? base.rule_uuid}-fire-${i}`,
-                      };
-                      const agentInput = buildInvestigatorInput({ detections: [detection] });
+                    try {
+                      // Feed one detection per cycle, oldest first. After each cycle, seed a
+                      // SignificantEvent into the events data stream for each produced discovery so the
+                      // next cycle's `event_search state: "open"` call finds it — mirroring what the
+                      // judge would write between investigator invocations in production.
+                      for (let i = 0; i < run.sequence.length; i++) {
+                        const base = run.sequence[i];
+                        const detection: Detection = {
+                          ...base,
+                          detection_id: `${base.detection_id ?? base.rule_uuid}-fire-${i}`,
+                        };
+                        const agentInput = buildInvestigatorInput({ detections: [detection] });
 
-                      const converseResult = await agentBuilderClient.converse({
-                        agentId: SIGNIFICANT_EVENTS_INVESTIGATOR_AGENT_ID,
-                        input: agentInput,
-                      });
-
-                      const discoveries = extractDiscoveriesFromToolCall(converseResult.steps);
-                      const producedSlugs = discoveries
-                        .map((discovery) => discovery.discovery_slug)
-                        .filter((slug): slug is string => Boolean(slug));
-
-                      cycles.push({ ruleName: detection.rule_name, producedSlugs });
-
-                      // Seed a SignificantEvent per produced discovery so event_search resolves it
-                      // as an open episode in subsequent cycles.
-                      for (const [idx, discovery] of discoveries.entries()) {
-                        if (!discovery.discovery_slug) continue;
-                        await esClient.index({
-                          index: SIGNIFICANT_EVENTS_EVENTS_DATA_STREAM,
-                          document: toSignificantEventSeed({
-                            discovery,
-                            eventId: `${discovery.discovery_slug}-cycle-${i}-${idx}`,
-                          }),
+                        const converseResult = await agentBuilderClient.converse({
+                          agentId: SIGNIFICANT_EVENTS_INVESTIGATOR_AGENT_ID,
+                          input: agentInput,
                         });
+
+                        const discoveries = extractDiscoveriesFromToolCall(converseResult.steps);
+                        const producedSlugs = discoveries
+                          .map((discovery) => discovery.discovery_slug)
+                          .filter((slug): slug is string => Boolean(slug));
+
+                        cycles.push({ ruleName: detection.rule_name, producedSlugs });
+
+                        // Seed a SignificantEvent per produced discovery so event_search resolves it
+                        // as an open episode in subsequent cycles.
+                        for (const [idx, discovery] of discoveries.entries()) {
+                          if (!discovery.discovery_slug) continue;
+                          const eventId = `${discovery.discovery_slug}-cycle-${i}-${idx}`;
+                          await esClient.index({
+                            index: SIGNIFICANT_EVENTS_EVENTS_DATA_STREAM,
+                            document: toSignificantEventSeed({ discovery, eventId }),
+                          });
+                          seededEventIds.push(eventId);
+                        }
+                        if (producedSlugs.length > 0) {
+                          await esClient.indices.refresh({
+                            index: SIGNIFICANT_EVENTS_EVENTS_DATA_STREAM,
+                          });
+                        }
                       }
-                      if (producedSlugs.length > 0) {
-                        await esClient.indices.refresh({
+                    } finally {
+                      if (seededEventIds.length > 0) {
+                        await esClient.deleteByQuery({
                           index: SIGNIFICANT_EVENTS_EVENTS_DATA_STREAM,
+                          query: { terms: { event_id: seededEventIds } },
+                          refresh: true,
                         });
                       }
                     }

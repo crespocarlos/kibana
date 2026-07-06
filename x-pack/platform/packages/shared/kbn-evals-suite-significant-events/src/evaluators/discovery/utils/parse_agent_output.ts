@@ -28,7 +28,7 @@ export const extractDiscoveriesFromToolCall = (steps: ConverseStep[]): Discovery
 /**
  * Extract significant events from `events_write` tool call steps.
  */
-export const extractSignificantEventsFromSteps = (steps: ConverseStep[]): SignificantEvent[] =>
+export const extractSignificantEventsFromToolCall = (steps: ConverseStep[]): SignificantEvent[] =>
   toolCallSteps(steps, platformStreamsSigEventsTools.eventsWrite).map(
     (step) => step.params as SignificantEvent
   );

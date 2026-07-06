@@ -52,7 +52,7 @@ describe('extractDiscoveriesFromToolCall', () => {
   });
 });
 
-describe('extractSignificantEventsFromSteps', () => {
+describe('extractSignificantEventsFromToolCall', () => {
   it('extracts significant events from events_write tool calls', () => {
     const steps: ConverseStep[] = [
       {
