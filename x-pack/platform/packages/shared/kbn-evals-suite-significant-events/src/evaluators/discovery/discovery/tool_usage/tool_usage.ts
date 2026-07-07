@@ -50,7 +50,7 @@ export const createDiscoveryToolUsageEvaluator = (): DiscoveryEvaluator => ({
           score: 0,
           label: 'missing-event-search',
           explanation:
-            'All-quiet batch: event_search was not called — required once per batch to fetch open episodes before detection grouping',
+            'All-quiet batch: event_search was not called — required once per batch to fetch open events before detection grouping',
         });
       }
       if (!calledKiSearch) {
@@ -58,7 +58,7 @@ export const createDiscoveryToolUsageEvaluator = (): DiscoveryEvaluator => ({
           score: 0,
           label: 'missing-ki-search',
           explanation:
-            'All-quiet batch: search_knowledge_indicators was not called; KI search is mandatory to populate cause_kis and dependency context',
+            'All-quiet batch: search_knowledge_indicators was not called; KI search is mandatory to populate causal_features and blast_radius context',
         });
       }
       if (calledEsql) {

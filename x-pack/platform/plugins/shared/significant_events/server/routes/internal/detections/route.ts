@@ -66,7 +66,7 @@ const detectionsHistoryRoute = createServerRoute({
   options: {
     access: 'internal',
     summary: 'Get detection history',
-    description: 'Get all state transition documents for a detection episode, sorted ascending.',
+    description: 'Get all state transition documents for a detection event, sorted ascending.',
   },
   security: {
     authz: {

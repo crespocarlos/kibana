@@ -8,51 +8,63 @@
 import { toSignificantEventSeed } from './continuation_candidate';
 
 describe('toSignificantEventSeed', () => {
-  it('stamps event_id and derives rule_names and stream_names from detections', () => {
+  it('stamps event_uuid and derives stream_names from signals', () => {
     const seed = toSignificantEventSeed({
-      eventId: 'svc__cascade-aaaa1111-cycle-0',
+      eventUuid: 'svc__cascade-aaaa1111-cycle-0',
       discovery: {
-        discovery_slug: 'svc__cascade-aaaa1111',
+        event_id: 'svc__cascade-aaaa1111',
         summary: 'cascade',
-        root_cause: 'db down',
         title: 'Cascade',
         confidence: 0.8,
-        criticality: 90,
-        detections: [
-          { rule_name: 'r1', rule_uuid: 'u1', stream_name: 'logs-a', kind: 'detection' },
-          { rule_name: 'r2', rule_uuid: 'u2', stream_name: 'logs-b', kind: 'detection' },
+        severity: 'critical',
+        signals: [
+          {
+            type: 'detection',
+            stream_name: 'logs-a',
+            description: 'connection refused',
+            metadata: { rule_name: 'r1', rule_uuid: 'u1', kind: 'detection' },
+          },
+          {
+            type: 'detection',
+            stream_name: 'logs-b',
+            description: 'cache error',
+            metadata: { rule_name: 'r2', rule_uuid: 'u2', kind: 'detection' },
+          },
           // duplicate stream — should be de-duped
-          { rule_name: 'r3', rule_uuid: 'u3', stream_name: 'logs-a', kind: 'detection' },
+          {
+            type: 'detection',
+            stream_name: 'logs-a',
+            description: 'pool init failed',
+            metadata: { rule_name: 'r3', rule_uuid: 'u3', kind: 'detection' },
+          },
         ],
       },
     });
 
-    expect(seed.event_id).toBe('svc__cascade-aaaa1111-cycle-0');
-    expect(seed.discovery_slug).toBe('svc__cascade-aaaa1111');
-    expect(seed.status).toBe('promoted');
-    expect(seed.rule_names).toEqual(['r1', 'r2', 'r3']);
+    expect(seed.event_uuid).toBe('svc__cascade-aaaa1111-cycle-0');
+    expect(seed.event_id).toBe('svc__cascade-aaaa1111');
+    expect(seed.status).toBe('open');
     expect(seed.stream_names).toEqual(['logs-a', 'logs-b']);
     expect(seed.confidence).toBe(0.8);
-    expect(seed.criticality).toBe(90);
+    expect(seed.severity).toBe('critical');
   });
 
-  it('falls back to event_id as slug when discovery_slug is missing', () => {
+  it('falls back to event_uuid as event_id when event_id is missing', () => {
     const seed = toSignificantEventSeed({
-      eventId: 'fallback-id',
+      eventUuid: 'fallback-id',
       discovery: {},
     });
 
-    expect(seed.discovery_slug).toBe('fallback-id');
-    expect(seed.rule_names).toEqual([]);
+    expect(seed.event_id).toBe('fallback-id');
     expect(seed.stream_names).toEqual(['unknown']);
   });
 
-  it('always sets status to promoted', () => {
+  it('always sets status to open', () => {
     const seed = toSignificantEventSeed({
-      eventId: 'e1',
-      discovery: { discovery_slug: 'svc__x' },
+      eventUuid: 'e1',
+      discovery: { event_id: 'svc__x' },
     });
 
-    expect(seed.status).toBe('promoted');
+    expect(seed.status).toBe('open');
   });
 });

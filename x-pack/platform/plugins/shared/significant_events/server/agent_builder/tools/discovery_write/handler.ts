@@ -5,57 +5,42 @@
  * 2.0.
  */
 
+import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import type { Discovery } from '@kbn/significant-events-schema';
+import type { Discovery, SignalEntry } from '@kbn/significant-events-schema';
 import type { DiscoveryClient } from '../../../lib/significant_events/discoveries';
+import { toSortableSeverity } from '../../../lib/significant_events/severity';
 
 /**
- * Normalises a free-text string into a slug fragment:
- * lowercase, runs of non-alphanumeric chars → single hyphen, leading/trailing
- * hyphens stripped, truncated to 40 characters.
+ * `rule_uuid` from every `type: 'detection'` signal, deduplicated. Detection signals are the only
+ * signal type with a `rule_uuid`; other signal types (once added) carry no rule identity to extract.
  */
-const slugify = (str: string): string =>
-  str
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
-
-/**
- * Display-only slug prefix `<stream>__<rule>` from the smallest stream's last segment and the
- * smallest rule name (sorted for determinism). Dedup keys off {@link incidentFingerprint}.
- */
-export const discoveryStem = (streamNames: string[], ruleNames: string[]): string => {
-  const rawStream = [...streamNames].sort()[0] ?? 'unknown';
-  const streamPart = slugify(rawStream.split('.').pop() ?? rawStream);
-  const rulePart = slugify([...ruleNames].sort()[0] ?? 'unknown');
-  return `${streamPart}__${rulePart}`;
+const extractRuleUuids = (signals: SignalEntry[] | undefined): string[] => {
+  const uuids = (signals ?? [])
+    .filter((signal): signal is Extract<SignalEntry, { type: 'detection' }> =>
+      Boolean(signal.type === 'detection' && signal.metadata.rule_uuid)
+    )
+    .map((signal) => signal.metadata.rule_uuid as string);
+  return [...new Set(uuids)];
 };
 
 /**
- * Order-independent identity of an incident from the full stream/rule sets + kind. Dedup matches
- * on this so a re-ordered but otherwise identical write is caught. Rule-set drift is intentionally
- * excluded — genuine continuation reuses an explicit slug, which skips dedup.
+ * Deterministic event id: a hash of the primary stream name plus every detection rule's
+ * `rule_uuid`, sorted for order-independence. The same stream+rules combination always produces
+ * the same id, so a rule firing again under identical conditions naturally lands on the same
+ * event rather than requiring a separate fingerprint-matching dedup pass.
  */
-export const incidentFingerprint = (
-  kind: Discovery['kind'],
-  streamNames: string[],
-  ruleNames: string[]
-): string => [kind, [...streamNames].sort().join(','), [...ruleNames].sort().join(',')].join('|');
-
-/**
- * Generates a new episode slug: the stable stem plus a random UUID8 suffix.
- * Format: `<stem>-<uuid8>`.
- */
-export const generateDiscoverySlug = (streamNames: string[], ruleNames: string[]): string => {
-  const suffix = uuidv4().replace(/-/g, '').slice(0, 8);
-  return `${discoveryStem(streamNames, ruleNames)}-${suffix}`;
+export const generateEventId = (streamNames: string[], ruleUuids: string[]): string => {
+  const primaryStream = [...streamNames].sort()[0] ?? 'unknown';
+  const basis = [primaryStream, ...[...ruleUuids].sort()].join('|');
+  return createHash('sha256').update(basis).digest('hex').slice(0, 16);
 };
 
 /**
  * Input for writing a discovery document. Derived from the canonical Discovery schema.
- * `discovery_slug` is optional — omit for new episodes and the handler generates one
- * from stream/rule names + a UUID8 suffix. Pass verbatim for continuation writes.
+ * `event_id` is optional — omit for new events and the handler generates one deterministically
+ * from the stream names and detection rule uuids in `signals`. Pass verbatim for continuation
+ * writes.
  * `discovery_id` and `dedup_window` are write-side controls not persisted to the stream.
  */
 export type DiscoveryWriteInput = Pick<
@@ -63,26 +48,18 @@ export type DiscoveryWriteInput = Pick<
   | 'kind'
   | 'title'
   | 'summary'
-  | 'root_cause'
-  | 'impact'
-  | 'rule_names'
   | 'stream_names'
-  | 'criticality'
+  | 'severity'
   | 'confidence'
-  | 'detections'
-  | 'dependency_edges'
-  | 'infra_components'
-  | 'cause_kis'
-  | 'evidences'
-  | 'parent_discovery_id'
-  | 'grouped_discovery_ids'
-  | 'grouping_rationale'
+  | 'signals'
+  | 'causal_features'
+  | 'blast_radius'
   | 'previous_discovery_id'
   | 'workflow_execution_id'
   | 'conversation_id'
 > & {
-  /** Omit for new episodes — auto-generated from stream/rule names + UUID8. Pass verbatim for continuation. */
-  discovery_slug?: Discovery['discovery_slug'];
+  /** Omit for new events — deterministically generated from stream names + rule uuids. Pass verbatim for continuation. */
+  event_id?: Discovery['event_id'];
   /** Auto-generated when omitted. Required for `kind: 'handled'` to reference the target. */
   discovery_id?: Discovery['discovery_id'];
   /** Deduplication window (ES date math, e.g. `"now-1h"`). Not stored in the document. */
@@ -91,7 +68,7 @@ export type DiscoveryWriteInput = Pick<
 
 export interface DiscoveryWriteResult {
   discovery_id: string;
-  discovery_slug: string;
+  event_id: string;
   kind: Discovery['kind'];
   written: boolean;
   skipped?: boolean;
@@ -126,36 +103,31 @@ export async function discoveryWriteHandler({
   discoveryClient: DiscoveryClient;
   input: DiscoveryWriteInput;
 }): Promise<DiscoveryWriteResult> {
-  const { dedup_window: dedupWindow, discovery_slug, ...rest } = input;
+  const { dedup_window: dedupWindow, event_id, ...rest } = input;
 
-  const resolvedSlug = discovery_slug || generateDiscoverySlug(rest.stream_names, rest.rule_names);
+  const resolvedEventId =
+    event_id || generateEventId(rest.stream_names, extractRuleUuids(rest.signals));
 
-  const discoveryInput = { ...rest, discovery_slug: resolvedSlug };
+  const discoveryInput = {
+    ...rest,
+    event_id: resolvedEventId,
+    severity: toSortableSeverity(rest.severity),
+  };
 
-  // Dedup only new episodes (auto-generated slugs). Explicit slugs are continuation/clearance and
-  // always append. Unrecognised dedup_window → undefined → skip rather than guess a window.
+  // Deduplication: skip write if a non-handled discovery with this event_id exists within the window.
+  // Unrecognised dedup_window expressions produce undefined — skip dedup rather than silently
+  // falling back to an arbitrary window.
   const windowMs = dedupWindow != null ? parseDateMathToMs(dedupWindow) : undefined;
-  const isExplicitSlug = discovery_slug != null;
-  if (
-    !isExplicitSlug &&
-    discoveryInput.kind !== 'handled' &&
-    discoveryInput.kind !== 'clearance' &&
-    windowMs != null
-  ) {
-    const cutoffIso = new Date(Date.now() - windowMs).toISOString();
-    const fingerprint = incidentFingerprint(
-      discoveryInput.kind,
-      rest.stream_names,
-      rest.rule_names
-    );
-    const { hits } = await discoveryClient.findLatest({ from: cutoffIso });
-    const recent = hits.find(
-      (d) => incidentFingerprint(d.kind, d.stream_names ?? [], d.rule_names ?? []) === fingerprint
+  if (discoveryInput.kind !== 'handled' && windowMs != null) {
+    const existing = await discoveryClient.findByEventId(resolvedEventId);
+    const cutoff = Date.now() - windowMs;
+    const recent = existing.hits.find(
+      (d) => d.kind !== 'handled' && new Date(d['@timestamp']).getTime() >= cutoff
     );
     if (recent) {
       return {
         discovery_id: recent.discovery_id,
-        discovery_slug: recent.discovery_slug ?? resolvedSlug,
+        event_id: resolvedEventId,
         kind: discoveryInput.kind,
         written: false,
         skipped: true,
@@ -183,7 +155,7 @@ export async function discoveryWriteHandler({
 
   return {
     discovery_id: discoveryId,
-    discovery_slug: resolvedSlug,
+    event_id: resolvedEventId,
     kind: discoveryInput.kind,
     written: true,
   };

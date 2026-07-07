@@ -17,18 +17,18 @@ const createCalibrationEvaluator = (
   criteriaFn: CalibrationCriteriaFn
 ): Evaluator => createScenarioCriteriaLlmEvaluator({ name, criteria, criteriaFn });
 
-const CRITICALITY_CALIBRATION_CRITERIA: EvaluationCriterion[] = [
+const SEVERITY_CALIBRATION_CRITERIA: EvaluationCriterion[] = [
   {
-    id: 'criticality_reflects_user_impact',
-    text: 'Criticality reflects user-experience impact — blocked user tasks, blast radius, confirmed sensitive-data exposure — not raw signal or anomaly strength.',
+    id: 'severity_reflects_user_impact',
+    text: 'Severity reflects user-experience impact — blocked user tasks, blast radius, confirmed sensitive-data exposure — not raw signal or anomaly strength.',
   },
   {
-    id: 'high_criticality_requires_confirmed_impact',
-    text: 'High criticality (>=76) is warranted only for confirmed user-task-blocking failures or confirmed live sensitive-data exposure; bounded or partial impact belongs in the mid range (31-75).',
+    id: 'critical_severity_requires_confirmed_impact',
+    text: '"critical" severity is warranted only for confirmed user-task-blocking failures affecting a core user journey or confirmed live sensitive-data exposure with broad blast radius; bounded or partial impact belongs at "high" or "medium".',
   },
   {
-    id: 'weak_signals_low_criticality',
-    text: 'Weak or unconfirmed signals (no confirmed evidence rows, stationary change type, negligible alert volume) should not claim high criticality.',
+    id: 'weak_signals_low_severity',
+    text: 'Weak or unconfirmed signals (no confirmed signal rows, stationary change type, negligible alert volume) should not claim "critical" or "high" severity.',
   },
 ];
 
@@ -47,17 +47,13 @@ const CONFIDENCE_CALIBRATION_CRITERIA: EvaluationCriterion[] = [
   },
 ];
 
-/** LLM evaluator: scores whether `criticality` is justified by signal strength and confirmed impact. */
-export const createCriticalityCalibrationEvaluator = ({
+/** LLM evaluator: scores whether `severity` is justified by signal strength and confirmed impact. */
+export const createSeverityCalibrationEvaluator = ({
   criteriaFn,
 }: {
   criteriaFn: CalibrationCriteriaFn;
 }): Evaluator =>
-  createCalibrationEvaluator(
-    'criticality_calibration',
-    CRITICALITY_CALIBRATION_CRITERIA,
-    criteriaFn
-  );
+  createCalibrationEvaluator('severity_calibration', SEVERITY_CALIBRATION_CRITERIA, criteriaFn);
 
 /** LLM evaluator: scores whether `confidence` reflects evidence/KI backing, with the no-KI ceiling. */
 export const createConfidenceCalibrationEvaluator = ({

@@ -37,11 +37,13 @@ const collectEmbeddedDetections = (discoveries: Discovery[]) => {
   const result: Array<Omit<LifecycleDetection, 'kind' | '@timestamp'>> = [];
 
   for (const discovery of discoveries) {
-    for (const det of discovery.detections ?? []) {
-      const { detection_id, rule_name, stream_name, change_point_type } = det;
+    for (const signal of discovery.signals ?? []) {
+      if (signal.type !== 'detection') continue;
+      const { detection_id, rule_name, change_point_type } = signal.metadata;
+      const streamName = signal.stream_name;
       if (!detection_id || seen.has(detection_id)) continue;
       seen.add(detection_id);
-      result.push({ detection_id, rule_name, stream_name, change_point_type });
+      result.push({ detection_id, rule_name, stream_name: streamName, change_point_type });
     }
   }
 
@@ -119,7 +121,7 @@ const eventsHistoryRoute = createServerRoute({
 
     await assertSignificantEventsAccess({ server, licensing, uiSettingsClient });
 
-    return getEventClient().findById(params.path.id);
+    return getEventClient().findByEventUuid(params.path.id);
   },
 });
 
@@ -176,16 +178,16 @@ const eventsLifecycleRoute = createServerRoute({
 
     await assertSignificantEventsAccess({ server, licensing, uiSettingsClient });
 
-    const { hits: initialHits } = await getEventClient().findById(params.path.id);
+    const { hits: initialHits } = await getEventClient().findByEventUuid(params.path.id);
     if (initialHits.length === 0) {
       return { detections: [], discoveries: [], events: [] };
     }
 
-    const { discovery_slug: slug } = initialHits[0];
+    const { event_id: eventId } = initialHits[0];
 
     const [{ hits: events }, { hits: discoveries }] = await Promise.all([
-      getEventClient().findByDiscoverySlug(slug),
-      getDiscoveryClient().findBySlug(slug),
+      getEventClient().findByEventId(eventId),
+      getDiscoveryClient().findByEventId(eventId),
     ]);
 
     const embedded = collectEmbeddedDetections(discoveries);
@@ -251,7 +253,7 @@ const eventsAttachInvestigationRoute = createServerRoute({
 
     return attachInvestigationToEvent({
       eventClient: getEventClient(),
-      eventId: params.path.id,
+      eventUuid: params.path.id,
       investigation: params.body,
     });
   },
@@ -286,7 +288,7 @@ const eventsTriggerInvestigationRoute = createServerRoute({
 
     await assertSignificantEventsAccess({ server, licensing, uiSettingsClient });
 
-    const { hits } = await getEventClient().findById(params.path.id);
+    const { hits } = await getEventClient().findByEventUuid(params.path.id);
     if (hits.length === 0) {
       throw notFound(`Significant event "${params.path.id}" not found.`);
     }
@@ -337,7 +339,7 @@ const eventsUpdateRoute = createServerRoute({
 
     return updateSignificantEventStatus({
       eventClient: getEventClient(),
-      eventId: params.path.id,
+      eventUuid: params.path.id,
       status: params.body.status,
     });
   },

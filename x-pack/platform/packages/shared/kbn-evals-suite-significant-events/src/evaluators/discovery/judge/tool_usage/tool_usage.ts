@@ -29,14 +29,14 @@ const scoreOutputTools = (
       score: 0,
       label: 'missing-output-write',
       explanation:
-        'Neither events_write nor discovery_write was called — both are required to persist the decision and stamp the episode',
+        'Neither events_write nor discovery_write was called — both are required to persist the decision and stamp the event',
     };
   }
   const missing = !calledEventsWrite ? 'events_write' : 'discovery_write';
   return {
     score: 0.5,
     label: 'partial-output-write',
-    explanation: `${missing} was not called — both events_write (persist decision) and discovery_write (stamp episode) are required`,
+    explanation: `${missing} was not called — both events_write (persist decision) and discovery_write (stamp event) are required`,
   };
 };
 
@@ -54,9 +54,12 @@ export const createToolUsageEvaluator = (): DiscoveryJudgeEvaluator => ({
     // Per-discovery check avoids falsely routing the entire batch to "both tools required"
     // when only one of several fully-evidenced discoveries is missing queries.
     const anyDiscoveryNeedsKiSearch = discoveries.some((d) => {
-      const evidences = d.evidences ?? [];
+      const signals = d.signals ?? [];
       return (
-        evidences.length === 0 || evidences.some((e) => e.esql_query == null || e.esql_query === '')
+        signals.length === 0 ||
+        signals.some(
+          (s) => s.evidence == null || s.evidence.esql_query == null || s.evidence.esql_query === ''
+        )
       );
     });
     const allEvidencesHaveQuery = discoveries.length > 0 && !anyDiscoveryNeedsKiSearch;
@@ -68,14 +71,14 @@ export const createToolUsageEvaluator = (): DiscoveryJudgeEvaluator => ({
     const calledDiscoveryWrite = calledTools.has(TOOL_ID_DISCOVERY_WRITE);
 
     if (allEvidencesHaveQuery) {
-      // All evidences already carry queries — judge should re-verify directly via execute_esql
-      // and skip search_knowledge_indicators entirely.
+      // All signals already carry evidence with a query — judge should re-verify directly via
+      // execute_esql and skip search_knowledge_indicators entirely.
       if (!calledEsql && calledKiSearch) {
         return Promise.resolve({
           score: 0,
           label: 'wrong-tools',
           explanation:
-            'Called search_knowledge_indicators instead of execute_esql — all input evidences had esql_query; KI search should have been skipped',
+            'Called search_knowledge_indicators instead of execute_esql — all input signals had evidence.esql_query; KI search should have been skipped',
         });
       }
       if (!calledEsql) {
@@ -91,7 +94,7 @@ export const createToolUsageEvaluator = (): DiscoveryJudgeEvaluator => ({
           score: 0.5,
           label: 'unnecessary-ki-search',
           explanation:
-            'execute_esql called correctly but search_knowledge_indicators was also called — all input evidences carried esql_query, so KI search was unnecessary',
+            'execute_esql called correctly but search_knowledge_indicators was also called — all input signals carried evidence.esql_query, so KI search was unnecessary',
         });
       }
       const outputCheck = scoreOutputTools(calledEventsWrite, calledDiscoveryWrite);
@@ -102,7 +105,7 @@ export const createToolUsageEvaluator = (): DiscoveryJudgeEvaluator => ({
         score: 1,
         label: 'correct',
         explanation:
-          'Correctly called execute_esql only — KI search skipped as expected when all evidences have pre-populated esql_query',
+          'Correctly called execute_esql only — KI search skipped as expected when all signals have pre-populated evidence.esql_query',
       });
     }
 

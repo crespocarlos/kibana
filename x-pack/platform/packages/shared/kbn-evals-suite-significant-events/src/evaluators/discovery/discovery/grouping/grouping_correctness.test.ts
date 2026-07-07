@@ -5,26 +5,32 @@
  * 2.0.
  */
 
-import type { Discovery, Detection } from '@kbn/significant-events-schema';
+import type { Discovery, Detection, SignalEntry } from '@kbn/significant-events-schema';
 import { groupingCorrectnessEvaluator } from './grouping_correctness';
 
 const buildDiscovery = (...ruleUuids: string[]): Partial<Discovery> => ({
-  detections: ruleUuids.map((rule_uuid) => ({ kind: 'detection', rule_uuid })),
+  signals: ruleUuids.map(
+    (rule_uuid): SignalEntry => ({
+      type: 'detection',
+      description: 'Testing: something.',
+      metadata: { kind: 'detection', rule_uuid },
+    })
+  ),
 });
 
 // The expected grouping is derived from `expected_discoveries`, so build them from the gold groups.
-// The evaluator only reads output.discoveries[].detections and expected.expected_discoveries[].detections.
+// The evaluator only reads output.discoveries[].signals and expected.expected_discoveries[].signals.
 const evaluate = (discoveries: Array<Partial<Discovery>>, expectedGroups?: string[][]) =>
   groupingCorrectnessEvaluator.evaluate({
     input: {
-      detections: discoveries.flatMap((d) => d.detections ?? []) as Detection[],
+      detections: [] as Detection[],
     },
     output: { discoveries: discoveries as unknown as Discovery[], steps: [] },
     expected: {
       criteria: [],
-      expected_discoveries: expectedGroups?.map((group) => ({
-        detections: group.map((rule_uuid) => ({ kind: 'detection' as const, rule_uuid })),
-      })) as unknown as Discovery[],
+      expected_discoveries: expectedGroups?.map((group) =>
+        buildDiscovery(...group)
+      ) as unknown as Discovery[],
     },
     metadata: null,
   });

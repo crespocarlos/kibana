@@ -12,7 +12,7 @@ import { selectEvaluators } from '@kbn/evals';
 export interface ContinuationCycle {
   /** rule_name of the detection fed this cycle — for human-readable explanations only. */
   ruleName?: string;
-  /** discovery_slug(s) the agent emitted this cycle (one per produced discovery). */
+  /** event_id(s) the agent emitted this cycle (one per produced discovery). */
   producedSlugs: string[];
 }
 
@@ -47,7 +47,7 @@ export function scoreContinuationStability(
 
     if (!establishedFirstCycle) {
       // The establishing cycle seeds the "seen" set; it is never graded for reuse. Skip empty
-      // leading cycles so the first cycle that actually produces a slug establishes the episode.
+      // leading cycles so the first cycle that actually produces a slug establishes the event.
       if (slugs.length > 0) {
         slugs.forEach((slug) => {
           seen.add(slug);

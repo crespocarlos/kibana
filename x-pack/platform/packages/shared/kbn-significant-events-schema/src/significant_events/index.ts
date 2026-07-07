@@ -6,12 +6,14 @@
  */
 
 export { detectionSchema, type Detection } from './detections';
-export { discoverySchema, discoveryDetectionSchema, type Discovery } from './discoveries';
+export { discoverySchema, type Discovery } from './discoveries';
 export {
-  dependencyEdgeSchema,
-  infraComponentSchema,
-  causeKiSchema,
-  evidenceSchema,
+  blastRadiusEntrySchema,
+  causalFeatureSchema,
+  signalEntrySchema,
+  type BlastRadiusEntry,
+  type CausalFeature,
+  type SignalEntry,
 } from './common_schemas';
 export type { KnowledgeIndicator } from '../queries';
 export {
