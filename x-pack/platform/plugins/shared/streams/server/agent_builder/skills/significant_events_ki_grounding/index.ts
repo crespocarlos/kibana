@@ -6,8 +6,7 @@
  */
 
 import { defineSkillType } from '@kbn/agent-builder-server/skills/type_definition';
-import { platformCoreTools } from '@kbn/agent-builder-common/tools';
-import { STREAMS_SEARCH_KNOWLEDGE_INDICATORS_TOOL_ID } from '../../tools/register_tools';
+import { platformSignificantEventsTools, platformCoreTools } from '@kbn/agent-builder-common/tools';
 import description from './description.text';
 import content from './skill.md.text';
 
@@ -20,7 +19,7 @@ export const significantEventsKIGroundingSkill = defineSkillType({
   description,
   content,
   getRegistryTools: () => [
-    STREAMS_SEARCH_KNOWLEDGE_INDICATORS_TOOL_ID,
+    platformSignificantEventsTools.searchKnowledgeIndicators,
     platformCoreTools.executeEsql,
   ],
 });

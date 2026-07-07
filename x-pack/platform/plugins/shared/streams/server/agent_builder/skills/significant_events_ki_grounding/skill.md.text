@@ -1,64 +1,96 @@
-You perform knowledge-indicator-grounded investigation for the Significant Events discovery. When loaded, you unlock `search_knowledge_indicators` and `execute_esql` and provide the protocol for using them to confirm or refute incident hypotheses.
+You perform knowledge-indicator-grounded investigation for the Significant Events discovery. When loaded, you unlock `platform_sig_events_ki_search` and `platform_core_execute_esql` and provide the protocol for using them to confirm or refute incident hypotheses.
 
 <tools>
 
-- **search_knowledge_indicators** — query the service knowledge base for feature KIs (dependency topology, infrastructure, entity metadata) and query KIs (pre-scoped ES|QL queries tied to detection rules). Always call this before any `execute_esql`. Required parameters: `kind` (array), `stream_names` (array).
-- **execute_esql** — run a KI-scoped ES|QL query to confirm or refute a hypothesis. Use only with query KIs where `rule.id` equals the `rule_uuid` **exactly** (character for character) and `rule.backed` is `true`. Never author freeform queries. Apply the required modifications in `<confirmation_queries>` before every call.
+- `platform_sig_events_ki_search` — query the service knowledge base for feature KIs (dependency topology, infrastructure, entity metadata) and query KIs (pre-scoped ES|QL queries tied to detection rules). Always call this before any `platform_core_execute_esql`. Required parameters: `kind` (array), `stream_names` (array).
+- `platform_core_execute_esql` — run a KI-scoped ES|QL query to confirm or refute a hypothesis. Use only with query KIs where `rule.id` equals the `rule_uuid` **exactly** (character for character) and `rule.backed` is `true`. Never author freeform queries. Apply the required modifications in `<procedure>` (query modifications section) before every call.
 
 </tools>
 
-<ki_protocol>
+<tool_examples>
 
-## Mandatory first step
+Example: platform_sig_events_ki_search call
+```json
+{ "kind": ["feature", "query"], "stream_names": ["logs.otel"] }
+```
+Response shape:
+```json
+{
+  "kIs": [
+    {
+      "kind": "feature",
+      "feature": { "id": "...", "type": "dependency", "source": "...", "target": "..." }
+    },
+    {
+      "kind": "query",
+      "query": { "id": "...", "rule": { "id": "<rule_uuid>", "backed": true }, "esql": "FROM ..." }
+    }
+  ]
+}
+```
 
-**Always call `search_knowledge_indicators` before any `execute_esql`.** One call for the entire detection batch:
+Example: platform_core_execute_esql call (with required modifications applied)
+```json
+{
+  "query": "FROM logs.otel | WHERE @timestamp >= \"2026-07-06T20:00:00Z\" AND @timestamp <= NOW() | WHERE body.text : \"failed to charge card\" | KEEP @timestamp, body.text | SORT @timestamp ASC | LIMIT 1"
+}
+```
+Response when rows found:
+```json
+{
+  "columns": [{ "name": "@timestamp" }, { "name": "body.text" }],
+  "values": [["2026-07-06T20:01:12Z", "Error: ..."]]
+}
+```
+Response when empty:
+```json
+{
+  "columns": [{ "name": "@timestamp" }, { "name": "body.text" }],
+  "values": []
+}
+```
+
+</tool_examples>
+
+<procedure>
+
+### Step 1 — Call platform_sig_events_ki_search
+
+One call for the entire detection batch:
 - `kind: ["feature", "query"]`
 - `stream_names`: deduplicated union of all `stream_name` values in the batch
 
 **Follow-up rules:**
 - If 0 query KIs returned → fire one follow-up call with `kind: ["query"]`, same `stream_names`.
-- Deferred entity KI follow-up: after recording all results, for each failure domain where (1) the entity KI was absent from the initial search AND (2) ≥1 rule has no confirmed ES|QL rows — fire one `search_knowledge_indicators` with `kind: ["feature"]`, same `stream_names`. Dispatch qualifying domains in parallel.
+- Deferred entity KI follow-up: after recording all results, for each failure domain where (1) the entity KI was absent from the initial search AND (2) ≥1 rule has no confirmed ES|QL rows — fire one `platform_sig_events_ki_search` with `kind: ["feature"]`, same `stream_names`. Dispatch qualifying domains in parallel.
 
-**Dedup results** by `feature.uuid` / `query.id`. Keep ALL Dependency-type and Infrastructure-type KIs regardless of score.
+**Dedup results** by `feature.uuid` / `query.id`. Keep ALL Dependency-type and Infrastructure-type KIs regardless of score. **Discard `dataset_analysis` KIs immediately** — schema field-distribution metadata with no diagnostic value.
 
-**Discard `dataset_analysis` KIs immediately** — schema field-distribution metadata with no diagnostic value. Note presence only.
+---
 
-</ki_protocol>
+### Step 2 — Parse KI results
 
-<ki_types>
+For each returned KI (see `<output_arrays>` for full type rules):
+- `feature.type: "dependency"` → seed `dependency_edges` and hypothesis directions.
+- `feature.type: "infrastructure"` → seed `infra_components`.
+- `feature.type: "entity"` → read `evidence[]` and `meta` to build hypotheses; read `properties` for stable facts. These become `cause_kis`.
+- `kind: "query"` → collect for pre-flight mapping; discard any with `rule.backed: false`.
 
-**Feature KI (`feature.type: "dependency"`)**: maps causal topology. `source → target` shows service dependency. Build `dependency_edges` from these.
-- Include when `source` or `target` equals the failing service.
-- `exposure: "exposed"` when `target` is the failing service (caller is affected).
-- `exposure: "not_exposed"` otherwise.
-- `evidence[]` and `meta` on dependency KIs are strong hypothesis seeds — read before querying.
+---
 
-**Feature KI (`feature.type: "infrastructure"`)**: shared infrastructure context. Build `infra_components` from these.
-- Include when the failing service appears in `description` or `evidence`.
-- `exposure: "exposed"` when the failing service is in `workloads`.
+### Step 3 — Pre-flight mapping
 
-**Feature KI (`feature.type: "entity"`)**: describes a specific service — protocols, endpoints, deployment details, known error patterns.
-- `evidence[]` and `meta`: read holistically; do not assume specific key names. Use to seed hypotheses and enrich `root_cause` when `execute_esql` confirms ≥1 active error row.
-- `properties`: stable structural facts (language, runtime, database type).
-- Version / image tag / build identifier in `meta` → include in `root_cause` as a possible deployment trigger for `step_change` or `spike`, only when ES|QL confirms active errors.
-
-**Query KI**: ES|QL queries pre-scoped to a detection rule. Only `rule.backed: true` query KIs are usable — `backed: false` means the rule was never promoted to an active alert. Run exact-match queries (`rule.id` = `rule_uuid` exactly) for every `kind:'detection'` rule.
-
-**Failing service name**: prefer `feature.properties.name` from a matching entity KI. Fall back to the detection `stream_name` with index suffix stripped (e.g. `logs-orders-*` → `orders`). `feature.id` is NOT the same as `properties.name`.
-
-</ki_types>
-
-<confirmation_queries>
-
-**Required pre-flight: for each `kind:'detection'` rule, write one line before dispatching:**
+Before dispatching any `platform_core_execute_esql`, write one line per `kind:'detection'` rule:
 
 `"<rule_uuid> → <query_ki.id>"` (match) or `"<rule_uuid> → NO MATCH"`
 
-Match criteria: `query_ki.rule.id` equals `rule_uuid` **exactly** AND `query_ki.rule.backed` is `true`. `backed: false` entries are rules never promoted to active alerts — skip them.
+Match criteria: `query_ki.rule.id` equals `rule_uuid` **exactly** AND `query_ki.rule.backed` is `true`. Scan the **entire** query KI list before writing NO MATCH. Skip `kind:'quiet'` rules — no query for them.
 
-Scan the **entire** query KI list for each rule before writing NO MATCH. A "no confirming query available" disposition is only valid once the scan is complete and no match was found.
+---
 
-Run one `execute_esql` per matched rule. Skip `kind:'quiet'` rules and rules with NO MATCH.
+### Step 4 — Dispatch platform_core_execute_esql calls
+
+**Dispatch all matched-rule calls simultaneously in a single batch.**
 
 **Required modifications before executing every query:**
 1. Strip `METADATA _id, _source`.
@@ -67,7 +99,7 @@ Run one `execute_esql` per matched rule. Skip `kind:'quiet'` rules and rules wit
    - Never project other fields — unmapped columns cause `Unknown column` errors.
    - Aggregation queries (have `STATS`/`BY`): strip `METADATA` only — no projection.
    - `ASC` returns the earliest matching log — onset evidence for root-cause hypothesis.
-3. Time scoping: insert `| WHERE @timestamp >= "<detection @timestamp>" AND @timestamp <= NOW()` immediately after `FROM`. Use the `@timestamp` from the detection whose `rule_uuid` matches the KI's `rule.id`. Fall back to the earliest `@timestamp` in the batch. Never use `NOW() - N minutes`. Skip for `ROW`/`SHOW`/`METRICS` queries.
+3. Time scoping: insert `| WHERE @timestamp >= "<detection @timestamp>" AND @timestamp <= NOW()` immediately after `FROM`. The lower bound MUST be an absolute ISO-8601 string copied directly from the detection doc (e.g. `"2026-06-11T15:03:00Z"`). Source: the `@timestamp` from the detection whose `rule_uuid` matches the KI's `rule.id`; fall back to the earliest `@timestamp` in the batch. **Never use any relative time expression** — `"now-15m"`, `NOW() - 15 minutes`, or any other form. Skip for `ROW`/`SHOW`/`METRICS` queries.
 4. Never modify `WHERE` clauses, field names, or `FROM`. Skip the query on execution failure.
 
 ```
@@ -75,46 +107,77 @@ Before: FROM logs.* | WHERE body.text : "ECONNREFUSED" | LIMIT 1
 After:  FROM logs.* | WHERE @timestamp >= "2026-06-11T15:03:00Z" AND @timestamp <= NOW() | WHERE body.text : "ECONNREFUSED" | KEEP @timestamp, body.text | SORT @timestamp ASC | LIMIT 1
 ```
 
-**Dispatch all calls simultaneously in a single batch.**
+**Budget — one call per rule by default.** Run the exact-match KI query with the required `ASC | LIMIT 1` modification.
 
-**Per-detection cap: 2 `execute_esql` calls per detection.** Run the exact-match KI query first; scan rules in `p_value` ascending order. Skip rules past the cap and note them in `summary`.
-
-**`result: found`** means the query returned rows consistent with the failure hypothesis. Healthy transaction logs are NOT confirmation — describe as: "Testing: [hypothesis]. Expected if true: [error pattern]. Found: [N rows, no error signature]. Verdict: refutes or inconclusive."
-
+**Contradiction follow-up (exception, not routine):** run a second call for the same rule only when the first result contradicts the hypothesis — 0 rows when failure was expected, or only healthy/unrelated rows. Skip additional rules past this exception budget; note them in `summary`.
 
 **Deduplication before executing:**
 - Identical query bodies (METADATA stripped, KEEP/SORT/LIMIT appended): execute once, write one `evidences` entry per KI.
 - Strict subset WHERE: execute only the more permissive query; write entries for both KIs.
 
-</confirmation_queries>
+---
 
-<cause_kis_derivation>
+### Step 5 — Record evidences
 
-`cause_kis` MUST always be present in output. Emit `cause_kis: []` when no path produces candidates.
+**One `evidences` entry per rule — never two, regardless of how many calls you made for it.** When a contradiction follow-up ran, the single entry narrates both attempts and its `esql_query`/`row_count` reflect the resolving (second) call.
 
-**Path 1 — Query KI chain** (for each exact-match KI whose query returned ≥1 row):
-1. **Structured (primary):** traverse its `features[]` array — each entry has an `id` that references a feature KI slug. Look up feature KIs with matching `id` and `type: "entity"`. Collect as candidates.
-2. **Prose (fallback):** if `features[]` is absent or empty, scan its `evidence[]` array for `"Entity:"` entries and find the matching entity KI by name.
-3. **Topology filter:** cross-reference `dependency_edges` to remove victim/caller entities. If a candidate service appears ONLY as `source` (never as `target`) in `dependency_edges`, AND the confirmed failure pattern is a connectivity failure (connection refused, unreachable, timeout), it is a caller — NOT a cause. Remove it. Keep entities that appear as `target`, or have no dependency edge context. Prefer fewer accurate cause KIs over broad attribution.
+**`result: found`** means the query returned rows consistent with the failure hypothesis. Healthy transaction logs are NOT confirmation — describe as: "Testing: [hypothesis]. Expected if true: [error pattern]. Found: [N rows, no error signature]. Verdict: refutes or inconclusive."
 
-**Path 2 — Continuation inheritance:** when Path 1 produced nothing and this is a continuation episode, inherit from the matched open episode's `cause_kis`.
+---
 
-**Stationary gate:** for `change_point_type: "stationary"` detections, emit `cause_kis: []` unless ≥1 executed query returned qualifying failure evidence. Qualifying: `execute_esql` returned ≥1 row whose `body.text` or `message` contains error messages, exception traces, or failure keywords. Routine entries (health checks, successful transactions) and rows with neither field populated are non-qualifying. Sustained alert volume alone is not qualifying.
+### Step 6 — Emit output arrays
 
-</cause_kis_derivation>
+All four arrays are **always required** in every `platform_sig_events_discovery_write` call. See `<output_arrays>` for derivation and format of each.
 
-<array_field_formats>
+</procedure>
 
-Emit these consistently in every `discovery_write` call:
+<output_arrays>
 
-- `cause_kis` — always emit; `[]` when no path produced candidates. Each entry: `name` (from `feature.id`), `stream_name` (from `feature.stream_name`). Never add a `confirmed` field.
-- `dependency_edges` — always emit; `[]` when empty. Each entry: `source`, `target`, `protocol` (omit if absent), `exposure`.
-- `infra_components` — always emit; `[]` when empty. Each entry: `title` (omit if absent), `workloads`, `exposure`.
-- `evidences` — always emit; `[]` only when no tool calls were made. Each entry: `rule_name`, `rule_uuid`, `stream_name`, `result`, `row_count`, `esql_query` (exact string as sent; `null` for quiet-rule dispositions), `description`, `collected_at`.
+All four arrays are mandatory in every `platform_sig_events_discovery_write` call. Never omit any of them.
 
-**Secondary topology signals** (only when no Dependency-type KI covers the edge):
-- `meta.downstream_services` on entity KIs: emit edges `source` = entity name, `target` = service (strip `:port`).
-- `"Dependency: <source> → <target>"` patterns in query KI `evidence` strings: parse and emit edges.
-- `properties` keys referencing services (e.g. `{database: "postgres"}`): emit edges.
+**Failing service name**: prefer `feature.properties.name` from a matching entity KI. Fall back to the detection `stream_name` with index suffix stripped (e.g. `logs-orders-*` → `orders`). `feature.id` is NOT the same as `properties.name`.
 
-</array_field_formats>
+---
+
+**`dependency_edges`** — from `kind:"feature"`, `feature.type:"dependency"` KIs; always emit; `[]` when none found.
+- Include when `source` or `target` equals the failing service.
+- `exposure: "exposed"` when `target` is the failing service (caller is affected); `"not_exposed"` otherwise.
+- `evidence[]` and `meta` are strong hypothesis seeds — read before querying.
+- Secondary signals when no dependency KI covers an edge: `meta.downstream_services` on entity KIs, `"Dependency: <source> → <target>"` in query KI `evidence`, `properties` keys referencing services.
+
+Each entry: `source`, `target`, `protocol` (omit if absent), `exposure`.
+
+---
+
+**`infra_components`** — from `kind:"feature"`, `feature.type:"infrastructure"` KIs; always emit; `[]` when none found.
+- Include when the failing service appears in `description` or `evidence`.
+- `exposure: "exposed"` when the failing service is in `workloads`.
+
+Each entry: `title` (omit if absent), `workloads`, `exposure`.
+
+---
+
+**`cause_kis`** — from `kind:"feature"`, `feature.type:"entity"` KIs; always emit; `[]` when no path produces candidates.
+- `evidence[]` and `meta`: read holistically; use to seed hypotheses and enrich `root_cause` when ES|QL confirms ≥1 active error row.
+- `properties`: stable structural facts (language, runtime, database type).
+- Version / image tag / build identifier in `meta` → include in `root_cause` as a possible deployment trigger for `step_change` or `spike`, only when ES|QL confirms active errors.
+
+Derivation paths (in order):
+1. **Query KI chain**: for each exact-match query KI, traverse its `features[]` → entity KIs with matching `id`. Fallback: scan `evidence[]` for `"Entity:"` entries. Topology filter: remove candidates appearing ONLY as `source` in `dependency_edges` when the failure is a connectivity error — it's a caller, not a cause.
+2. **Continuation inheritance**: if Path 1 produced nothing and this is a continuation episode, inherit from the matched open episode's `cause_kis`.
+
+Each entry: `name` (from `feature.id`), `stream_name` (from `feature.stream_name`). Never add a `confirmed` field.
+
+---
+
+**`evidences`** — always emit; `[]` only when no `platform_core_execute_esql` calls were made.
+
+One entry per detection rule — never two, even when a contradiction follow-up ran. When a follow-up ran, the single entry narrates both calls; `esql_query`/`row_count` reflect the resolving call.
+
+`result: found` means rows consistent with the failure hypothesis. Healthy logs are NOT confirmation.
+
+Each entry: `rule_name`, `rule_uuid`, `stream_name`, `result`, `row_count`, `esql_query` (exact string as sent; `null` for quiet-rule dispositions), `description`, `collected_at`.
+
+Description format: `"Testing: [hypothesis]. Expected if true: [error pattern]. Found: [N rows / summary]. Verdict: confirms | refutes | inconclusive."`
+
+</output_arrays>

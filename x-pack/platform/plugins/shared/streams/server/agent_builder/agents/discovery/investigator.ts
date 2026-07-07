@@ -6,10 +6,10 @@
  */
 
 import type { BuiltInAgentDefinition } from '@kbn/agent-builder-server/agents';
+import { platformSignificantEventsTools, platformCoreTools } from '@kbn/agent-builder-common/tools';
 import type { StreamsServer } from '../../../types';
 import { getSignificantEventsAvailability } from '../../../routes/utils/assert_significant_events_access';
 import instructions from './instructions/investigator.md.text';
-import { SIGNIFICANT_EVENTS_DISCOVERY_TOOL_IDS } from './constants';
 import { SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID } from '../../skills/significant_events_ki_grounding';
 
 export const SIGNIFICANT_EVENTS_INVESTIGATOR_AGENT_ID =
@@ -44,9 +44,17 @@ export function createSignificantEventsInvestigatorAgent({
     configuration: {
       instructions,
       skill_ids: [SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID],
+      // This agent's tool set is fully scoped by SIGNIFICANT_EVENTS_DISCOVERY_TOOL_IDS — the
+      // generic platform_core_* tools are irrelevant to discovery and only add noise to tool selection.
+      enable_elastic_capabilities: false,
       tools: [
         {
-          tool_ids: [...SIGNIFICANT_EVENTS_DISCOVERY_TOOL_IDS],
+          tool_ids: [
+            platformCoreTools.executeEsql,
+            platformSignificantEventsTools.searchKnowledgeIndicators,
+            platformSignificantEventsTools.searchEvent,
+            platformSignificantEventsTools.discoveryWrite,
+          ],
         },
       ],
     },

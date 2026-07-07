@@ -140,12 +140,16 @@ steps:
       hasRemaining: '${{ steps.compute_queue_sizes.output.candidateCount > steps.compute_queue_sizes.output.processedCount }}'
       queueEmpty: '${{ steps.compute_queue_sizes.output.candidateCount <= steps.compute_queue_sizes.output.processedCount }}'
 
-  - name: compute_stamp_rule_uuids
-    # Rules to mark handled this cycle: all rules in the investigated batch (active + quiet).
-    # Active rules beyond detectionBatchMax cap are excluded so they survive for the next cycle.
+  - name: compute_quiet_rule_uuids
+    # Quiet rules are always safe to stamp handled even when not written by the agent —
+    # a rule the pipeline already found quiet costs nothing to re-scan, and the investigator's
+    # own Quiet-without-episode gate intentionally skips discovery_write for many of them.
     type: data.set
     with:
-      stamp_rule_uuids: "${{ steps.compute_active_batch.output.hits | map: '_source' | map: 'rule_uuid' | compact | uniq | default: [] }}"
+      rule_uuids: >-
+        ${{ steps.compute_active_batch.output.hits
+        | where: '_source.kind', 'quiet'
+        | map: '_source' | map: 'rule_uuid' | compact | uniq | default: [] }}
 
   - name: output_no_detections
     type: workflow.output
@@ -174,9 +178,62 @@ steps:
       message: |
         ## Active batch
         {{ steps.compute_active_batch.output.hits | map: '_source' | json }}
-
+      schema:
+        type: object
+        properties:
+          written_rule_uuids:
+            type: array
+            items:
+              type: string
+            description: >-
+              rule_uuid of every entry across every detections[] array from every
+              discovery_write call made this cycle — including calls skipped by
+              discovery_write's own deduplication (written: false against an
+              existing episode still counts; the rule was accounted for). Used by
+              the workflow to verify active (kind:detection) rules were actually
+              handled before stamping them. Full discovery data is written via
+              the discovery_write tool — this is a compact summary only.
+        required: [written_rule_uuids]
     on-failure:
       continue: false
+
+  # Eviction-safe snapshot — ai.agent outputs are evictable; data.set outputs are not.
+  # Mirrors triage.yaml's check_judge_agent_output/store_significant_events pattern:
+  # written_rule_uuids is a mechanical echo of what discovery_write already returned to
+  # the agent in-context this same turn, not a claim requiring independent verification.
+  - name: check_investigator_agent_output
+    type: if
+    condition: >-
+      ${{ steps.run_investigator_agent.error == null
+      and steps.run_investigator_agent.output.structured_output.written_rule_uuids != null }}
+    steps:
+      - name: store_investigator_written_rule_uuids
+        type: data.set
+        with:
+          rule_uuids: '${{ steps.run_investigator_agent.output.structured_output.written_rule_uuids }}'
+
+  - name: compute_written_rule_uuids
+    # rule_uuids the agent reported as accounted for by a discovery_write call this
+    # cycle. Empty when the agent errored or returned no structured output — in that
+    # case only quiet rules (compute_quiet_rule_uuids) get stamped, and active detection
+    # rules are left unhandled so they're retried next cycle instead of being lost.
+    type: data.set
+    with:
+      rule_uuids: >-
+        ${{ steps.store_investigator_written_rule_uuids.output.rule_uuids
+        | compact | uniq | default: [] }}
+
+  - name: compute_stamp_rule_uuids
+    # Final safe-to-stamp set: quiet rules (always safe, see compute_quiet_rule_uuids)
+    # plus only the rule_uuids the agent confirmed writing a discovery for this cycle.
+    # Active detection rules the agent silently dropped are excluded here, so they
+    # remain unhandled and are retried next cycle instead of being lost permanently.
+    type: data.set
+    with:
+      stamp_rule_uuids: >-
+        ${{ steps.compute_quiet_rule_uuids.output.rule_uuids
+        | concat: steps.compute_written_rule_uuids.output.rule_uuids
+        | compact | uniq | default: [] }}
 
   - name: get_unhandled_state_docs
     # Skip handled-stamping if the agent failed, so its detections are retried next cycle.

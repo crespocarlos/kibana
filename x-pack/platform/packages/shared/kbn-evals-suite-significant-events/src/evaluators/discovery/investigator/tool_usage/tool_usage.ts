@@ -5,11 +5,7 @@
  * 2.0.
  */
 
-import {
-  internalTools,
-  platformCoreTools,
-  platformSignificantEventsTools,
-} from '@kbn/agent-builder-common';
+import { platformCoreTools, platformSignificantEventsTools } from '@kbn/agent-builder-common';
 import { extractToolCallIds } from '../../utils/tool_usage';
 
 const { executeEsql: TOOL_ID_EXECUTE_ESQL } = platformCoreTools;
@@ -18,7 +14,6 @@ const {
   searchEvent: TOOL_ID_EVENT_SEARCH,
   discoveryWrite: TOOL_ID_DISCOVERY_WRITE,
 } = platformSignificantEventsTools;
-const { readFile: TOOL_ID_READ_FILE } = internalTools;
 import type { InvestigatorEvaluator } from '../../types';
 
 export const createInvestigatorToolUsageEvaluator = (): InvestigatorEvaluator => ({
@@ -31,7 +26,6 @@ export const createInvestigatorToolUsageEvaluator = (): InvestigatorEvaluator =>
     const calledEventSearch = calledTools.has(TOOL_ID_EVENT_SEARCH);
     const calledKiSearch = calledTools.has(TOOL_ID_KI_SEARCH);
     const calledEsql = calledTools.has(TOOL_ID_EXECUTE_ESQL);
-    const calledReadFile = calledTools.has(TOOL_ID_READ_FILE);
     const calledDiscoveryWrite = calledTools.has(TOOL_ID_DISCOVERY_WRITE);
 
     // Empty batch — agent should return immediately with no tool calls.
@@ -44,15 +38,6 @@ export const createInvestigatorToolUsageEvaluator = (): InvestigatorEvaluator =>
           unexpectedCalls === 0
             ? 'Empty batch: no tool calls made as expected'
             : `Empty batch: agent made ${unexpectedCalls} unexpected tool call(s) instead of early-exiting`,
-      });
-    }
-
-    if (!calledReadFile) {
-      return Promise.resolve({
-        score: 0,
-        label: 'missing-read-file',
-        explanation:
-          'read_file was not called — required for all non-empty batches to load skill reference tables (change_type_semantics, sev_tiers, confidence_scale)',
       });
     }
 

@@ -5,11 +5,7 @@
  * 2.0.
  */
 
-import {
-  internalTools,
-  platformCoreTools,
-  platformSignificantEventsTools,
-} from '@kbn/agent-builder-common';
+import { platformCoreTools, platformSignificantEventsTools } from '@kbn/agent-builder-common';
 import { extractToolCallIds } from '../../utils/tool_usage';
 
 const { executeEsql: TOOL_ID_EXECUTE_ESQL } = platformCoreTools;
@@ -18,7 +14,6 @@ const {
   eventsWrite: TOOL_ID_EVENTS_WRITE,
   discoveryWrite: TOOL_ID_DISCOVERY_WRITE,
 } = platformSignificantEventsTools;
-const { readFile: TOOL_ID_READ_FILE } = internalTools;
 import type { DiscoveryJudgeEvaluator } from '../../types';
 
 /** Score the output-tool pair (events_write + discovery_write) proportionally. */
@@ -69,18 +64,8 @@ export const createToolUsageEvaluator = (): DiscoveryJudgeEvaluator => ({
     const calledTools = new Set(extractToolCallIds(output.steps ?? []));
     const calledKiSearch = calledTools.has(TOOL_ID_KI_SEARCH);
     const calledEsql = calledTools.has(TOOL_ID_EXECUTE_ESQL);
-    const calledReadFile = calledTools.has(TOOL_ID_READ_FILE);
     const calledEventsWrite = calledTools.has(TOOL_ID_EVENTS_WRITE);
     const calledDiscoveryWrite = calledTools.has(TOOL_ID_DISCOVERY_WRITE);
-
-    if (!calledReadFile) {
-      return Promise.resolve({
-        score: 0,
-        label: 'missing-read-file',
-        explanation:
-          'read_file was not called — required to load skill reference tables (change_type_semantics, sev_tiers, confidence_scale)',
-      });
-    }
 
     if (allEvidencesHaveQuery) {
       // All evidences already carry queries — judge should re-verify directly via execute_esql

@@ -148,7 +148,7 @@ export const SignificantEventFlyout = ({ event, onClose }: SignificantEventFlyou
           <EuiText size="xs" color="subdued">
             {formatTimestamp(event['@timestamp'])}
             {event.criticality != null && ` · ${CRITICALITY_LABEL}: ${event.criticality}`}
-            {event.confidence != null && ` · ${CONFIDENCE_LABEL}: ${event.confidence}%`}
+            {event.confidence != null && ` · ${CONFIDENCE_LABEL}: ${event.confidence * 100}%`}
           </EuiText>
         </EuiFlexGroup>
       </EuiFlyoutHeader>

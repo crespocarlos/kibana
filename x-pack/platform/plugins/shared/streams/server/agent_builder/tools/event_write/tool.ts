@@ -42,6 +42,13 @@ const eventsWriteSchema = significantEventSchema
     workflow_execution_id: true,
   })
   .extend({
+    // Override the base schema's description — it's written for discovery_write, where
+    // discovery_slug is optional and auto-generated for new episodes. Here it always refers
+    // to an existing discovery, so it's required and must never be omitted.
+    discovery_slug: significantEventSchema.shape.discovery_slug.describe(
+      'Required. Stable episode identifier of the discovery being reviewed — ' +
+        'copy it verbatim from the input discovery.'
+    ),
     conversation_id: z.string().optional(),
   });
 
