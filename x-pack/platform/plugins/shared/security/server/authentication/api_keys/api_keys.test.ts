@@ -845,6 +845,11 @@ describe('API Keys', () => {
         },
       });
 
+      // The ES clone parser silently drops the field after `expiration: null`,
+      // so `metadata` must be serialized before `expiration`. Guard the ordering.
+      const { body } = mockClusterClient.asInternalUser.transport.request.mock.calls[0][0];
+      expect(Object.keys(body)).toEqual(['api_key', 'name', 'metadata', 'expiration']);
+
       expect(result).toEqual({
         id: 'cloned-id',
         name: 'cloned-key',
