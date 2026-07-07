@@ -101,6 +101,7 @@ Match criteria: `query_ki.rule.id` equals `rule_uuid` **exactly** AND `query_ki.
    - `ASC` returns the earliest matching log — onset evidence for root-cause hypothesis.
 3. Time scoping: insert `| WHERE @timestamp >= "<detection @timestamp>" AND @timestamp <= NOW()` immediately after `FROM`. The lower bound MUST be an absolute ISO-8601 string copied directly from the detection doc (e.g. `"2026-06-11T15:03:00Z"`). Source: the `@timestamp` from the detection whose `rule_uuid` matches the KI's `rule.id`; fall back to the earliest `@timestamp` in the batch. **Never use any relative time expression** — `"now-15m"`, `NOW() - 15 minutes`, or any other form. Skip for `ROW`/`SHOW`/`METRICS` queries.
 4. Never modify `WHERE` clauses, field names, or `FROM`. Skip the query on execution failure.
+5. If the KI's `esql.query` starts with `FROM $.<name>`, the `$.` is a required, literal part of the Streams-backed view reference — copy it verbatim, never strip or "correct" it.
 
 ```
 Before: FROM logs.* | WHERE body.text : "ECONNREFUSED" | LIMIT 1
