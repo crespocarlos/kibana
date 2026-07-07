@@ -21,8 +21,10 @@ export type EventCreateInput = Omit<
   | 'evidences'
   | 'workflow_execution_id'
   | 'status'
+  | 'recommendations'
 > & {
   status?: EventsWriteInput['status'];
+  recommendations?: EventsWriteInput['recommendations'];
 };
 
 export async function createEventToolHandler({
@@ -37,6 +39,7 @@ export async function createEventToolHandler({
     input: {
       ...eventInput,
       status: eventInput.status ?? 'promoted',
+      recommendations: eventInput.recommendations ?? [],
     },
   });
   return { event_id: result.event_id, acknowledged: true };
