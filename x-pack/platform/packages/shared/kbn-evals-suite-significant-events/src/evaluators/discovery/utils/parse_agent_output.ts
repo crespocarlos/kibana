@@ -13,6 +13,10 @@ interface DiscoveryWriteToolResult {
   data?: Pick<Discovery, 'discovery_slug'>;
 }
 
+interface EventsWriteToolResult {
+  data?: { event_id?: string; written?: boolean };
+}
+
 const toolCallSteps = (steps: ConverseStep[], toolId: string) =>
   steps.filter((step) => step.type === 'tool_call' && step.tool_id === toolId && step.params);
 
@@ -27,8 +31,14 @@ export const extractDiscoveriesFromToolCall = (steps: ConverseStep[]): Discovery
 
 /**
  * Extract significant events from `events_write` tool call steps.
+ * Merges `event_id` and `written` from the tool result so evaluators can inspect dedup outcomes.
  */
 export const extractSignificantEventsFromToolCall = (steps: ConverseStep[]): SignificantEvent[] =>
-  toolCallSteps(steps, platformSignificantEventsTools.eventsWrite).map(
-    (step) => step.params as SignificantEvent
-  );
+  toolCallSteps(steps, platformSignificantEventsTools.eventsWrite).map((step) => {
+    const result = (step.results?.[0] as EventsWriteToolResult | undefined)?.data;
+    return {
+      ...step.params,
+      ...(result?.event_id != null ? { event_id: result.event_id } : {}),
+      ...(result?.written != null ? { written: result.written } : {}),
+    } as SignificantEvent;
+  });

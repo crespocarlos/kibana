@@ -32,7 +32,7 @@ const createEventSchema = significantEventSchema
     confidence: true,
     recommendations: true,
   })
-  .partial({ status: true });
+  .partial({ status: true, recommendations: true });
 
 export function createEventTool({
   getScopedClients,

@@ -62,8 +62,7 @@ export async function eventsWriteHandler({
   const slug = input.discovery_slug || `agent-event-${uuidv4().slice(0, 8)}`;
   const isSynthetic = !input.discovery_slug;
 
-  const existing = isSynthetic ? null : await eventClient.findByDiscoverySlug(slug);
-  const latestEvent = existing?.hits.at(-1);
+  const latestEvent = isSynthetic ? null : (await eventClient.findLatestBySlugs([slug])).get(slug);
 
   // Skip write if status unchanged
   if (latestEvent && latestEvent.status === input.status) {

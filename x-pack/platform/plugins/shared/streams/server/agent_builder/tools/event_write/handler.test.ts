@@ -27,7 +27,7 @@ const baseInput = {
 describe('eventsWriteHandler', () => {
   it('writes a new event when no existing event exists', async () => {
     const eventClient = {
-      findByDiscoverySlug: jest.fn().mockResolvedValue({ hits: [] }),
+      findLatestBySlugs: jest.fn().mockResolvedValue(new Map()),
       bulkCreate: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -43,16 +43,13 @@ describe('eventsWriteHandler', () => {
     expect(typeof result.event_id).toBe('string');
   });
 
-  it('skips write when status is unchanged, comparing against the latest version', async () => {
-    // hits[0] is the oldest version (status: acknowledged), hits[1] is the latest (status: promoted).
-    // The handler must compare against hits.at(-1) — not hits[0] — to detect the true current status.
+  it('skips write when status is unchanged', async () => {
     const eventClient = {
-      findByDiscoverySlug: jest.fn().mockResolvedValue({
-        hits: [
-          { event_id: 'old-id', status: 'acknowledged' },
-          { event_id: 'latest-id', status: 'promoted' },
-        ],
-      }),
+      findLatestBySlugs: jest
+        .fn()
+        .mockResolvedValue(
+          new Map([['checkout__latency-abc12345', { event_id: 'latest-id', status: 'promoted' }]])
+        ),
       bulkCreate: jest.fn(),
     };
 
@@ -69,7 +66,7 @@ describe('eventsWriteHandler', () => {
 
   it('generates a synthetic slug and skips dedup lookup when discovery_slug is absent', async () => {
     const eventClient = {
-      findByDiscoverySlug: jest.fn(),
+      findLatestBySlugs: jest.fn(),
       bulkCreate: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -78,20 +75,20 @@ describe('eventsWriteHandler', () => {
       input: { ...baseInput },
     });
 
-    expect(eventClient.findByDiscoverySlug).not.toHaveBeenCalled();
+    expect(eventClient.findLatestBySlugs).not.toHaveBeenCalled();
     expect(result.written).toBe(true);
     expect(result.discovery_slug).toMatch(/^agent-event-[a-f0-9]{8}$/);
   });
 
-  it('sets previous_event_id to the latest version, not the oldest', async () => {
-    // hits are sorted ASC by @timestamp — hits.at(-1) is the tip of the version chain.
+  it('sets previous_event_id from the latest event returned by findLatestBySlugs', async () => {
     const eventClient = {
-      findByDiscoverySlug: jest.fn().mockResolvedValue({
-        hits: [
-          { event_id: 'oldest-id', status: 'acknowledged' },
-          { event_id: 'latest-id', status: 'acknowledged' },
-        ],
-      }),
+      findLatestBySlugs: jest
+        .fn()
+        .mockResolvedValue(
+          new Map([
+            ['checkout__latency-abc12345', { event_id: 'latest-id', status: 'acknowledged' }],
+          ])
+        ),
       bulkCreate: jest.fn().mockResolvedValue(undefined),
     };
 

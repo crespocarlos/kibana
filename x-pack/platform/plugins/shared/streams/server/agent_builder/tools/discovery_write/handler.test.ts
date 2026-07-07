@@ -48,8 +48,8 @@ describe('parseDateMathToMs', () => {
   it('parses minutes', () => expect(parseDateMathToMs('now-30m')).toBe(1800000));
   it('parses seconds', () => expect(parseDateMathToMs('now-10s')).toBe(10000));
   it('parses days', () => expect(parseDateMathToMs('now-1d')).toBe(86400000));
-  it('defaults to 1 hour for unrecognised expressions', () =>
-    expect(parseDateMathToMs('invalid')).toBe(3600000));
+  it('returns undefined for unrecognised expressions', () =>
+    expect(parseDateMathToMs('invalid')).toBeUndefined());
 });
 
 describe('discoveryWriteHandler', () => {
@@ -122,6 +122,26 @@ describe('discoveryWriteHandler', () => {
       input: { ...baseInput, discovery_slug: 'checkout__latency-abc12345', dedup_window: 'now-1h' },
     });
 
+    expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
+    expect(result.written).toBe(true);
+  });
+
+  it('skips dedup when dedup_window is unrecognised', async () => {
+    const discoveryClient = {
+      findBySlug: jest.fn(),
+      bulkCreate: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await discoveryWriteHandler({
+      discoveryClient: discoveryClient as never,
+      input: {
+        ...baseInput,
+        discovery_slug: 'checkout__latency-abc12345',
+        dedup_window: 'invalid',
+      },
+    });
+
+    expect(discoveryClient.findBySlug).not.toHaveBeenCalled();
     expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
     expect(result.written).toBe(true);
   });

@@ -15,11 +15,22 @@ import {
 } from './constants';
 
 export const dependencyEdgeSchema = z.object({
-  source: z.string().describe('Source service or component in the dependency relationship.'),
-  target: z.string().describe('Target service or component being called or depended upon.'),
-  protocol: z.string().optional().describe('Communication protocol (e.g. "HTTP", "gRPC", "TCP").'),
+  source: z
+    .string()
+    .max(MAX_TITLE_LENGTH)
+    .describe('Source service or component in the dependency relationship.'),
+  target: z
+    .string()
+    .max(MAX_TITLE_LENGTH)
+    .describe('Target service or component being called or depended upon.'),
+  protocol: z
+    .string()
+    .max(100)
+    .optional()
+    .describe('Communication protocol (e.g. "HTTP", "gRPC", "TCP").'),
   exposure: z
     .string()
+    .max(100)
     .optional()
     .describe(
       'Exposure level: "exposed" means this edge is visible to end users; "internal" means backend-only.'
@@ -29,18 +40,21 @@ export const dependencyEdgeSchema = z.object({
 export const infraComponentSchema = z.object({
   title: z
     .string()
+    .max(MAX_TITLE_LENGTH)
     .optional()
     .describe(
       'Human-readable name of the infrastructure component (e.g. "Auth Service", "Database Cluster").'
     ),
   workloads: z
-    .array(z.string())
+    .array(z.string().max(MAX_STREAM_NAME_LENGTH))
+    .max(100)
     .optional()
     .describe(
       'List of workload names (e.g. pod names, service names) that make up this component.'
     ),
   exposure: z
     .string()
+    .max(100)
     .optional()
     .describe('Exposure level: "exposed" means end-user-facing; "internal" means backend-only.'),
 });
@@ -48,9 +62,14 @@ export const infraComponentSchema = z.object({
 export const causeKiSchema = z.object({
   name: z
     .string()
+    .max(MAX_TITLE_LENGTH)
     .optional()
     .describe('Human-readable name of the Knowledge Indicator (KI) identified as a causal factor.'),
-  stream_name: z.string().optional().describe('Data stream associated with this causal KI.'),
+  stream_name: z
+    .string()
+    .max(MAX_STREAM_NAME_LENGTH)
+    .optional()
+    .describe('Data stream associated with this causal KI.'),
 });
 
 export const evidenceSchema = z.object({
@@ -62,28 +81,38 @@ export const evidenceSchema = z.object({
   rule_uuid: z.string().max(MAX_ID_LENGTH).optional().describe('UUID of the alerting rule.'),
   result: z
     .string()
+    .max(MAX_RULE_NAME_LENGTH)
     .optional()
     .describe(
       'Outcome of the query: "found" = rows returned; "empty" = 0 rows; "error" = query failed.'
     ),
   description: z
     .string()
+    .max(MAX_TEXT_LENGTH)
     .optional()
     .describe(
       'Documents a hypothesis test, not just an observation. ' +
         'Format: "Testing: [what hypothesis this query tests]. Expected if true: [what rows would look like]. Found: [count, pattern, or \'no matching rows\']. Verdict: [confirms / refutes / inconclusive — and why]." ' +
         'No payload values — no UUIDs, raw log content, or specific metric values.'
     ),
-  stream_name: z.string().optional().describe('Data stream this evidence was collected from.'),
+  stream_name: z
+    .string()
+    .max(MAX_STREAM_NAME_LENGTH)
+    .optional()
+    .describe('Data stream this evidence was collected from.'),
   row_count: z
     .number()
     .optional()
     .describe(
       'Number of rows matching the failure pattern. 0 means no matching data — treat as non-confirming.'
     ),
-  collected_at: z.string().optional().describe('ISO timestamp when this evidence was collected.'),
+  collected_at: z.iso
+    .datetime()
+    .optional()
+    .describe('ISO timestamp when this evidence was collected.'),
   esql_query: z
     .string()
+    .max(MAX_TEXT_LENGTH)
     .nullable()
     .optional()
     .describe('The ES|QL query used to collect this evidence.'),

@@ -84,10 +84,12 @@ export interface DiscoveryWriteResult {
 /**
  * Parses simple ES date math expressions like "now-1h", "now-30m", "now-7d"
  * into milliseconds offset. Only supports now-N{h|m|d|s} patterns.
+ * Returns `undefined` for unrecognised expressions — callers should skip
+ * dedup rather than silently falling back to a wrong window.
  */
-export const parseDateMathToMs = (expr: string): number => {
+export const parseDateMathToMs = (expr: string): number | undefined => {
   const match = expr.match(/^now-(\d+)([smhd])$/);
-  if (!match) return 60 * 60 * 1000; // default 1 hour
+  if (!match) return undefined;
   const value = parseInt(match[1], 10);
   const unit = match[2];
   const multipliers: Record<string, number> = {
@@ -112,10 +114,12 @@ export async function discoveryWriteHandler({
 
   const discoveryInput = { ...rest, discovery_slug: resolvedSlug };
 
-  // Deduplication: skip write if a non-handled discovery with this slug exists within the window
-  if (discoveryInput.kind !== 'handled' && dedupWindow) {
+  // Deduplication: skip write if a non-handled discovery with this slug exists within the window.
+  // Unrecognised dedup_window expressions produce undefined — skip dedup rather than silently
+  // falling back to an arbitrary window.
+  const windowMs = dedupWindow != null ? parseDateMathToMs(dedupWindow) : undefined;
+  if (discoveryInput.kind !== 'handled' && windowMs != null) {
     const existing = await discoveryClient.findBySlug(resolvedSlug);
-    const windowMs = parseDateMathToMs(dedupWindow);
     const cutoff = Date.now() - windowMs;
     const recent = existing.hits.find(
       (d) => d.kind !== 'handled' && new Date(d['@timestamp']).getTime() >= cutoff
