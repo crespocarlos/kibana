@@ -33,12 +33,35 @@ export const extractDiscoveriesFromToolCall = (steps: ConverseStep[]): Discovery
  * Extract significant events from `events_write` tool call steps.
  * Merges `event_id` and `written` from the tool result so evaluators can inspect dedup outcomes.
  */
-export const extractSignificantEventsFromToolCall = (steps: ConverseStep[]): SignificantEvent[] =>
-  toolCallSteps(steps, platformSignificantEventsTools.eventsWrite).map((step) => {
-    const result = (step.results?.[0] as EventsWriteToolResult | undefined)?.data;
-    return {
-      ...step.params,
-      ...(result?.event_id != null ? { event_id: result.event_id } : {}),
-      ...(result?.written != null ? { written: result.written } : {}),
-    } as SignificantEvent;
-  });
+function extractJsonObject(message: string): Record<string, unknown> | undefined {
+  if (!message) {
+    return undefined;
+  }
+
+  const fenceRegex = /```(?:json)?\s*([\s\S]*?)```/gi;
+  let match: RegExpExecArray | null;
+  while ((match = fenceRegex.exec(message)) !== null) {
+    const parsed = tryParseJsonObject(match[1]);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  return tryParseJsonObject(message);
+}
+
+function parseArrayProperty<T>(message: string, key: string): T[] {
+  const obj = extractJsonObject(message);
+  const value = obj?.[key];
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+/** Parse the discovery's `{ "discoveries": [...] }` message into `Discovery[]`. */
+export function parseDiscoveries(message: string): Discovery[] {
+  return parseArrayProperty<Discovery>(message, 'discoveries');
+}
+
+/** Parse the judge's `{ "significant_events": [...] }` message into `SignificantEvent[]`. */
+export function parseSignificantEvents(message: string): SignificantEvent[] {
+  return parseArrayProperty<SignificantEvent>(message, 'significant_events');
+}
