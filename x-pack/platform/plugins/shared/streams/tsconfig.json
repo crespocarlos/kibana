@@ -12,9 +12,6 @@
     "public/**/*",
     "types/**/*",
     "test/**/*",
-    "../significant_events/server/agent_builder/tools/discovery_write",
-    "../significant_events/server/agent_builder/tools/event_write",
-    "../significant_events/server/agent_builder/skills/significant_events_ki_grounding"
   ],
   "exclude": ["target/**/*"],
   "kbn_references": [
