@@ -15,6 +15,7 @@ import dedent from 'dedent';
 import type { StreamsServer } from '@kbn/streams-plugin/server/types';
 import type { GetScopedClients } from '../../../routes/types';
 import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
+import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
 import { createSignificantEventsAvailability } from '../significant_events_availability';
 import { searchEventsToolHandler } from './handler';
 
@@ -58,10 +59,12 @@ export function createSearchEventsTool({
   getScopedClients,
   server,
   logger,
+  telemetry,
 }: {
   getScopedClients: GetScopedClients;
   server: StreamsServer;
   logger: Logger;
+  telemetry: EbtTelemetryClient;
 }): StaticToolRegistration<typeof searchEventsSchema> {
   const toolDefinition: BuiltinToolDefinition<typeof searchEventsSchema> = {
     id: SIGNIFICANT_EVENTS_SEARCH_EVENTS_TOOL_ID,
@@ -94,6 +97,14 @@ export function createSearchEventsTool({
           params: toolParams,
         });
 
+        telemetry.trackAgentToolEventSearch({
+          success: true,
+          result_count: data.total,
+          has_query: toolParams.query !== undefined,
+          has_stream_filter: (toolParams.stream_names?.length ?? 0) > 0,
+          state_filter: toolParams.state,
+        });
+
         return {
           results: [
             {
@@ -105,6 +116,16 @@ export function createSearchEventsTool({
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         logger.error(`Error running event_search: ${message}`);
+
+        telemetry.trackAgentToolEventSearch({
+          success: false,
+          result_count: 0,
+          has_query: toolParams.query !== undefined,
+          has_stream_filter: (toolParams.stream_names?.length ?? 0) > 0,
+          state_filter: toolParams.state,
+          error_message: message,
+        });
+
         return {
           results: [
             {

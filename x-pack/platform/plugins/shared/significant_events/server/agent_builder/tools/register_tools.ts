@@ -69,6 +69,7 @@ export function registerAgentBuilderTools({
       getScopedClients,
       server,
       logger: logger.get('event_search_tool'),
+      telemetry,
     }),
     createEventTool({
       getScopedClients,

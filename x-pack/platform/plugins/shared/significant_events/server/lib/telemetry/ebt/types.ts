@@ -151,12 +151,22 @@ interface AgentToolDiscoveryWriteProps {
   error_message?: string;
 }
 
+interface AgentToolEventSearchProps {
+  success: boolean;
+  result_count: number;
+  has_query: boolean;
+  has_stream_filter: boolean;
+  state_filter?: 'open' | 'closed';
+  error_message?: string;
+}
+
 export {
   type AgentBuilderKnowledgeIndicatorCreatedProps,
   type AgentToolKnowledgeIndicatorIdentificationStartedProps,
   type AgentToolDiscoveryWriteProps,
   type AgentToolEventCreateProps,
   type AgentToolEventInvestigationAttachProps,
+  type AgentToolEventSearchProps,
   type AgentToolEventStatusUpdateProps,
   type AgentToolEventWriteProps,
   type CodeAnalysisGroundingProps,
