@@ -84,7 +84,7 @@ describe('discoveryWriteHandler', () => {
     expect(result.discovery_slug).toBe('checkout__my-slug-abc12345');
   });
 
-  it('skips write when duplicate exists within dedup window', async () => {
+  it('skips write when duplicate of same kind exists within dedup window for auto-generated slug', async () => {
     const recentTimestamp = new Date(Date.now() - 1000).toISOString();
     const discoveryClient = {
       findBySlug: jest.fn().mockResolvedValue({
@@ -101,14 +101,77 @@ describe('discoveryWriteHandler', () => {
 
     const result = await discoveryWriteHandler({
       discoveryClient: discoveryClient as never,
-      input: { ...baseInput, discovery_slug: 'checkout__latency-abc12345', dedup_window: 'now-1h' },
+      input: { ...baseInput, dedup_window: 'now-1h' },
     });
 
+    expect(discoveryClient.findBySlug).toHaveBeenCalled();
     expect(discoveryClient.bulkCreate).not.toHaveBeenCalled();
     expect(result.written).toBe(false);
     expect(result.skipped).toBe(true);
     expect(result.reason).toBe('duplicate_within_window');
     expect(result.existing_discovery_id).toBe('existing-disc-id');
+  });
+
+  it('writes continuation discovery when explicit slug matches recent prior doc within dedup window', async () => {
+    const recentTimestamp = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const discoveryClient = {
+      findBySlug: jest.fn().mockResolvedValue({
+        hits: [
+          {
+            discovery_id: 'prior-disc-id',
+            kind: 'discovery',
+            '@timestamp': recentTimestamp,
+          },
+        ],
+      }),
+      bulkCreate: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await discoveryWriteHandler({
+      discoveryClient: discoveryClient as never,
+      input: {
+        ...baseInput,
+        discovery_slug: 'checkout__latency-abc12345',
+        dedup_window: 'now-1h',
+      },
+    });
+
+    expect(discoveryClient.findBySlug).not.toHaveBeenCalled();
+    expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
+    expect(result.written).toBe(true);
+    expect(result.discovery_slug).toBe('checkout__latency-abc12345');
+  });
+
+  it('writes clearance when prior discovery doc exists within dedup window', async () => {
+    const recentTimestamp = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const discoveryClient = {
+      findBySlug: jest.fn().mockResolvedValue({
+        hits: [
+          {
+            discovery_id: 'prior-disc-id',
+            kind: 'discovery',
+            '@timestamp': recentTimestamp,
+          },
+        ],
+      }),
+      bulkCreate: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await discoveryWriteHandler({
+      discoveryClient: discoveryClient as never,
+      input: {
+        ...baseInput,
+        kind: 'clearance',
+        discovery_slug: 'checkout__latency-abc12345',
+        parent_discovery_id: 'prior-disc-id',
+        dedup_window: 'now-1h',
+      },
+    });
+
+    expect(discoveryClient.findBySlug).not.toHaveBeenCalled();
+    expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
+    expect(result.written).toBe(true);
+    expect(result.kind).toBe('clearance');
   });
 
   it('does not skip when duplicate is outside the dedup window', async () => {
@@ -122,9 +185,10 @@ describe('discoveryWriteHandler', () => {
 
     const result = await discoveryWriteHandler({
       discoveryClient: discoveryClient as never,
-      input: { ...baseInput, discovery_slug: 'checkout__latency-abc12345', dedup_window: 'now-1h' },
+      input: { ...baseInput, dedup_window: 'now-1h' },
     });
 
+    expect(discoveryClient.findBySlug).toHaveBeenCalled();
     expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
     expect(result.written).toBe(true);
   });

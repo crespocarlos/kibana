@@ -114,15 +114,22 @@ export async function discoveryWriteHandler({
 
   const discoveryInput = { ...rest, discovery_slug: resolvedSlug };
 
-  // Deduplication: skip write if a non-handled discovery with this slug exists within the window.
+  // Deduplication applies only to auto-generated slugs (new episodes). Explicit slugs indicate
+  // continuation or clearance — those must always append a new version. Clearance is never deduped.
   // Unrecognised dedup_window expressions produce undefined — skip dedup rather than silently
   // falling back to an arbitrary window.
   const windowMs = dedupWindow != null ? parseDateMathToMs(dedupWindow) : undefined;
-  if (discoveryInput.kind !== 'handled' && windowMs != null) {
+  const isExplicitSlug = discovery_slug != null;
+  if (
+    !isExplicitSlug &&
+    discoveryInput.kind !== 'handled' &&
+    discoveryInput.kind !== 'clearance' &&
+    windowMs != null
+  ) {
     const existing = await discoveryClient.findBySlug(resolvedSlug);
     const cutoff = Date.now() - windowMs;
     const recent = existing.hits.find(
-      (d) => d.kind !== 'handled' && new Date(d['@timestamp']).getTime() >= cutoff
+      (d) => d.kind === discoveryInput.kind && new Date(d['@timestamp']).getTime() >= cutoff
     );
     if (recent) {
       return {

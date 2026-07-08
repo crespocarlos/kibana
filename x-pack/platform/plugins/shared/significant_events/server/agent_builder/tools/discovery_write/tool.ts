@@ -54,7 +54,7 @@ const discoveryWriteSchema = discoverySchema
       .string()
       .default('now-1h')
       .describe(
-        'Deduplication window as an ES date math expression (e.g. "now-1h"). If a non-handled discovery with the same slug already exists within this window, the write is skipped and the existing discovery_id is returned. Defaults to "now-1h" — override only when a longer or shorter window is explicitly needed.'
+        'Deduplication window as an ES date math expression (e.g. "now-1h"). Applies only to new episodes with auto-generated slugs: if a document with the same kind and slug already exists within this window, the write is skipped and the existing discovery_id is returned. Continuation and clearance writes (explicit discovery_slug) are never deduped. Defaults to "now-1h".'
       ),
   });
 
