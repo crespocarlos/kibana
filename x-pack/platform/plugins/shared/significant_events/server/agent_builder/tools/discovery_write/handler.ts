@@ -140,15 +140,18 @@ export async function discoveryWriteHandler({
   const now = new Date().toISOString();
   const discoveryId = discoveryInput.discovery_id || uuidv4();
 
-  await discoveryClient.bulkCreate([
-    {
-      '@timestamp': now,
-      discovered_at: discoveryInput.kind === 'discovery' ? now : undefined,
-      ...discoveryInput,
-      discovery_id: discoveryId,
-      processed: discoveryInput.kind === 'handled',
-    },
-  ]);
+  await discoveryClient.bulkCreate(
+    [
+      {
+        '@timestamp': now,
+        discovered_at: discoveryInput.kind === 'discovery' ? now : undefined,
+        ...discoveryInput,
+        discovery_id: discoveryId,
+        processed: discoveryInput.kind === 'handled',
+      },
+    ],
+    { throwOnFail: true }
+  );
 
   return {
     discovery_id: discoveryId,

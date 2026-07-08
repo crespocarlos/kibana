@@ -64,6 +64,9 @@ describe('discoveryWriteHandler', () => {
     });
 
     expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
+    expect(discoveryClient.bulkCreate).toHaveBeenCalledWith(expect.any(Array), {
+      throwOnFail: true,
+    });
     expect(result.written).toBe(true);
     expect(result.discovery_slug).toMatch(/^checkout__high-latency-rule-[a-f0-9]{8}$/);
   });
