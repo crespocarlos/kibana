@@ -20,6 +20,7 @@ import type {
   KnowledgeIndicatorOnboardingScheduledProps,
   AgentToolEventWriteProps,
   AgentToolDiscoveryWriteProps,
+  AgentToolEventSearchProps,
 } from './types';
 
 const endpointLatencySchema: RootSchema<EndpointLatencyProps> = {
@@ -609,6 +610,47 @@ const agentToolEventWriteSchema: RootSchema<AgentToolEventWriteProps> = {
   },
 };
 
+const agentToolEventSearchSchema: RootSchema<AgentToolEventSearchProps> = {
+  success: {
+    type: 'boolean',
+    _meta: {
+      description: 'Whether the event search succeeded',
+    },
+  },
+  result_count: {
+    type: 'long',
+    _meta: {
+      description: 'The number of significant events returned by the search',
+    },
+  },
+  has_query: {
+    type: 'boolean',
+    _meta: {
+      description: 'Whether the search included a query filter',
+    },
+  },
+  has_stream_filter: {
+    type: 'boolean',
+    _meta: {
+      description: 'Whether the search included a stream_names filter',
+    },
+  },
+  state_filter: {
+    type: 'keyword',
+    _meta: {
+      description: 'The state filter applied to the search (open or closed)',
+      optional: true,
+    },
+  },
+  error_message: {
+    type: 'text',
+    _meta: {
+      description: 'Error message when the event search fails',
+      optional: true,
+    },
+  },
+};
+
 const agentToolDiscoveryWriteSchema: RootSchema<AgentToolDiscoveryWriteProps> = {
   success: {
     type: 'boolean',
@@ -647,6 +689,7 @@ export {
   agentToolDiscoveryWriteSchema,
   agentToolEventCreateSchema,
   agentToolEventInvestigationAttachSchema,
+  agentToolEventSearchSchema,
   agentToolEventStatusUpdateSchema,
   agentToolEventWriteSchema,
   agentToolKnowledgeIndicatorIdentificationStartedSchema,

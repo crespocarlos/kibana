@@ -20,12 +20,14 @@ import {
   SIGNIFICANT_EVENTS_KNOWLEDGE_INDICATORS_QUERIES_GENERATED_EVENT_TYPE,
   SIGNIFICANT_EVENTS_AGENT_TOOL_EVENT_WRITE_EVENT_TYPE,
   SIGNIFICANT_EVENTS_AGENT_TOOL_DISCOVERY_WRITE_EVENT_TYPE,
+  SIGNIFICANT_EVENTS_AGENT_TOOL_EVENT_SEARCH_EVENT_TYPE,
 } from './constants';
 import {
   agentBuilderKnowledgeIndicatorCreatedSchema,
   agentToolDiscoveryWriteSchema,
   agentToolEventCreateSchema,
   agentToolEventInvestigationAttachSchema,
+  agentToolEventSearchSchema,
   agentToolEventStatusUpdateSchema,
   agentToolEventWriteSchema,
   agentToolKnowledgeIndicatorIdentificationStartedSchema,
@@ -108,11 +110,17 @@ const agentToolDiscoveryWriteEventType = {
   schema: agentToolDiscoveryWriteSchema,
 };
 
+const agentToolEventSearchEventType = {
+  eventType: SIGNIFICANT_EVENTS_AGENT_TOOL_EVENT_SEARCH_EVENT_TYPE,
+  schema: agentToolEventSearchSchema,
+};
+
 export {
   agentBuilderKnowledgeIndicatorCreatedEventType,
   agentToolDiscoveryWriteEventType,
   agentToolEventCreateEventType,
   agentToolEventInvestigationAttachEventType,
+  agentToolEventSearchEventType,
   agentToolEventStatusUpdateEventType,
   agentToolEventWriteEventType,
   agentToolKiIdentificationStartedEventType,
