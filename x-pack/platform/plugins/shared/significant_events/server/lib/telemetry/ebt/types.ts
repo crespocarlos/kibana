@@ -133,31 +133,7 @@ interface KnowledgeIndicatorOnboardingScheduledProps {
   skip_queries: boolean;
 }
 
-interface StreamsSignificantEventsDiscoveryTriggeredProps {
-  execution_id: string;
-  space_id: string;
-}
-
-interface StreamsSignificantEventsDetectionScanProps {
-  /** ES `took` (ms) reported by the alerts-source search itself. */
-  took_ms: number;
-  /** Wall-clock (ms) around the reader call, including transport and parsing. */
-  duration_ms: number;
-  /** Number of distinct rules covered by the change-point scan. */
-  rules_scanned: number;
-  /** Resolved alerting engine backing the read: `v2` reads `.rule-events`, `v1` reads `.alerts-*`. */
-  alerting_engine: 'v1' | 'v2';
-  /** The alerts-source index that was read (e.g. `.rule-events`). */
-  alerts_source_index: string;
-  /** The scan lookback window, e.g. `now-30m`. */
-  lookback: string;
-  /** The change-point bucket interval, e.g. `30s`. */
-  bucket_interval: string;
-  /** The Kibana space in which the scan ran. */
-  space_id: string;
-}
-
-interface StreamsAgentToolEventsWriteProps {
+interface AgentToolEventWriteProps {
   success: boolean;
   discovery_slug: string;
   status: SignificantEventStatus;
@@ -166,7 +142,7 @@ interface StreamsAgentToolEventsWriteProps {
   error_message?: string;
 }
 
-interface StreamsAgentToolDiscoveryWriteProps {
+interface AgentToolDiscoveryWriteProps {
   success: boolean;
   kind: 'discovery' | 'clearance' | 'handled';
   discovery_slug: string;
@@ -178,9 +154,11 @@ interface StreamsAgentToolDiscoveryWriteProps {
 export {
   type AgentBuilderKnowledgeIndicatorCreatedProps,
   type AgentToolKnowledgeIndicatorIdentificationStartedProps,
+  type AgentToolDiscoveryWriteProps,
   type AgentToolEventCreateProps,
   type AgentToolEventInvestigationAttachProps,
   type AgentToolEventStatusUpdateProps,
+  type AgentToolEventWriteProps,
   type CodeAnalysisGroundingProps,
   type DetectionScanProps,
   type DiscoveryTriggeredProps,
@@ -188,8 +166,4 @@ export {
   type KnowledgeIndicatorQueriesGeneratedProps,
   type KnowledgeIndicatorFeaturesIdentifiedProps,
   type KnowledgeIndicatorOnboardingScheduledProps,
-  type StreamsSignificantEventsDiscoveryTriggeredProps,
-  type StreamsSignificantEventsDetectionScanProps,
-  type StreamsAgentToolEventsWriteProps,
-  type StreamsAgentToolDiscoveryWriteProps,
 };

@@ -18,9 +18,8 @@ import type {
   KnowledgeIndicatorFeaturesIdentifiedProps,
   KnowledgeIndicatorQueriesGeneratedProps,
   KnowledgeIndicatorOnboardingScheduledProps,
-  StreamsAgentToolEventsWriteProps,
-  StreamsAgentToolDiscoveryWriteProps,
-  StreamsSignificantEventsDetectionScanProps,
+  AgentToolEventWriteProps,
+  AgentToolDiscoveryWriteProps,
 } from './types';
 
 const endpointLatencySchema: RootSchema<EndpointLatencyProps> = {
@@ -564,62 +563,7 @@ const agentToolEventInvestigationAttachSchema: RootSchema<AgentToolEventInvestig
     },
   };
 
-const streamsSignificantEventsDetectionScanSchema: RootSchema<StreamsSignificantEventsDetectionScanProps> =
-  {
-    took_ms: {
-      type: 'long',
-      _meta: {
-        description:
-          'ES `took` (ms) reported by the alerts-source search for the change-point scan',
-      },
-    },
-    duration_ms: {
-      type: 'long',
-      _meta: {
-        description:
-          'Wall-clock duration (ms) of the change-point scan read, including transport and parsing',
-      },
-    },
-    rules_scanned: {
-      type: 'long',
-      _meta: {
-        description: 'Number of distinct rules covered by the change-point scan',
-      },
-    },
-    alerting_engine: {
-      type: 'keyword',
-      _meta: {
-        description:
-          'Resolved alerting engine backing the read: `v2` reads `.rule-events`, `v1` reads `.alerts-*`',
-      },
-    },
-    alerts_source_index: {
-      type: 'keyword',
-      _meta: {
-        description: 'The alerts-source index that was read (e.g. `.rule-events`)',
-      },
-    },
-    lookback: {
-      type: 'keyword',
-      _meta: {
-        description: 'The scan lookback window (e.g. `now-30m`)',
-      },
-    },
-    bucket_interval: {
-      type: 'keyword',
-      _meta: {
-        description: 'The change-point bucket interval (e.g. `30s`)',
-      },
-    },
-    space_id: {
-      type: 'keyword',
-      _meta: {
-        description: 'The Kibana space in which the scan ran',
-      },
-    },
-  };
-
-const streamsAgentToolEventsWriteSchema: RootSchema<StreamsAgentToolEventsWriteProps> = {
+const agentToolEventWriteSchema: RootSchema<AgentToolEventWriteProps> = {
   success: {
     type: 'boolean',
     _meta: {
@@ -665,7 +609,7 @@ const streamsAgentToolEventsWriteSchema: RootSchema<StreamsAgentToolEventsWriteP
   },
 };
 
-const streamsAgentToolDiscoveryWriteSchema: RootSchema<StreamsAgentToolDiscoveryWriteProps> = {
+const agentToolDiscoveryWriteSchema: RootSchema<AgentToolDiscoveryWriteProps> = {
   success: {
     type: 'boolean',
     _meta: { description: 'Whether the discovery write succeeded' },
@@ -700,9 +644,11 @@ const streamsAgentToolDiscoveryWriteSchema: RootSchema<StreamsAgentToolDiscovery
 
 export {
   agentBuilderKnowledgeIndicatorCreatedSchema,
+  agentToolDiscoveryWriteSchema,
   agentToolEventCreateSchema,
   agentToolEventInvestigationAttachSchema,
   agentToolEventStatusUpdateSchema,
+  agentToolEventWriteSchema,
   agentToolKnowledgeIndicatorIdentificationStartedSchema,
   codeAnalysisGroundingSchema,
   detectionScanSchema,
@@ -711,6 +657,4 @@ export {
   knowledgeIndicatorFeaturesIdentifiedSchema,
   knowledgeIndicatorQueriesGeneratedSchema,
   onboardingScheduledSchema,
-  streamsAgentToolEventsWriteSchema,
-  streamsAgentToolDiscoveryWriteSchema,
 };

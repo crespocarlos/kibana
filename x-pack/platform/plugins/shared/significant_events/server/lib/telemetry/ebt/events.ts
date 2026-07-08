@@ -18,14 +18,16 @@ import {
   SIGNIFICANT_EVENTS_FEATURES_IDENTIFIED_EVENT_TYPE,
   SIGNIFICANT_EVENTS_ONBOARDING_SCHEDULED_EVENT_TYPE,
   SIGNIFICANT_EVENTS_KNOWLEDGE_INDICATORS_QUERIES_GENERATED_EVENT_TYPE,
-  STREAMS_AGENT_TOOL_EVENTS_WRITE_EVENT_TYPE,
-  STREAMS_AGENT_TOOL_DISCOVERY_WRITE_EVENT_TYPE,
+  SIGNIFICANT_EVENTS_AGENT_TOOL_EVENT_WRITE_EVENT_TYPE,
+  SIGNIFICANT_EVENTS_AGENT_TOOL_DISCOVERY_WRITE_EVENT_TYPE,
 } from './constants';
 import {
   agentBuilderKnowledgeIndicatorCreatedSchema,
+  agentToolDiscoveryWriteSchema,
   agentToolEventCreateSchema,
   agentToolEventInvestigationAttachSchema,
   agentToolEventStatusUpdateSchema,
+  agentToolEventWriteSchema,
   agentToolKnowledgeIndicatorIdentificationStartedSchema,
   codeAnalysisGroundingSchema,
   detectionScanSchema,
@@ -34,8 +36,6 @@ import {
   knowledgeIndicatorFeaturesIdentifiedSchema,
   knowledgeIndicatorQueriesGeneratedSchema,
   onboardingScheduledSchema,
-  streamsAgentToolEventsWriteSchema,
-  streamsAgentToolDiscoveryWriteSchema,
 } from './schemas';
 
 const endpointLatencyEventType = {
@@ -98,21 +98,23 @@ const onboardingScheduledEventType = {
   schema: onboardingScheduledSchema,
 };
 
-const streamsAgentToolEventsWriteEventType = {
-  eventType: STREAMS_AGENT_TOOL_EVENTS_WRITE_EVENT_TYPE,
-  schema: streamsAgentToolEventsWriteSchema,
+const agentToolEventWriteEventType = {
+  eventType: SIGNIFICANT_EVENTS_AGENT_TOOL_EVENT_WRITE_EVENT_TYPE,
+  schema: agentToolEventWriteSchema,
 };
 
-const streamsAgentToolDiscoveryWriteEventType = {
-  eventType: STREAMS_AGENT_TOOL_DISCOVERY_WRITE_EVENT_TYPE,
-  schema: streamsAgentToolDiscoveryWriteSchema,
+const agentToolDiscoveryWriteEventType = {
+  eventType: SIGNIFICANT_EVENTS_AGENT_TOOL_DISCOVERY_WRITE_EVENT_TYPE,
+  schema: agentToolDiscoveryWriteSchema,
 };
 
 export {
   agentBuilderKnowledgeIndicatorCreatedEventType,
+  agentToolDiscoveryWriteEventType,
   agentToolEventCreateEventType,
   agentToolEventInvestigationAttachEventType,
   agentToolEventStatusUpdateEventType,
+  agentToolEventWriteEventType,
   agentToolKiIdentificationStartedEventType,
   codeAnalysisGroundingEventType,
   detectionScanEventType,
@@ -121,6 +123,4 @@ export {
   knowledgeIndicatorEventsGeneratedEventType,
   knowledgeIndicatorFeaturesIdentifiedEventType,
   onboardingScheduledEventType,
-  streamsAgentToolEventsWriteEventType,
-  streamsAgentToolDiscoveryWriteEventType,
 };
