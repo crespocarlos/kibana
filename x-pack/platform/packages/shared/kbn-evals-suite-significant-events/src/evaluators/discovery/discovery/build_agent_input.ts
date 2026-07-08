@@ -18,7 +18,7 @@ export interface DiscoveryInputParams {
  * Build the investigator agent's user message — the same shape the production batch workflow sends.
  * The agent fetches open episodes itself via event_search at the start of each batch.
  */
-export function buildDiscoveryInput({ detections }: InvestigatorInputParams): string {
+export function buildDiscoveryInput({ detections }: DiscoveryInputParams): string {
   return Mustache.render(discoveryUserPrompt, {
     activeBatch: JSON.stringify(detections),
   }).trim();
