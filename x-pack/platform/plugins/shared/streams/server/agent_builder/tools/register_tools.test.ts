@@ -7,16 +7,7 @@
 
 import { loggerMock } from '@kbn/logging-mocks';
 import { agentBuilderMocks } from '@kbn/agent-builder-plugin/server/mocks';
-import {
-  registerAgentBuilderTools,
-  SIGNIFICANT_EVENTS_EVENTS_WRITE_TOOL_ID,
-  STREAMS_EVENT_INVESTIGATION_ATTACH_TOOL_ID,
-  STREAMS_CREATE_EVENT_TOOL_ID,
-  STREAMS_EVENT_STATUS_UPDATE_TOOL_ID,
-  STREAMS_SEARCH_EVENTS_TOOL_ID,
-  STREAMS_SEARCH_KNOWLEDGE_INDICATORS_TOOL_ID,
-  SIGNIFICANT_EVENTS_DISCOVERY_WRITE_TOOL_ID,
-} from './register_tools';
+import { registerAgentBuilderTools } from './register_tools';
 import { STREAMS_READ_TOOL_IDS, STREAMS_WRITE_TOOL_IDS } from './tool_ids';
 import { createMockGetScopedClients } from '../utils/test_helpers';
 import type { StreamsServer } from '../../types';
@@ -55,13 +46,6 @@ describe('registerAgentBuilderTools', () => {
     for (const id of STREAMS_WRITE_TOOL_IDS) {
       expect(registeredIds).toContain(id);
     }
-    expect(registeredIds).toContain(STREAMS_SEARCH_KNOWLEDGE_INDICATORS_TOOL_ID);
-    expect(registeredIds).toContain(STREAMS_SEARCH_EVENTS_TOOL_ID);
-    expect(registeredIds).toContain(STREAMS_CREATE_EVENT_TOOL_ID);
-    expect(registeredIds).toContain(STREAMS_EVENT_STATUS_UPDATE_TOOL_ID);
-    expect(registeredIds).toContain(SIGNIFICANT_EVENTS_DISCOVERY_WRITE_TOOL_ID);
-    expect(registeredIds).toContain(SIGNIFICANT_EVENTS_EVENTS_WRITE_TOOL_ID);
-    expect(registeredIds).toContain(STREAMS_EVENT_INVESTIGATION_ATTACH_TOOL_ID);
   });
 
   it('registers tools with non-empty descriptions and schemas', () => {

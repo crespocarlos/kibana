@@ -6,12 +6,11 @@
  */
 
 import { z } from '@kbn/zod/v4';
-import { MAX_STREAM_NAME_LENGTH } from '@kbn/streams-schema';
 import {
   MAX_ID_LENGTH,
   MAX_RULE_NAME_LENGTH,
-  MAX_TITLE_LENGTH,
   MAX_TEXT_LENGTH,
+  MAX_TITLE_LENGTH,
 } from './constants';
 
 export const dependencyEdgeSchema = z.object({
@@ -46,7 +45,7 @@ export const infraComponentSchema = z.object({
       'Human-readable name of the infrastructure component (e.g. "Auth Service", "Database Cluster").'
     ),
   workloads: z
-    .array(z.string().max(MAX_STREAM_NAME_LENGTH))
+    .array(z.string().max(MAX_ID_LENGTH))
     .max(100)
     .optional()
     .describe(
@@ -67,7 +66,7 @@ export const causeKiSchema = z.object({
     .describe('Human-readable name of the Knowledge Indicator (KI) identified as a causal factor.'),
   stream_name: z
     .string()
-    .max(MAX_STREAM_NAME_LENGTH)
+    .max(MAX_ID_LENGTH)
     .optional()
     .describe('Data stream associated with this causal KI.'),
 });
@@ -97,7 +96,7 @@ export const evidenceSchema = z.object({
     ),
   stream_name: z
     .string()
-    .max(MAX_STREAM_NAME_LENGTH)
+    .max(MAX_ID_LENGTH)
     .optional()
     .describe('Data stream this evidence was collected from.'),
   row_count: z
@@ -186,7 +185,7 @@ export const sigEventBaseSchema = z.object({
         'Higher values reflect stronger evidence grounding and more corroboration. ' +
         'cause_kis ceiling: cap at 0.65 when cause_kis is empty (applies to promoted/acknowledged only — not demoted/resolved).'
     ),
-  stream_names: z.array(z.string().max(MAX_STREAM_NAME_LENGTH)).max(100),
+  stream_names: z.array(z.string().max(MAX_ID_LENGTH)).max(100),
   rule_names: z.array(z.string().max(MAX_RULE_NAME_LENGTH)).max(100).optional(),
   workflow_execution_id: z.string().max(MAX_ID_LENGTH).optional(),
   conversation_id: z.string().max(MAX_ID_LENGTH).optional(),
