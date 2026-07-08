@@ -67,15 +67,8 @@ export function createEventsWriteTool({
     id: SIGNIFICANT_EVENTS_EVENTS_WRITE_TOOL_ID,
     type: ToolType.builtin,
     description: dedent`
-      ${i18n.translate('xpack.streams.agentBuilder.tools.eventsWrite.description.line1', {
-        defaultMessage:
-          'Create or version a significant event for a discovery episode. Handles deduplication: looks up the current event version by discovery_slug; if status has not changed, skips the write and returns the existing event_id.',
-      })}
-
-      ${i18n.translate('xpack.streams.agentBuilder.tools.eventsWrite.description.line2', {
-        defaultMessage:
-          'For events linked to a discovery episode via discovery_slug. Standalone events not tied to a discovery episode use event_create instead.',
-      })}
+      Create or version a significant event for a discovery episode. Handles deduplication: looks up the current event version by discovery_slug; if status has not changed, skips the write and returns the existing event_id.
+      For events linked to a discovery episode via discovery_slug. Standalone events not tied to a discovery episode use event_create instead.
     `,
     schema: eventsWriteSchema,
     tags: ['streams', 'significant_events'],
@@ -119,7 +112,7 @@ export function createEventsWriteTool({
               type: ToolResultType.error,
               data: {
                 message: i18n.translate(
-                  'xpack.streams.agentBuilder.tools.eventsWrite.errorMessage',
+                  'xpack.significantEvents.agentBuilder.tools.eventsWrite.errorMessage',
                   {
                     defaultMessage: 'Failed to write significant event: {message}',
                     values: { message },

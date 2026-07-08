@@ -54,10 +54,7 @@ const discoveryWriteSchema = discoverySchema
       .string()
       .default('now-1h')
       .describe(
-        i18n.translate('xpack.streams.agentBuilder.tools.discoveryWrite.schema.dedupWindow', {
-          defaultMessage:
-            'Deduplication window as an ES date math expression (e.g. "now-1h"). If a non-handled discovery with the same slug already exists within this window, the write is skipped and the existing discovery_id is returned. Defaults to "now-1h" — override only when a longer or shorter window is explicitly needed.',
-        })
+        'Deduplication window as an ES date math expression (e.g. "now-1h"). If a non-handled discovery with the same slug already exists within this window, the write is skipped and the existing discovery_id is returned. Defaults to "now-1h" — override only when a longer or shorter window is explicitly needed.'
       ),
   });
 
@@ -76,15 +73,10 @@ export function createDiscoveryWriteTool({
     id: SIGNIFICANT_EVENTS_DISCOVERY_WRITE_TOOL_ID,
     type: ToolType.builtin,
     description: dedent`
-      ${i18n.translate('xpack.streams.agentBuilder.tools.discoveryWrite.description.line1', {
-        defaultMessage:
-          'Append a discovery document to the discoveries data stream. The data stream is immutable — each write creates a new version; the latest-source pattern resolves to the most recent document per slug.',
-      })}
+      Append a discovery document to the discoveries data stream. The data stream is immutable — each write creates a new version; the latest-source pattern resolves to the most recent document per slug.
 
-      ${i18n.translate('xpack.streams.agentBuilder.tools.discoveryWrite.description.line2', {
-        defaultMessage:
-          'Use kind "discovery" or "clearance" to record an open investigation episode. Use kind "handled" to stamp the episode as fully processed after the corresponding significant event has been written.',
-      })}
+      Use kind "discovery" or "clearance" to record an open investigation episode. 
+      Use kind "handled" to stamp the episode as fully processed after the corresponding significant event has been written.
     `,
     schema: discoveryWriteSchema,
     tags: ['streams', 'significant_events'],
@@ -132,7 +124,7 @@ export function createDiscoveryWriteTool({
               type: ToolResultType.error,
               data: {
                 message: i18n.translate(
-                  'xpack.streams.agentBuilder.tools.discoveryWrite.errorMessage',
+                  'xpack.significantEvents.agentBuilder.tools.discoveryWrite.errorMessage',
                   {
                     defaultMessage: 'Failed to write discovery document: {message}',
                     values: { message },

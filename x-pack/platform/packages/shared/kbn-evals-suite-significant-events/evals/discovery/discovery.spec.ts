@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import { SIGNIFICANT_EVENTS_INVESTIGATOR_AGENT_ID } from '@kbn/significant-events-plugin/server';
+import { SIGNIFICANT_EVENTS_DISCOVERY_AGENT_ID } from '@kbn/significant-events-plugin/server';
 import { tags } from '@kbn/scout';
 import { getCurrentTraceId } from '@kbn/evals';
 import type { Detection } from '@kbn/significant-events-schema';
@@ -34,6 +34,7 @@ import {
   createDiscoveryEvaluators,
   createContinuationEvaluators,
 } from '../../src/evaluators/discovery';
+import { buildAvailableSnapshotsBySource } from '../shared';
 import { extractDiscoveriesFromToolCall } from '../../src/evaluators/discovery/utils/parse_agent_output';
 import { buildDiscoveryInput } from '../../src/evaluators/discovery/discovery/build_agent_input';
 import { toSignificantEventSeed } from '../../src/evaluators/discovery/discovery/continuation/continuation_candidate';
@@ -253,7 +254,7 @@ evaluate.describe(
                     const agentInput = buildDiscoveryInput({ detections });
 
                     const converseResult = await agentBuilderClient.converse({
-                      agentId: SIGNIFICANT_EVENTS_INVESTIGATOR_AGENT_ID,
+                      agentId: SIGNIFICANT_EVENTS_DISCOVERY_AGENT_ID,
                       input: agentInput,
                     });
 
@@ -427,7 +428,7 @@ evaluate.describe(
                         const agentInput = buildDiscoveryInput({ detections: [detection] });
 
                         const converseResult = await agentBuilderClient.converse({
-                          agentId: SIGNIFICANT_EVENTS_INVESTIGATOR_AGENT_ID,
+                          agentId: SIGNIFICANT_EVENTS_DISCOVERY_AGENT_ID,
                           input: agentInput,
                         });
 

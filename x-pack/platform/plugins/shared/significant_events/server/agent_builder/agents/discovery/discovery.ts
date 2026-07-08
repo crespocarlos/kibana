@@ -12,7 +12,7 @@ import { SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID } from '../../skills/significa
 import { getSignificantEventsAvailability } from '../../../routes/utils/assert_significant_events_access';
 import instructions from './instructions/discovery.md.text';
 
-export const SIGNIFICANT_EVENTS_INVESTIGATOR_AGENT_ID = 'platform.streams.sig-events.discovery';
+export const SIGNIFICANT_EVENTS_DISCOVERY_AGENT_ID = 'platform.streams.sig-events.discovery';
 
 export function createSignificantEventsDiscoveryAgent({
   server,
@@ -20,7 +20,7 @@ export function createSignificantEventsDiscoveryAgent({
   server: StreamsServer;
 }): BuiltInAgentDefinition {
   return {
-    id: SIGNIFICANT_EVENTS_INVESTIGATOR_AGENT_ID,
+    id: SIGNIFICANT_EVENTS_DISCOVERY_AGENT_ID,
     name: 'Significant Events Discovery',
     description:
       'Triages statistical detection signals across rules, correlates related detections into incident candidates using shared infrastructure, temporal proximity, and causal plausibility, and drafts structured discovery documents with root-cause hypotheses and supporting evidence.',
