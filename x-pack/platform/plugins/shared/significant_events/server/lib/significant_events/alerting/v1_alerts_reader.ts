@@ -95,11 +95,17 @@ export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlerts
     const rawBuckets =
       (response.aggregations?.by_rule as { buckets?: RawRuleBucket[] })?.buckets ?? [];
 
+    const partitionRuleIds =
+      (response.aggregations?.by_partition as { buckets?: Array<{ key: string }> })?.buckets?.map(
+        (bucket) => bucket.key
+      ) ?? [];
+
     return {
       took: response.took,
       by_rule: {
         buckets: rawBuckets.map((bucket) => this.enrichChangePointBucket(bucket, ruleMetadata)),
       },
+      partition_rule_ids: partitionRuleIds,
     };
   }
 
@@ -212,7 +218,14 @@ export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlerts
     return { aggregations: response.aggregations ?? {} };
   }
 
-  private buildChangePointScanBody({ lookback, bucketInterval, spaceId }: ChangePointScanParams) {
+  private buildChangePointScanBody({
+    lookback,
+    bucketInterval,
+    spaceId,
+    partition,
+    numPartitions,
+  }: ChangePointScanParams) {
+    const shouldPartition = numPartitions !== undefined && numPartitions > 1;
     return {
       query: {
         bool: {
@@ -241,6 +254,15 @@ export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlerts
               includeFloorWindow: true,
               extendedBounds: buildChangePointHistogramBounds(lookback, bucketInterval),
             }),
+          },
+        },
+        by_partition: {
+          terms: {
+            field: 'kibana.alert.rule.uuid',
+            size: RULES_BUCKET_SIZE,
+            ...(shouldPartition
+              ? { include: { partition: partition as number, num_partitions: numPartitions } }
+              : {}),
           },
         },
       },

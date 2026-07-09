@@ -15,6 +15,8 @@ export interface ChangePointScanParams {
   lookback: string;
   bucketInterval: string;
   spaceId: string;
+  partition?: number;
+  numPartitions?: number;
 }
 
 export interface ChangePointRuleBucket {
@@ -67,7 +69,11 @@ export interface ISignificantEventsAlertsReader {
     esClient: ElasticsearchClient,
     params: ChangePointScanParams,
     queryLinks: QueryLink[]
-  ): Promise<{ took?: number; by_rule: { buckets: ChangePointRuleBucket[] } }>;
+  ): Promise<{
+    took?: number;
+    by_rule: { buckets: ChangePointRuleBucket[] };
+    partition_rule_ids: string[];
+  }>;
 
   runRuleChangePoint(
     esClient: ElasticsearchClient,

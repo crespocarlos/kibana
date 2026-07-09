@@ -38,6 +38,16 @@ triggers:
         default: "now-30m"
         required: false
         description: "Suppress re-detection for this duration after a rule resolves."
+      - name: targetCoverageMinutes
+        type: number
+        default: 10
+        required: false
+        description: "Every active rule must be evaluated within this window; drives the per-run scan batch size."
+      - name: detectionIntervalMinutes
+        type: number
+        default: 5
+        required: false
+        description: "How often this workflow runs (threaded from the scheduler). coverage cycles = target / interval."
 consts:
   ACTIVITY_HISTORY_LOOKBACK: "now-1h"
   ACTIVITY_WINDOW_INTERVAL: "30m"
@@ -67,8 +77,8 @@ steps:
       spaceId: "{{ workflow.spaceId }}"
       floor_seconds: "${{ consts.LOOKBACK_MINUTES_FLOOR | times: 60 }}"
   # -----------------------------------------------------------------------
-  # Pre-pass: early exit on idle spaces — two cheap counts skip the expensive scan when there are
-  # no alerts and no active detections (per-space scheduled workflow; many spaces may be idle).
+  # Pre-pass: early exit on idle spaces — skip the expensive scan when there are no recent alerts
+  # and no open detections (per-space scheduled workflow; many spaces may be idle).
   # -----------------------------------------------------------------------
   - name: count_alerts_in_lookback
     type: kibana.request
@@ -82,49 +92,14 @@ steps:
     on-failure:
       continue: true
 
-  - name: count_active_detections
-    # Conservative overcount (ignores later quiet docs) — false positives just run change_point.
-    type: elasticsearch.request
-    with:
-      method: POST
-      path: '/{{ consts.DETECTIONS_INDEX }}/_count?ignore_unavailable=true'
-      body:
-        query:
-          bool:
-            filter:
-              - term:
-                  kibana.space_ids: "{{ variables.spaceId }}"
-              - term:
-                  kind: '{{ consts.KIND_DETECTION }}'
-              - range:
-                  "@timestamp":
-                    gte: '{{ consts.DETECTION_RETENTION_WINDOW }}'
-    on-failure:
-      continue: true
-
-  - name: compute_idle_counts
-    type: data.set
-    with:
-      alerts_count: "${{ steps.count_alerts_in_lookback.output.count | default: 1 }}"
-      detections_count: "${{ steps.count_active_detections.output.count | default: 1 }}"
-
-  - name: exit_no_active_alerts
-    type: workflow.output
-    if: "${{ steps.compute_idle_counts.output.alerts_count == 0 and steps.compute_idle_counts.output.detections_count == 0 }}"
-    status: cancelled
-    with:
-      reason: "No recent alerts and no active detections — change point scan skipped"
-
-  # -----------------------------------------------------------------------
-  # Stale sweep — resolve rules that went silent (no alerts → absent from the scan below, so the
-  # per-rule recovery never sees them). This sweep is their only resolution path.
-  # -----------------------------------------------------------------------
+  # get_stale_candidates runs FIRST (before the idle exit) so its result serves double duty:
+  # (a) the accurate open-detection count for the exit decision below, and (b) the input to the
+  # stale-resolution foreach further down. Latest non-handled doc per rule (collapse,
+  # no lte): a rule resolved by a recent quiet doc collapses to that quiet and fails the
+  # kind==detection check; staleness (age > floor) is decided per-item from @timestamp.
+  # must_not:handled is resolution semantics: `quiet` closes a detection, `handled` (discovery's
+  # "consumed" marker) does not. Do NOT add `quiet` here — it would hide the closure signal.
   - name: get_stale_candidates
-    # Latest non-handled doc per rule (collapse, no lte): a rule resolved by a recent quiet doc
-    # collapses to that quiet and fails the kind==detection check below; staleness (age > floor)
-    # is decided per-item from @timestamp — no second query needed.
-    # must_not:handled is resolution semantics: `quiet` closes a detection, `handled` (discovery's
-    # "consumed" marker) does not. Do NOT add `quiet` here — it would hide the closure signal.
     type: elasticsearch.request
     with:
       method: POST
@@ -150,6 +125,32 @@ steps:
     on-failure:
       continue: true
 
+  - name: compute_idle_counts
+    type: data.set
+    with:
+      alerts_count: "${{ steps.count_alerts_in_lookback.output.count | default: 1 }}"
+      # Open detections = collapsed latest-per-rule docs (handled already excluded) whose
+      # latest doc is still a detection. More accurate than a raw kind:detection _count, which also
+      # counts detections already resolved by a later quiet doc.
+      open_detections_count: "${{ steps.get_stale_candidates.output.hits.hits | default: [] | where: '_source.kind', consts.KIND_DETECTION | size }}"
+      # On a get_stale_candidates error the count above collapses to 0; this flag preserves the
+      # error-conservatism (error → run anyway, never silently skip) the old `| default: 1` gave.
+      stale_query_failed: "${{ steps.get_stale_candidates.error != null }}"
+
+  - name: exit_no_active_alerts
+    type: workflow.output
+    if: >-
+      ${{ steps.compute_idle_counts.output.alerts_count == 0
+      and steps.compute_idle_counts.output.open_detections_count == 0
+      and not steps.compute_idle_counts.output.stale_query_failed }}
+    status: cancelled
+    with:
+      reason: "No recent alerts and no active detections — change point scan skipped"
+
+  # -----------------------------------------------------------------------
+  # Stale sweep — resolve rules that went silent (no alerts → absent from the scan below, so the
+  # per-rule recovery never sees them). This sweep is their only resolution path.
+  # -----------------------------------------------------------------------
   - name: foreach_stale_candidate
     type: foreach
     if: "${{ steps.get_stale_candidates.error == null and steps.get_stale_candidates.output.hits.total.value > 0 }}"
@@ -215,7 +216,37 @@ steps:
           continue: true
 
   # -----------------------------------------------------------------------
-  # Step 1: Per-rule change_point over the main lookback.
+  # Round-robin scan scheduling (stateless, hash-sharded). Each run processes only a bounded shard of
+  # active rules so per-run work stays flat as the fleet grows, while guaranteeing every active rule
+  # is evaluated within targetCoverageMinutes. Two tiers, both derived WITHOUT any persisted state:
+  #   Tier 1 (urgent): any rule whose CURRENT scan shows a real change signal is processed EVERY
+  #                    cycle, uncapped — a live signal must never wait for queue fairness.
+  #   Tier 2 (fairness): a deterministic time-shard. The scan route hashes each rule id into
+  #                    coverage_cycles partitions (ES terms partitioning, murmur3); this run takes the
+  #                    partition equal to the wall-clock cycle. Over coverage_cycles runs every
+  #                    partition is covered exactly once = full fleet coverage within the target.
+  # -----------------------------------------------------------------------
+  - name: compute_scan_cycles
+    # coverage_cycles = runs needed to sweep the fleet once = ceil(target / interval), min 1.
+    # Doubles as num_partitions for the hash shard.
+    type: data.set
+    with:
+      coverage_cycles: "${{ inputs.targetCoverageMinutes | divided_by: inputs.detectionIntervalMinutes | ceil | at_least: 1 }}"
+
+  - name: compute_current_cycle
+    # cycle = floor(now_seconds / (interval * 60)) mod coverage_cycles — advances by 1 each run on the
+    # wall clock, so consecutive runs sweep partitions 0..coverage_cycles-1. Stateless: read from the
+    # clock, not a stored cursor. Chained divided_by (÷interval ÷60) = ÷ interval-seconds.
+    type: data.set
+    with:
+      current_cycle: >-
+        ${{ 'now' | date: '%s' | divided_by: inputs.detectionIntervalMinutes | divided_by: 60
+        | floor | modulo: steps.compute_scan_cycles.output.coverage_cycles }}
+
+  # -----------------------------------------------------------------------
+  # Step 1: Per-rule change_point over the main lookback. The route also returns partitionRuleIds —
+  # the rules in this run's hash shard (partition == current_cycle of coverage_cycles) — sharded
+  # server-side via ES terms partitioning, since the workflow can neither hash nor read the alerts index.
   # -----------------------------------------------------------------------
   - name: run_change_point_aggregation
     type: kibana.request
@@ -227,6 +258,26 @@ steps:
       body:
         lookback: '{{ inputs.lookback }}'
         bucketInterval: '{{ inputs.bucketInterval }}'
+        numPartitions: "${{ steps.compute_scan_cycles.output.coverage_cycles }}"
+        partition: "${{ steps.compute_current_cycle.output.current_cycle }}"
+
+  - name: compute_urgent_rules
+    type: data.set
+    with:
+      # Tier 1: buckets whose change_points.type carries any real change-type key (paren-free OR chain
+      # — liquid rejects parenthesized piped sub-expressions; membership-by-presence avoids extracting
+      # the key). Mirrors consts.CP_CHANGE_TYPES; keep the two in sync.
+      urgent_rule_uuids: >-
+        ${{ steps.run_change_point_aggregation.output.aggregations.by_rule.buckets | default: []
+        | where_exp: 'b', 'b.change_points.type.spike or b.change_points.type.dip or b.change_points.type.step_change or b.change_points.type.trend_change or b.change_points.type.distribution_change'
+        | map: 'key' | compact }}
+
+  - name: compute_scan_batch
+    # Final batch = tier-1 urgent (every cycle, uncapped) ∪ tier-2 shard (this cycle's partition, from
+    # the scan route). uniq guards the overlap. No persisted state, no marker writes, no extra query.
+    type: data.set
+    with:
+      batch_rule_uuids: "${{ steps.compute_urgent_rules.output.urgent_rule_uuids | concat: steps.run_change_point_aggregation.output.partitionRuleIds | uniq }}"
 
   # -----------------------------------------------------------------------
   # Step 2: Foreach rule bucket — detect, recover, resolve.
@@ -243,19 +294,28 @@ steps:
         type: data.set
         with:
           change_point_type: "${{ foreach.item.change_points.type | entries | map: 'key' | first | default: '' }}"
-          has_rule_uuid: "${{ foreach.item.key != null and foreach.item.key != '' }}"
+          # has_rule_uuid gates every write in this iteration; ANDing the batch membership here means
+          # rules outside this run's shard are skipped entirely (no work) and picked up a later cycle.
+          has_rule_uuid: >-
+            ${{ foreach.item.key != null and foreach.item.key != ''
+            and steps.compute_scan_batch.output.batch_rule_uuids contains foreach.item.key }}
 
-      - name: check_active_result
+      - name: check_rule_state
+        # Consolidated per-rule state lookup (N+1 fix): one request replaces the former three
+        # (check_active_result + check_recent_active + check_recent_clearance) — 3 round-trips per
+        # rule → 1. Three `filter` sub-aggs, each with a `top_hits` sub-agg preserving `_source`,
+        # reproduce the three former result sets exactly:
+        #   latest_state    ≡ check_active_result   (latest doc, excl handled)
+        #   recent_detection ≡ check_recent_active   (latest kind:detection within cooldown)
+        #   recent_any      ≡ check_recent_clearance (latest doc within 5m)
+        # size:0 at top level — only the sub-agg top_hits are consumed.
         if: "${{ steps.compute_rule_context.output.has_rule_uuid }}"
         type: elasticsearch.request
         with:
           method: POST
           path: '/{{ consts.DETECTIONS_INDEX }}/_search?ignore_unavailable=true'
           body:
-            size: 1
-            sort:
-              - "@timestamp":
-                  order: desc
+            size: 0
             query:
               bool:
                 filter:
@@ -263,64 +323,54 @@ steps:
                       kibana.space_ids: "{{ variables.spaceId }}"
                   - term:
                       rule_uuid: "{{ foreach.item.key }}"
-                must_not:
-                  - term:
-                      kind: '{{ consts.KIND_HANDLED }}'
-        on-failure:
-          continue: true
-
-      - name: check_recent_active
-        # kind:detection filter — a quiet doc written after a detection would otherwise
-        # suppress is_recent_active and allow re-detection after cooldown expires.
-        if: "${{ steps.compute_rule_context.output.has_rule_uuid }}"
-        type: elasticsearch.request
-        with:
-          method: POST
-          path: '/{{ consts.DETECTIONS_INDEX }}/_search?ignore_unavailable=true'
-          body:
-            size: 1
-            sort:
-              - "@timestamp":
-                  order: desc
-            query:
-              bool:
+            aggs:
+              latest_state:
                 filter:
-                  - term:
-                      kibana.space_ids: "{{ variables.spaceId }}"
-                  - term:
-                      rule_uuid: "{{ foreach.item.key }}"
-                  - term:
-                      kind: '{{ consts.KIND_DETECTION }}'
-                  - range:
-                      "@timestamp":
-                        gte: '{{ inputs.cooldown }}'
-        on-failure:
-          continue: true
-
-      - name: check_recent_clearance
-        # No kind filter — returns the most recent doc of any kind; is_recent_clearance
-        # then checks kind == KIND_QUIET. Do NOT add kind:quiet here — it would hide
-        # handled docs that act as timestamp barriers, allowing re-detection during cooldown.
-        if: "${{ steps.compute_rule_context.output.has_rule_uuid }}"
-        type: elasticsearch.request
-        with:
-          method: POST
-          path: '/{{ consts.DETECTIONS_INDEX }}/_search?ignore_unavailable=true'
-          body:
-            size: 1
-            sort:
-              - "@timestamp":
-                  order: desc
-            query:
-              bool:
+                  bool:
+                    must_not:
+                      - term:
+                          kind: '{{ consts.KIND_HANDLED }}'
+                aggs:
+                  doc:
+                    top_hits:
+                      size: 1
+                      sort:
+                        - "@timestamp":
+                            order: desc
+              recent_detection:
+                # kind:detection within cooldown — a quiet doc written after a detection would
+                # otherwise suppress is_recent_active and allow re-detection once cooldown expires.
                 filter:
-                  - term:
-                      kibana.space_ids: "{{ variables.spaceId }}"
-                  - term:
-                      rule_uuid: "{{ foreach.item.key }}"
-                  - range:
-                      "@timestamp":
-                        gte: "now-{{ consts.RECENT_ACTIVITY_MINUTES }}m"
+                  bool:
+                    filter:
+                      - term:
+                          kind: '{{ consts.KIND_DETECTION }}'
+                      - range:
+                          "@timestamp":
+                            gte: '{{ inputs.cooldown }}'
+                aggs:
+                  doc:
+                    top_hits:
+                      size: 1
+                      sort:
+                        - "@timestamp":
+                            order: desc
+              recent_any:
+                # Latest doc of any kind within 5m; is_recent_clearance then checks kind == quiet.
+                # Do NOT filter to quiet — handled docs act as timestamp barriers.
+                filter:
+                  bool:
+                    filter:
+                      - range:
+                          "@timestamp":
+                            gte: "now-{{ consts.RECENT_ACTIVITY_MINUTES }}m"
+                aggs:
+                  doc:
+                    top_hits:
+                      size: 1
+                      sort:
+                        - "@timestamp":
+                            order: desc
         on-failure:
           continue: true
 
@@ -328,37 +378,35 @@ steps:
         type: data.set
         with:
           latest_is_detection: >-
-            ${{ steps.check_active_result.output.hits.total.value > 0
-            and steps.check_active_result.output.hits.hits[0]._source.kind == consts.KIND_DETECTION }}
+            ${{ steps.check_rule_state.output.aggregations.latest_state.doc.hits.total.value > 0
+            and steps.check_rule_state.output.aggregations.latest_state.doc.hits.hits[0]._source.kind == consts.KIND_DETECTION }}
           is_recent_active: >-
-            ${{ steps.check_recent_active.output.hits.total.value > 0
-            and steps.check_recent_active.output.hits.hits[0]._source.kind == consts.KIND_DETECTION }}
+            ${{ steps.check_rule_state.output.aggregations.recent_detection.doc.hits.total.value > 0
+            and steps.check_rule_state.output.aggregations.recent_detection.doc.hits.hits[0]._source.kind == consts.KIND_DETECTION }}
           is_recent_clearance: >-
-            ${{ steps.check_recent_clearance.output.hits.total.value > 0
-            and steps.check_recent_clearance.output.hits.hits[0]._source.kind == consts.KIND_QUIET }}
+            ${{ steps.check_rule_state.output.aggregations.recent_any.doc.hits.total.value > 0
+            and steps.check_rule_state.output.aggregations.recent_any.doc.hits.hits[0]._source.kind == consts.KIND_QUIET }}
 
       - name: compute_change_point_type
         type: data.set
         with:
           detection_p_value: "${{ foreach.item.change_points.type[steps.compute_rule_context.output.change_point_type].p_value | default: 0 }}"
-          prior_type: "{% if steps.check_recent_active.output.hits.total.value > 0 and steps.check_recent_active.output.hits.hits[0]._source.kind == consts.KIND_DETECTION %}{{ steps.check_recent_active.output.hits.hits[0]._source.detection_evidence.change_point_type | default: '' }}{% else %}{% endif %}"
+          prior_type: "{% if steps.check_rule_state.output.aggregations.recent_detection.doc.hits.total.value > 0 and steps.check_rule_state.output.aggregations.recent_detection.doc.hits.hits[0]._source.kind == consts.KIND_DETECTION %}{{ steps.check_rule_state.output.aggregations.recent_detection.doc.hits.hits[0]._source.detection_evidence.change_point_type | default: '' }}{% else %}{% endif %}"
 
       - name: compute_event_signals
-        # Both occurrence signals require the state lookups to have succeeded: check_recent_active/
-        # check_recent_clearance run on-failure:continue, so on error their flags read false and
-        # would flip these true → spurious detection. The error==null guards suppress that write.
+        # Both occurrence signals require the state lookup to have succeeded: check_rule_state runs
+        # on-failure:continue, so on error its flags read false and would flip these true → spurious
+        # detection. The error==null guard suppresses that write.
         type: data.set
         with:
           has_change_point: "${{ consts.CP_CHANGE_TYPES contains steps.compute_rule_context.output.change_point_type }}"
           is_new_occurrence: >-
-            ${{ steps.check_recent_active.error == null
-            and steps.check_recent_clearance.error == null
+            ${{ steps.check_rule_state.error == null
             and not steps.compute_rule_state.output.is_recent_active
             and not steps.compute_rule_state.output.is_recent_clearance
             and foreach.item.last_5m.doc_count > 0 }}
           is_type_changed: >-
-            ${{ steps.check_recent_active.error == null
-            and steps.check_recent_clearance.error == null
+            ${{ steps.check_rule_state.error == null
             and steps.compute_rule_context.output.change_point_type != steps.compute_change_point_type.output.prior_type
             and not steps.compute_rule_state.output.is_recent_clearance
             and foreach.item.last_5m.doc_count > 0 }}
@@ -436,7 +484,7 @@ steps:
               quick_recovery_current: "${{ steps.get_quick_recovery_day_over_day.output.aggregations.current_window.doc_count }}"
               quick_recovery_spike_threshold: "${{ steps.get_quick_recovery_day_over_day.output.aggregations.reference_window.doc_count | times: 2 }}"
               current_rate_scaled: "${{ steps.get_quick_recovery_day_over_day.output.aggregations.current_window.doc_count | times: 60 }}"
-              detection_rate_scaled: "${{ steps.check_active_result.output.hits.hits[0]._source.peak_alert_count | times: 11 }}"
+              detection_rate_scaled: "${{ steps.check_rule_state.output.aggregations.latest_state.doc.hits.hits[0]._source.peak_alert_count | times: 11 }}"
 
           - name: check_quick_recovery_rate
             type: data.set
@@ -479,7 +527,7 @@ steps:
         type: data.set
         with:
           peak_alert_count: "${{ steps.get_rule_activity.output.aggregations.peak.value | default: 0 }}"
-          resolution_lookback_minutes: "{% assign parent = steps.check_active_result.output.hits.hits[0]._source.resolution_lookback_minutes | default: 0 | plus: 0 %}{% if parent > 0 %}{{ parent }}{% else %}{%- assign peak = steps.get_rule_activity.output.aggregations.peak.value | default: 0 | at_least: 1 -%}{{ consts.RESOLUTION_WINDOW_MINUTES | divided_by: peak | at_least: consts.LOOKBACK_MINUTES_FLOOR | at_most: consts.LOOKBACK_MINUTES_CEILING }}{% endif %}"
+          resolution_lookback_minutes: "{% assign parent = steps.check_rule_state.output.aggregations.latest_state.doc.hits.hits[0]._source.resolution_lookback_minutes | default: 0 | plus: 0 %}{% if parent > 0 %}{{ parent }}{% else %}{%- assign peak = steps.get_rule_activity.output.aggregations.peak.value | default: 0 | at_least: 1 -%}{{ consts.RESOLUTION_WINDOW_MINUTES | divided_by: peak | at_least: consts.LOOKBACK_MINUTES_FLOOR | at_most: consts.LOOKBACK_MINUTES_CEILING }}{% endif %}"
           # Recovery = an open detection (a real change) has gone quiet and is back to no-change.
           # is_quick_recovery vs is_stationary_recovery differ only on whether the QUICK re-scan
           # confirms no-change (mutually exclusive on that).
@@ -488,18 +536,18 @@ steps:
             and foreach.item.last_5m.doc_count == 0
             and consts.CP_NO_CHANGE_TYPES contains steps.compute_quick_recovery_type.output.quick_recovery_type
             and steps.compute_quick_recovery_gate.output.quick_recovery_rate_is_normal
-            and consts.CP_CHANGE_TYPES contains steps.check_active_result.output.hits.hits[0]._source.detection_evidence.change_point_type }}
+            and consts.CP_CHANGE_TYPES contains steps.check_rule_state.output.aggregations.latest_state.doc.hits.hits[0]._source.detection_evidence.change_point_type }}
           is_stationary_recovery: >-
             ${{ steps.compute_rule_state.output.latest_is_detection
             and foreach.item.last_5m.doc_count == 0
             and consts.CP_NO_CHANGE_TYPES contains steps.compute_rule_context.output.change_point_type
-            and consts.CP_CHANGE_TYPES contains steps.check_active_result.output.hits.hits[0]._source.detection_evidence.change_point_type
+            and consts.CP_CHANGE_TYPES contains steps.check_rule_state.output.aggregations.latest_state.doc.hits.hits[0]._source.detection_evidence.change_point_type
             and not consts.CP_NO_CHANGE_TYPES contains steps.compute_quick_recovery_type.output.quick_recovery_type }}
           is_quiet_stationary: >-
             ${{ steps.compute_rule_state.output.latest_is_detection
             and foreach.item.last_5m.doc_count == 0
             and foreach.item.last_floor_window.doc_count == 0
-            and steps.check_active_result.output.hits.hits[0]._source.peak_alert_count >= consts.QUIET_STATIONARY_MIN_PEAK }}
+            and steps.check_rule_state.output.aggregations.latest_state.doc.hits.hits[0]._source.peak_alert_count >= consts.QUIET_STATIONARY_MIN_PEAK }}
 
       - name: compute_write_ids
         # detection_id: carry over only while the episode is still open (latest doc is a detection);
@@ -507,7 +555,7 @@ steps:
         # differs by recovery type.
         type: data.set
         with:
-          detection_id: "{% if steps.compute_event_signals.output.is_type_changed and steps.check_recent_active.output.hits.total.value > 0 and steps.check_recent_clearance.output.hits.hits[0]._source.kind == consts.KIND_DETECTION %}{{ steps.check_recent_active.output.hits.hits[0]._source.detection_id }}{% else %}{{ foreach.item.key }}-{{ execution.id }}{% endif %}"
+          detection_id: "{% if steps.compute_event_signals.output.is_type_changed and steps.check_rule_state.output.aggregations.recent_detection.doc.hits.total.value > 0 and steps.check_rule_state.output.aggregations.recent_any.doc.hits.hits[0]._source.kind == consts.KIND_DETECTION %}{{ steps.check_rule_state.output.aggregations.recent_detection.doc.hits.hits[0]._source.detection_id }}{% else %}{{ foreach.item.key }}-{{ execution.id }}{% endif %}"
           quiet_p_value: "{% if steps.compute_write_signals.output.is_quick_recovery %}{{ steps.get_quick_recovery_change_point.output.aggregations.change_points.type.stationary.p_value | default: 0 }}{% elsif steps.compute_write_signals.output.is_stationary_recovery %}{{ foreach.item.change_points.type.stationary.p_value | default: 0 }}{% else %}0{% endif %}"
 
       - name: write_detection_doc
@@ -561,7 +609,7 @@ steps:
             detection_evidence:
               change_point_type: '{{ consts.CP_TYPE_STATIONARY }}'
               p_value: "${{ steps.compute_write_ids.output.quiet_p_value }}"
-            detection_id: "{{ steps.check_active_result.output.hits.hits[0]._source.detection_id }}"
+            detection_id: "{{ steps.check_rule_state.output.aggregations.latest_state.doc.hits.hits[0]._source.detection_id }}"
             resolution_lookback_minutes: "${{ steps.compute_write_signals.output.resolution_lookback_minutes | plus: 0 }}"
             rule_name: "{{ foreach.item.rule_name.top[0].metrics | entries | map: 'value' | first | default: 'unknown' }}"
             rule_uuid: "{{ foreach.item.key }}"

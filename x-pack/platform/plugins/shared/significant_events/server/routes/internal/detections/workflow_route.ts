@@ -63,6 +63,8 @@ const changePointScanRoute = createServerRoute({
     body: z.object({
       lookback: z.string().max(64),
       bucketInterval: z.string().max(64),
+      numPartitions: z.number().int().min(1).optional(),
+      partition: z.number().int().min(0).optional(),
     }),
   }),
   handler: async ({ params, request, getScopedClients, server, getSpaceId, telemetry }) => {
@@ -79,15 +81,18 @@ const changePointScanRoute = createServerRoute({
     const queryLinks = await kiClient.getRuleBackedQueryLinks();
 
     const startedAt = Date.now();
-    const { took, ...aggregations } = await sigEventsContext.alertsReader.runChangePointScan(
-      scopedClusterClient.asCurrentUser,
-      {
-        lookback: params.body.lookback,
-        bucketInterval: params.body.bucketInterval,
-        spaceId,
-      },
-      queryLinks
-    );
+    const { took, partition_rule_ids, ...aggregations } =
+      await sigEventsContext.alertsReader.runChangePointScan(
+        scopedClusterClient.asCurrentUser,
+        {
+          lookback: params.body.lookback,
+          bucketInterval: params.body.bucketInterval,
+          spaceId,
+          partition: params.body.partition,
+          numPartitions: params.body.numPartitions,
+        },
+        queryLinks
+      );
     const durationMs = Date.now() - startedAt;
 
     telemetry.trackSignificantEventsDetectionScan({
@@ -101,7 +106,11 @@ const changePointScanRoute = createServerRoute({
       space_id: spaceId,
     });
 
-    return { alertIndex: sigEventsContext.alertsReader.index, aggregations };
+    return {
+      alertIndex: sigEventsContext.alertsReader.index,
+      aggregations,
+      partitionRuleIds: partition_rule_ids,
+    };
   },
 });
 

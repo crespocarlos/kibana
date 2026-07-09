@@ -144,6 +144,9 @@ describe('SignificantEventsAlertsReaderV1', () => {
               }),
             },
           },
+          by_partition: {
+            terms: { field: 'kibana.alert.rule.uuid', size: RULES_BUCKET_SIZE },
+          },
         },
       })
     );
@@ -191,6 +194,43 @@ describe('SignificantEventsAlertsReaderV1', () => {
         last_floor_window: { doc_count: 0 },
       })
     );
+  });
+
+  it('adds a partition-scoped by_partition terms agg and surfaces partition rule ids', async () => {
+    const { client, search } = createEsClient();
+    search.mockResolvedValue({
+      aggregations: {
+        by_rule: { buckets: [] },
+        by_partition: { buckets: [{ key: 'rule-1' }, { key: 'rule-2' }] },
+      },
+    });
+
+    const result = await reader.runChangePointScan(
+      client,
+      {
+        lookback: LOOKBACK,
+        bucketInterval: BUCKET_INTERVAL,
+        spaceId: SPACE_ID,
+        numPartitions: 2,
+        partition: 0,
+      },
+      [makeQueryLink()]
+    );
+
+    expect(search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aggs: expect.objectContaining({
+          by_partition: {
+            terms: {
+              field: 'kibana.alert.rule.uuid',
+              size: RULES_BUCKET_SIZE,
+              include: { partition: 0, num_partitions: 2 },
+            },
+          },
+        }),
+      })
+    );
+    expect(result.partition_rule_ids).toEqual(['rule-1', 'rule-2']);
   });
 
   it('returns rule activity aggregations without normalizing bucket counts', async () => {
@@ -358,6 +398,9 @@ describe('SignificantEventsAlertsReaderV2', () => {
               }),
             },
           },
+          by_partition: {
+            terms: { field: 'rule.id', size: RULES_BUCKET_SIZE },
+          },
         },
       })
     );
@@ -375,6 +418,43 @@ describe('SignificantEventsAlertsReaderV2', () => {
         last_floor_window: { doc_count: 8 },
       },
     ]);
+  });
+
+  it('adds a partition-scoped by_partition terms agg and surfaces partition rule ids', async () => {
+    const { client, search } = createEsClient();
+    search.mockResolvedValue({
+      aggregations: {
+        by_rule: { buckets: [] },
+        by_partition: { buckets: [{ key: 'rule-a' }] },
+      },
+    });
+
+    const result = await reader.runChangePointScan(
+      client,
+      {
+        lookback: LOOKBACK,
+        bucketInterval: BUCKET_INTERVAL,
+        spaceId: SPACE_ID,
+        numPartitions: 2,
+        partition: 0,
+      },
+      [makeQueryLink()]
+    );
+
+    expect(search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aggs: expect.objectContaining({
+          by_partition: {
+            terms: {
+              field: 'rule.id',
+              size: RULES_BUCKET_SIZE,
+              include: { partition: 0, num_partitions: 2 },
+            },
+          },
+        }),
+      })
+    );
+    expect(result.partition_rule_ids).toEqual(['rule-a']);
   });
 
   it('normalizes rule activity windows to doc_count from signal_count', async () => {
