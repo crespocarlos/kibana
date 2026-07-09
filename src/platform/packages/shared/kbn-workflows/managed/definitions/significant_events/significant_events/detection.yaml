@@ -42,12 +42,12 @@ triggers:
         type: number
         default: 10
         required: false
-        description: "Every active rule must be evaluated within this window; drives the per-run scan batch size."
+        description: "Target window within which every active rule should be evaluated (best-effort under periodic scheduling); drives the per-run scan shard size."
       - name: detectionIntervalMinutes
         type: number
         default: 5
         required: false
-        description: "How often this workflow runs (threaded from the scheduler). coverage cycles = target / interval."
+        description: "Actual run cadence, threaded from the scheduler — MUST match the real schedule or coverage skews. coverage cycles = floor(target / interval)."
 consts:
   ACTIVITY_HISTORY_LOOKBACK: "now-1h"
   ACTIVITY_WINDOW_INTERVAL: "30m"
@@ -145,7 +145,7 @@ steps:
       and not steps.compute_idle_counts.output.stale_query_failed }}
     status: cancelled
     with:
-      reason: "No recent alerts and no active detections — change point scan skipped"
+      reason: "No recent alerts and no open detections — change point scan skipped"
 
   # -----------------------------------------------------------------------
   # Stale sweep — resolve rules that went silent (no alerts → absent from the scan below, so the
@@ -217,21 +217,33 @@ steps:
 
   # -----------------------------------------------------------------------
   # Round-robin scan scheduling (stateless, hash-sharded). Each run processes only a bounded shard of
-  # active rules so per-run work stays flat as the fleet grows, while guaranteeing every active rule
-  # is evaluated within targetCoverageMinutes. Two tiers, both derived WITHOUT any persisted state:
+  # active rules so the per-rule state loop (the N+1 fan-out) stays flat as the fleet grows. NOTE: the
+  # main change_point aggregation below still scans the whole fleet each run — only the foreach's
+  # per-rule work is sharded. Two tiers, both derived WITHOUT any persisted state:
   #   Tier 1 (urgent): any rule whose CURRENT scan shows a real change signal is processed EVERY
   #                    cycle, uncapped — a live signal must never wait for queue fairness.
   #   Tier 2 (fairness): a deterministic time-shard. The scan route hashes each rule id into
-  #                    coverage_cycles partitions (ES terms partitioning, murmur3); this run takes the
-  #                    partition equal to the wall-clock cycle. Over coverage_cycles runs every
-  #                    partition is covered exactly once = full fleet coverage within the target.
+  #                    coverage_cycles partitions (ES terms partitioning, hash-based); this run takes
+  #                    the partition equal to the wall-clock cycle, sweeping partitions 0..N-1 over N
+  #                    runs. Coverage is best-effort within targetCoverageMinutes under periodic
+  #                    execution — a skipped/jittered run defers a partition up to ~2× the target
+  #                    (rules self-heal next sweep); the independent stale sweep backstops silence.
+  #                    Bounded by the by_rule RULES_BUCKET_SIZE (1000) cap the foreach iterates.
   # -----------------------------------------------------------------------
-  - name: compute_scan_cycles
-    # coverage_cycles = runs needed to sweep the fleet once = ceil(target / interval), min 1.
-    # Doubles as num_partitions for the hash shard.
+  - name: compute_scan_config
+    # safe_interval guards the divisions below against a misconfigured detectionIntervalMinutes <= 0
+    # (divide-by-zero → NaN → the scan route's z.number() rejects → the whole run aborts).
     type: data.set
     with:
-      coverage_cycles: "${{ inputs.targetCoverageMinutes | divided_by: inputs.detectionIntervalMinutes | ceil | at_least: 1 }}"
+      safe_interval_minutes: "${{ inputs.detectionIntervalMinutes | at_least: 1 }}"
+
+  - name: compute_scan_cycles
+    # coverage_cycles = partitions to sweep the fleet once = floor(target / interval), min 1. floor (not
+    # ceil) keeps the sweep (coverage_cycles * interval) WITHIN targetCoverageMinutes; ceil would
+    # overshoot (e.g. 10/3 → 4 partitions → 12min > 10). Doubles as num_partitions for the hash shard.
+    type: data.set
+    with:
+      coverage_cycles: "${{ inputs.targetCoverageMinutes | divided_by: steps.compute_scan_config.output.safe_interval_minutes | floor | at_least: 1 }}"
 
   - name: compute_current_cycle
     # cycle = floor(now_seconds / (interval * 60)) mod coverage_cycles — advances by 1 each run on the
@@ -240,7 +252,7 @@ steps:
     type: data.set
     with:
       current_cycle: >-
-        ${{ 'now' | date: '%s' | divided_by: inputs.detectionIntervalMinutes | divided_by: 60
+        ${{ 'now' | date: '%s' | divided_by: steps.compute_scan_config.output.safe_interval_minutes | divided_by: 60
         | floor | modulo: steps.compute_scan_cycles.output.coverage_cycles }}
 
   # -----------------------------------------------------------------------
@@ -290,13 +302,14 @@ steps:
       # Phase 1: Read state
       - name: compute_rule_context
         # change_point_type computed once — used as a dynamic key and in multiple conditions.
-        # has_rule_uuid guards writes: by_rule buckets with an empty key produce broken docs.
+        # should_process_rule gates every write/lookup in this iteration. It combines TWO conditions:
+        # (a) a non-empty rule key (empty-key buckets produce broken docs), and (b) this rule is in
+        # this run's scan batch (urgent ∪ shard) — rules outside the shard are skipped entirely (no
+        # work) and picked up a later cycle. Named for the gate it performs, not just the key check.
         type: data.set
         with:
           change_point_type: "${{ foreach.item.change_points.type | entries | map: 'key' | first | default: '' }}"
-          # has_rule_uuid gates every write in this iteration; ANDing the batch membership here means
-          # rules outside this run's shard are skipped entirely (no work) and picked up a later cycle.
-          has_rule_uuid: >-
+          should_process_rule: >-
             ${{ foreach.item.key != null and foreach.item.key != ''
             and steps.compute_scan_batch.output.batch_rule_uuids contains foreach.item.key }}
 
@@ -307,9 +320,9 @@ steps:
         # reproduce the three former result sets exactly:
         #   latest_state    ≡ check_active_result   (latest doc, excl handled)
         #   recent_detection ≡ check_recent_active   (latest kind:detection within cooldown)
-        #   recent_any      ≡ check_recent_clearance (latest doc within 5m)
+        #   recent_any      ≡ check_recent_clearance (latest doc within RECENT_ACTIVITY_MINUTES)
         # size:0 at top level — only the sub-agg top_hits are consumed.
-        if: "${{ steps.compute_rule_context.output.has_rule_uuid }}"
+        if: "${{ steps.compute_rule_context.output.should_process_rule }}"
         type: elasticsearch.request
         with:
           method: POST
@@ -356,7 +369,7 @@ steps:
                         - "@timestamp":
                             order: desc
               recent_any:
-                # Latest doc of any kind within 5m; is_recent_clearance then checks kind == quiet.
+                # Latest doc of any kind within RECENT_ACTIVITY_MINUTES; is_recent_clearance then checks kind == quiet.
                 # Do NOT filter to quiet — handled docs act as timestamp barriers.
                 filter:
                   bool:
@@ -429,11 +442,11 @@ steps:
         type: data.set
         with:
           should_write_change_point: >-
-            ${{ steps.compute_rule_context.output.has_rule_uuid
+            ${{ steps.compute_rule_context.output.should_process_rule
             and steps.compute_gates.output.is_detectable
             and steps.compute_gates.output.needs_new_event }}
           should_write_new_occurrence: >-
-            ${{ steps.compute_rule_context.output.has_rule_uuid
+            ${{ steps.compute_rule_context.output.should_process_rule
             and steps.compute_event_signals.output.is_new_occurrence }}
 
       # Phase 2: Quick recovery

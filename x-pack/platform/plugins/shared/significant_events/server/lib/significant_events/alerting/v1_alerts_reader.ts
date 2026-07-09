@@ -225,7 +225,8 @@ export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlerts
     partition,
     numPartitions,
   }: ChangePointScanParams) {
-    const shouldPartition = numPartitions !== undefined && numPartitions > 1;
+    const shouldPartition =
+      numPartitions !== undefined && numPartitions > 1 && partition !== undefined;
     return {
       query: {
         bool: {
@@ -260,9 +261,7 @@ export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlerts
           terms: {
             field: 'kibana.alert.rule.uuid',
             size: RULES_BUCKET_SIZE,
-            ...(shouldPartition
-              ? { include: { partition: partition as number, num_partitions: numPartitions } }
-              : {}),
+            ...(shouldPartition ? { include: { partition, num_partitions: numPartitions } } : {}),
           },
         },
       },
