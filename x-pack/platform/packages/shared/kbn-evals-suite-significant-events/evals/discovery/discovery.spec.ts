@@ -290,7 +290,7 @@ evaluate.describe(
           // per (scenario × path); each chain is ground truth, so slug reuse is the correct answer
           // and minting a new slug is the defect ("slug proliferation is a defect").
           evaluate(
-            'Discovery investigator — continuation over time',
+            'Discovery agent — continuation over time',
             async ({
               executorClient,
               evaluators,
