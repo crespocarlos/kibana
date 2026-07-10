@@ -53,7 +53,7 @@ describe('incidentFingerprint', () => {
 
   it('differs when the kind differs', () => {
     expect(incidentFingerprint('discovery', ['logs.checkout'], ['rule-a'])).not.toBe(
-      incidentFingerprint('quiet', ['logs.checkout'], ['rule-a'])
+      incidentFingerprint('clearance', ['logs.checkout'], ['rule-a'])
     );
   });
 
@@ -237,7 +237,7 @@ describe('discoveryWriteHandler', () => {
           {
             discovery_id: 'other-disc-id',
             discovery_slug: 'checkout__high-latency-rule-abc12345',
-            kind: 'quiet',
+            kind: 'clearance',
             stream_names: ['logs.checkout'],
             rule_names: ['high-latency-rule'],
           },
