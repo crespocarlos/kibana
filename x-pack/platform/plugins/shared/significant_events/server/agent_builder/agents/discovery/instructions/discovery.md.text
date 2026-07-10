@@ -222,7 +222,7 @@ Follow the confirmation query protocol from the loaded `significant-events-ki-gr
 **No-logs dispositions (apply per rule once all `platform_core_execute_esql` results are in — there is no raw-log fallback):**
 
 1. **0-row confirming query** — matched KI returned 0 rows → record one `evidences` entry with `result: empty`. Do not investigate further.
-2. **No confirming query available** — no exact-match KI for this rule → record one `evidences` entry with `result: empty`, `description: "no confirming query available"`. Apply the no-evidence confidence cap (see the `confidence` hard caps in `<output_properties>`). Do NOT invent a separate "reduced confidence" value.
+2. **No confirming query available** — no exact-match KI for this rule → record one `evidences` entry with `result: empty`, `description: "no confirming query available"`. Apply the no-evidence confidence cap (see the `confidence` hard caps in `<field_rules>`). Do NOT invent a separate "reduced confidence" value.
 
 ### Step 4: Group
 

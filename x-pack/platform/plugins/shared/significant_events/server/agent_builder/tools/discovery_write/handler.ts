@@ -22,16 +22,34 @@ const slugify = (str: string): string =>
     .slice(0, 40);
 
 /**
- * Generates a new episode slug from the primary stream name and first rule name.
- * Format: `<stream>__<rule>-<uuid8>` where <stream> is the last dot-segment of
- * stream_names[0] (e.g. "logs.otel" → "otel") and <rule> is slugified rule_names[0].
+ * Display-only slug prefix `<stream>__<rule>` from the smallest stream's last segment and the
+ * smallest rule name (sorted for determinism). Dedup keys off {@link incidentFingerprint}.
+ */
+export const discoveryStem = (streamNames: string[], ruleNames: string[]): string => {
+  const rawStream = [...streamNames].sort()[0] ?? 'unknown';
+  const streamPart = slugify(rawStream.split('.').pop() ?? rawStream);
+  const rulePart = slugify([...ruleNames].sort()[0] ?? 'unknown');
+  return `${streamPart}__${rulePart}`;
+};
+
+/**
+ * Order-independent identity of an incident from the full stream/rule sets + kind. Dedup matches
+ * on this so a re-ordered but otherwise identical write is caught. Rule-set drift is intentionally
+ * excluded — genuine continuation reuses an explicit slug, which skips dedup.
+ */
+export const incidentFingerprint = (
+  kind: Discovery['kind'],
+  streamNames: string[],
+  ruleNames: string[]
+): string => [kind, [...streamNames].sort().join(','), [...ruleNames].sort().join(',')].join('|');
+
+/**
+ * Generates a new episode slug: the stable stem plus a random UUID8 suffix.
+ * Format: `<stem>-<uuid8>`.
  */
 export const generateDiscoverySlug = (streamNames: string[], ruleNames: string[]): string => {
-  const rawStream = streamNames[0] ?? 'unknown';
-  const streamPart = slugify(rawStream.split('.').pop() ?? rawStream);
-  const rulePart = slugify(ruleNames[0] ?? 'unknown');
   const suffix = uuidv4().replace(/-/g, '').slice(0, 8);
-  return `${streamPart}__${rulePart}-${suffix}`;
+  return `${discoveryStem(streamNames, ruleNames)}-${suffix}`;
 };
 
 /**
@@ -114,10 +132,8 @@ export async function discoveryWriteHandler({
 
   const discoveryInput = { ...rest, discovery_slug: resolvedSlug };
 
-  // Deduplication applies only to auto-generated slugs (new episodes). Explicit slugs indicate
-  // continuation or clearance — those must always append a new version. Clearance is never deduped.
-  // Unrecognised dedup_window expressions produce undefined — skip dedup rather than silently
-  // falling back to an arbitrary window.
+  // Dedup only new episodes (auto-generated slugs). Explicit slugs are continuation/clearance and
+  // always append. Unrecognised dedup_window → undefined → skip rather than guess a window.
   const windowMs = dedupWindow != null ? parseDateMathToMs(dedupWindow) : undefined;
   const isExplicitSlug = discovery_slug != null;
   if (
@@ -126,15 +142,20 @@ export async function discoveryWriteHandler({
     discoveryInput.kind !== 'clearance' &&
     windowMs != null
   ) {
-    const existing = await discoveryClient.findBySlug(resolvedSlug);
-    const cutoff = Date.now() - windowMs;
-    const recent = existing.hits.find(
-      (d) => d.kind === discoveryInput.kind && new Date(d['@timestamp']).getTime() >= cutoff
+    const cutoffIso = new Date(Date.now() - windowMs).toISOString();
+    const fingerprint = incidentFingerprint(
+      discoveryInput.kind,
+      rest.stream_names,
+      rest.rule_names
+    );
+    const { hits } = await discoveryClient.findLatest({ from: cutoffIso });
+    const recent = hits.find(
+      (d) => incidentFingerprint(d.kind, d.stream_names ?? [], d.rule_names ?? []) === fingerprint
     );
     if (recent) {
       return {
         discovery_id: recent.discovery_id,
-        discovery_slug: resolvedSlug,
+        discovery_slug: recent.discovery_slug ?? resolvedSlug,
         kind: discoveryInput.kind,
         written: false,
         skipped: true,

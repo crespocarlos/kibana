@@ -5,7 +5,13 @@
  * 2.0.
  */
 
-import { discoveryWriteHandler, generateDiscoverySlug, parseDateMathToMs } from './handler';
+import {
+  discoveryStem,
+  discoveryWriteHandler,
+  generateDiscoverySlug,
+  incidentFingerprint,
+  parseDateMathToMs,
+} from './handler';
 
 const baseInput = {
   kind: 'discovery' as const,
@@ -24,8 +30,67 @@ const baseInput = {
   evidences: [],
 };
 
+describe('incidentFingerprint', () => {
+  it('is independent of the order stream_names/rule_names are emitted in', () => {
+    expect(
+      incidentFingerprint('discovery', ['logs.checkout', 'logs.payments'], ['rule-b', 'rule-a'])
+    ).toBe(
+      incidentFingerprint('discovery', ['logs.payments', 'logs.checkout'], ['rule-a', 'rule-b'])
+    );
+  });
+
+  it('differs when the stream set differs', () => {
+    expect(incidentFingerprint('discovery', ['logs.checkout'], ['rule-a'])).not.toBe(
+      incidentFingerprint('discovery', ['logs.payments'], ['rule-a'])
+    );
+  });
+
+  it('differs when the rule set differs', () => {
+    expect(incidentFingerprint('discovery', ['logs.checkout'], ['rule-a'])).not.toBe(
+      incidentFingerprint('discovery', ['logs.checkout'], ['rule-a', 'rule-b'])
+    );
+  });
+
+  it('differs when the kind differs', () => {
+    expect(incidentFingerprint('discovery', ['logs.checkout'], ['rule-a'])).not.toBe(
+      incidentFingerprint('quiet', ['logs.checkout'], ['rule-a'])
+    );
+  });
+
+  it('does not mutate the input arrays', () => {
+    const streamNames = ['logs.payments', 'logs.checkout'];
+    const ruleNames = ['rule-b', 'rule-a'];
+    incidentFingerprint('discovery', streamNames, ruleNames);
+    expect(streamNames).toEqual(['logs.payments', 'logs.checkout']);
+    expect(ruleNames).toEqual(['rule-b', 'rule-a']);
+  });
+});
+
+describe('discoveryStem', () => {
+  it('builds a display stem from the smallest stream last segment and rule name', () => {
+    expect(discoveryStem(['logs.checkout.service'], ['high latency rule'])).toBe(
+      'service__high-latency-rule'
+    );
+  });
+
+  it('is deterministic regardless of array order', () => {
+    expect(discoveryStem(['logs.payments', 'logs.checkout'], ['rule-b', 'rule-a'])).toBe(
+      'checkout__rule-a'
+    );
+  });
+
+  it('falls back to "unknown" when arrays are empty', () => {
+    expect(discoveryStem([], [])).toBe('unknown__unknown');
+  });
+
+  it('truncates long rule names to 40 characters', () => {
+    const rulePart = discoveryStem(['logs.a'], ['a'.repeat(60)]).split('__')[1];
+    expect(rulePart.length).toBeLessThanOrEqual(40);
+  });
+});
+
 describe('generateDiscoverySlug', () => {
-  it('builds slug from stream last segment and rule name', () => {
+  it('builds slug from the stem plus a uuid8 suffix', () => {
     const slug = generateDiscoverySlug(['logs.checkout.service'], ['high latency rule']);
     expect(slug).toMatch(/^service__high-latency-rule-[a-f0-9]{8}$/);
   });
@@ -35,11 +100,10 @@ describe('generateDiscoverySlug', () => {
     expect(slug).toMatch(/^unknown__unknown-[a-f0-9]{8}$/);
   });
 
-  it('truncates long rule names to 40 characters', () => {
-    const longRule = 'a'.repeat(60);
-    const slug = generateDiscoverySlug(['logs.a'], [longRule]);
-    const rulePart = slug.split('__')[1].split('-').slice(0, -1).join('-');
-    expect(rulePart.length).toBeLessThanOrEqual(40);
+  it('appends a fresh suffix on each call for the same stem', () => {
+    const a = generateDiscoverySlug(['logs.checkout'], ['high-latency-rule']);
+    const b = generateDiscoverySlug(['logs.checkout'], ['high-latency-rule']);
+    expect(a).not.toBe(b);
   });
 });
 
@@ -85,14 +149,15 @@ describe('discoveryWriteHandler', () => {
   });
 
   it('skips write when duplicate of same kind exists within dedup window for auto-generated slug', async () => {
-    const recentTimestamp = new Date(Date.now() - 1000).toISOString();
     const discoveryClient = {
-      findBySlug: jest.fn().mockResolvedValue({
+      findLatest: jest.fn().mockResolvedValue({
         hits: [
           {
             discovery_id: 'existing-disc-id',
+            discovery_slug: 'checkout__high-latency-rule-abc12345',
             kind: 'discovery',
-            '@timestamp': recentTimestamp,
+            stream_names: ['logs.checkout'],
+            rule_names: ['high-latency-rule'],
           },
         ],
       }),
@@ -104,26 +169,159 @@ describe('discoveryWriteHandler', () => {
       input: { ...baseInput, dedup_window: 'now-1h' },
     });
 
-    expect(discoveryClient.findBySlug).toHaveBeenCalled();
+    expect(discoveryClient.findLatest).toHaveBeenCalledWith(
+      expect.objectContaining({ from: expect.any(String) })
+    );
     expect(discoveryClient.bulkCreate).not.toHaveBeenCalled();
     expect(result.written).toBe(false);
     expect(result.skipped).toBe(true);
     expect(result.reason).toBe('duplicate_within_window');
     expect(result.existing_discovery_id).toBe('existing-disc-id');
+    expect(result.discovery_slug).toBe('checkout__high-latency-rule-abc12345');
   });
 
-  it('writes continuation discovery when explicit slug matches recent prior doc within dedup window', async () => {
-    const recentTimestamp = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  it('does not skip write when stream_names differ even within window', async () => {
     const discoveryClient = {
-      findBySlug: jest.fn().mockResolvedValue({
+      findLatest: jest.fn().mockResolvedValue({
         hits: [
           {
-            discovery_id: 'prior-disc-id',
+            discovery_id: 'other-disc-id',
+            discovery_slug: 'payments__high-latency-rule-abc12345',
             kind: 'discovery',
-            '@timestamp': recentTimestamp,
+            stream_names: ['logs.payments'],
+            rule_names: ['high-latency-rule'],
           },
         ],
       }),
+      bulkCreate: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await discoveryWriteHandler({
+      discoveryClient: discoveryClient as never,
+      input: { ...baseInput, dedup_window: 'now-1h' },
+    });
+
+    expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
+    expect(result.written).toBe(true);
+  });
+
+  it('does not skip write when the primary rule differs even within window', async () => {
+    const discoveryClient = {
+      findLatest: jest.fn().mockResolvedValue({
+        hits: [
+          {
+            discovery_id: 'other-disc-id',
+            discovery_slug: 'checkout__other-rule-abc12345',
+            kind: 'discovery',
+            stream_names: ['logs.checkout'],
+            rule_names: ['other-rule'],
+          },
+        ],
+      }),
+      bulkCreate: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await discoveryWriteHandler({
+      discoveryClient: discoveryClient as never,
+      input: { ...baseInput, dedup_window: 'now-1h' },
+    });
+
+    expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
+    expect(result.written).toBe(true);
+  });
+
+  it('does not skip write when only the kind differs for a matching stem', async () => {
+    const discoveryClient = {
+      findLatest: jest.fn().mockResolvedValue({
+        hits: [
+          {
+            discovery_id: 'other-disc-id',
+            discovery_slug: 'checkout__high-latency-rule-abc12345',
+            kind: 'quiet',
+            stream_names: ['logs.checkout'],
+            rule_names: ['high-latency-rule'],
+          },
+        ],
+      }),
+      bulkCreate: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await discoveryWriteHandler({
+      discoveryClient: discoveryClient as never,
+      input: { ...baseInput, kind: 'discovery', dedup_window: 'now-1h' },
+    });
+
+    expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
+    expect(result.written).toBe(true);
+  });
+
+  it('deduplicates when the prior doc lists the same streams/rules in a different order', async () => {
+    const discoveryClient = {
+      findLatest: jest.fn().mockResolvedValue({
+        hits: [
+          {
+            discovery_id: 'existing-disc-id',
+            discovery_slug: 'checkout__rule-a-abc12345',
+            kind: 'discovery',
+            stream_names: ['logs.payments', 'logs.checkout'],
+            rule_names: ['rule-b', 'rule-a'],
+          },
+        ],
+      }),
+      bulkCreate: jest.fn(),
+    };
+
+    const result = await discoveryWriteHandler({
+      discoveryClient: discoveryClient as never,
+      input: {
+        ...baseInput,
+        stream_names: ['logs.checkout', 'logs.payments'],
+        rule_names: ['rule-a', 'rule-b'],
+        dedup_window: 'now-1h',
+      },
+    });
+
+    expect(discoveryClient.bulkCreate).not.toHaveBeenCalled();
+    expect(result.written).toBe(false);
+    expect(result.skipped).toBe(true);
+    expect(result.existing_discovery_id).toBe('existing-disc-id');
+  });
+
+  it('does not dedup when the rule set drifts — continuation is handled upstream via explicit slug', async () => {
+    // Rule set changed this cycle — not a duplicate. Continuation reuses an explicit slug (which
+    // skips dedup); the net only catches the same incident opened twice as new.
+    const discoveryClient = {
+      findLatest: jest.fn().mockResolvedValue({
+        hits: [
+          {
+            discovery_id: 'existing-disc-id',
+            discovery_slug: 'checkout__high-latency-rule-abc12345',
+            kind: 'discovery',
+            stream_names: ['logs.checkout'],
+            rule_names: ['high-latency-rule', 'stale-secondary-rule'],
+          },
+        ],
+      }),
+      bulkCreate: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await discoveryWriteHandler({
+      discoveryClient: discoveryClient as never,
+      input: {
+        ...baseInput,
+        stream_names: ['logs.checkout'],
+        rule_names: ['high-latency-rule', 'fresh-secondary-rule'],
+        dedup_window: 'now-1h',
+      },
+    });
+
+    expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
+    expect(result.written).toBe(true);
+  });
+
+  it('writes continuation discovery when explicit slug matches recent prior doc within dedup window', async () => {
+    const discoveryClient = {
+      findLatest: jest.fn(),
       bulkCreate: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -136,24 +334,15 @@ describe('discoveryWriteHandler', () => {
       },
     });
 
-    expect(discoveryClient.findBySlug).not.toHaveBeenCalled();
+    expect(discoveryClient.findLatest).not.toHaveBeenCalled();
     expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
     expect(result.written).toBe(true);
     expect(result.discovery_slug).toBe('checkout__latency-abc12345');
   });
 
   it('writes clearance when prior discovery doc exists within dedup window', async () => {
-    const recentTimestamp = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     const discoveryClient = {
-      findBySlug: jest.fn().mockResolvedValue({
-        hits: [
-          {
-            discovery_id: 'prior-disc-id',
-            kind: 'discovery',
-            '@timestamp': recentTimestamp,
-          },
-        ],
-      }),
+      findLatest: jest.fn(),
       bulkCreate: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -168,18 +357,15 @@ describe('discoveryWriteHandler', () => {
       },
     });
 
-    expect(discoveryClient.findBySlug).not.toHaveBeenCalled();
+    expect(discoveryClient.findLatest).not.toHaveBeenCalled();
     expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
     expect(result.written).toBe(true);
     expect(result.kind).toBe('clearance');
   });
 
-  it('does not skip when duplicate is outside the dedup window', async () => {
-    const oldTimestamp = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
+  it('does not skip when no matching discovery exists within the dedup window', async () => {
     const discoveryClient = {
-      findBySlug: jest.fn().mockResolvedValue({
-        hits: [{ discovery_id: 'old-disc-id', kind: 'discovery', '@timestamp': oldTimestamp }],
-      }),
+      findLatest: jest.fn().mockResolvedValue({ hits: [] }),
       bulkCreate: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -188,14 +374,14 @@ describe('discoveryWriteHandler', () => {
       input: { ...baseInput, dedup_window: 'now-1h' },
     });
 
-    expect(discoveryClient.findBySlug).toHaveBeenCalled();
+    expect(discoveryClient.findLatest).toHaveBeenCalled();
     expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
     expect(result.written).toBe(true);
   });
 
   it('skips dedup when dedup_window is unrecognised', async () => {
     const discoveryClient = {
-      findBySlug: jest.fn(),
+      findLatest: jest.fn(),
       bulkCreate: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -208,14 +394,14 @@ describe('discoveryWriteHandler', () => {
       },
     });
 
-    expect(discoveryClient.findBySlug).not.toHaveBeenCalled();
+    expect(discoveryClient.findLatest).not.toHaveBeenCalled();
     expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
     expect(result.written).toBe(true);
   });
 
   it('skips dedup check for kind:handled', async () => {
     const discoveryClient = {
-      findBySlug: jest.fn(),
+      findLatest: jest.fn(),
       bulkCreate: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -229,7 +415,7 @@ describe('discoveryWriteHandler', () => {
       },
     });
 
-    expect(discoveryClient.findBySlug).not.toHaveBeenCalled();
+    expect(discoveryClient.findLatest).not.toHaveBeenCalled();
     expect(discoveryClient.bulkCreate).toHaveBeenCalledTimes(1);
   });
 });

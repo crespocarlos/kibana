@@ -28,6 +28,7 @@ const eventsWriteSchema = significantEventSchema
     discovery_id: true,
     status: true,
     stream_names: true,
+    rule_names: true,
     title: true,
     summary: true,
     root_cause: true,

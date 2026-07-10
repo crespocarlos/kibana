@@ -11,6 +11,7 @@ const baseInput = {
   discovery_id: 'disc-1',
   status: 'promoted' as const,
   stream_names: ['logs.checkout'],
+  rule_names: ['high-latency-rule'],
   title: 'Checkout latency',
   summary: 'P99 latency breached SLO',
   root_cause: 'Connection pool exhaustion',
@@ -78,6 +79,21 @@ describe('eventsWriteHandler', () => {
     expect(eventClient.findLatestBySlugs).not.toHaveBeenCalled();
     expect(result.written).toBe(true);
     expect(result.discovery_slug).toMatch(/^agent-event-[a-f0-9]{8}$/);
+  });
+
+  it('persists rule_names so event_search can match continuation candidates', async () => {
+    const eventClient = {
+      findLatestBySlugs: jest.fn().mockResolvedValue(new Map()),
+      bulkCreate: jest.fn().mockResolvedValue(undefined),
+    };
+
+    await eventsWriteHandler({
+      eventClient: eventClient as never,
+      input: { ...baseInput, discovery_slug: 'checkout__latency-abc12345' },
+    });
+
+    const written = eventClient.bulkCreate.mock.calls[0][0][0];
+    expect(written.rule_names).toEqual(['high-latency-rule']);
   });
 
   it('sets previous_event_id from the latest event returned by findLatestBySlugs', async () => {

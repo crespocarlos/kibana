@@ -23,6 +23,7 @@ export type EventsWriteInput = Pick<
   | 'discovery_id'
   | 'status'
   | 'stream_names'
+  | 'rule_names'
   | 'title'
   | 'summary'
   | 'root_cause'
@@ -89,6 +90,7 @@ export async function eventsWriteHandler({
         discovery_id: input.discovery_id,
         status: input.status,
         stream_names: input.stream_names,
+        rule_names: input.rule_names,
         title: input.title,
         summary: input.summary,
         root_cause: input.root_cause,
