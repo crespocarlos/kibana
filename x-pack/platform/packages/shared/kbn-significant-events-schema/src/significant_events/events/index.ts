@@ -14,6 +14,7 @@ export const SIGNIFICANT_EVENT_STATUS_OPTIONS = [
   'acknowledged',
   'demoted',
   'resolved',
+  'closed',
 ] as const;
 
 export const significantEventStatusSchema = z

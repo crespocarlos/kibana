@@ -26,11 +26,6 @@ triggers:
         default: 10
         required: false
         description: 'Max rules per discovery invocation. Caps agent message size; remaining detections are picked up on the next cycle.'
-      - name: agentConnectorId
-        type: string
-        default: '.openai-gpt-5.2-chat_completion'
-        required: false
-        description: 'Connector ID for the discovery agent.'
 outputs:
   - name: candidateCount
     type: number
@@ -168,9 +163,10 @@ steps:
   - name: run_discovery_agent
     type: ai.agent
     agent-id: "platform.streams.sig-events.discovery"
-    connector-id: "${{ inputs.agentConnectorId }}"
-    # Keep plugin-id/aggregate-by in sync with @kbn/streams-schema inference_feature_ids.ts
-    # (SIGNIFICANT_EVENTS_DISCOVERY_INFERENCE_FEATURE_ID / SIGNIFICANT_EVENTS_INFERENCE_PARENT_FEATURE_ID).
+    # Keep connector-id-by-feature/plugin-id/aggregate-by in sync with @kbn/significant-events-schema
+    # inference_feature_ids.ts (SIGNIFICANT_EVENTS_DISCOVERY_INFERENCE_FEATURE_ID /
+    # SIGNIFICANT_EVENTS_INFERENCE_PARENT_FEATURE_ID).
+    connector-id-by-feature: 'significant_events_discovery'
     plugin-id: 'significant_events_discovery'
     aggregate-by: 'significant_events'
     create-conversation: true
