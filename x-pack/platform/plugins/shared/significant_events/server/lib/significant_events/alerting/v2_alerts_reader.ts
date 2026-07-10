@@ -33,8 +33,6 @@ interface RawRuleBucket {
   doc_count: number;
   signal_count?: { value?: number };
   change_points?: { type?: Record<string, { p_value: number }> };
-  last_5m?: { doc_count?: number; signal_count?: { value?: number } };
-  last_floor_window?: { doc_count?: number; signal_count?: { value?: number } };
 }
 
 export class SignificantEventsAlertsReaderV2 implements ISignificantEventsAlertsReader {
@@ -111,83 +109,6 @@ export class SignificantEventsAlertsReaderV2 implements ISignificantEventsAlerts
         buckets: rawBuckets.map((bucket) => this.enrichChangePointBucket(bucket, ruleMetadata)),
       },
     };
-  }
-
-  async runRuleChangePoint(
-    esClient: ElasticsearchClient,
-    {
-      ruleUuid,
-      lookback,
-      bucketInterval,
-      spaceId,
-    }: Parameters<ISignificantEventsAlertsReader['runRuleChangePoint']>[1]
-  ) {
-    const response = await esClient.search({
-      index: this.index,
-      ignore_unavailable: true,
-      size: 0,
-      query: {
-        bool: {
-          filter: [
-            { term: { type: 'signal' } },
-            { term: { space_id: spaceId } },
-            { term: { 'rule.id': ruleUuid } },
-            { range: { '@timestamp': { gte: lookback } } },
-          ],
-        },
-      },
-      aggs: buildChangePointTimeSeriesAggs(bucketInterval, {
-        useDistinctSignalCount: true,
-        extendedBounds: { min: lookback, max: 'now' },
-      }),
-    });
-
-    return { aggregations: response.aggregations ?? {} };
-  }
-
-  async runRuleActivity(
-    esClient: ElasticsearchClient,
-    {
-      ruleUuid,
-      lookback,
-      windowInterval,
-      spaceId,
-    }: Parameters<ISignificantEventsAlertsReader['runRuleActivity']>[1]
-  ) {
-    const response = await esClient.search({
-      index: this.index,
-      ignore_unavailable: true,
-      size: 0,
-      query: {
-        bool: {
-          filter: [
-            { term: { type: 'signal' } },
-            { term: { space_id: spaceId } },
-            { term: { 'rule.id': ruleUuid } },
-            { range: { '@timestamp': { gte: lookback } } },
-          ],
-        },
-      },
-      aggs: {
-        activity_windows: {
-          date_histogram: {
-            field: '@timestamp',
-            fixed_interval: windowInterval,
-            min_doc_count: 0,
-          },
-          aggs: {
-            signal_count: {
-              cardinality: { field: 'group_hash' },
-            },
-          },
-        },
-        peak: {
-          max_bucket: { buckets_path: 'activity_windows>signal_count' },
-        },
-      },
-    });
-
-    return { aggregations: this.normalizeActivityAggregations(response.aggregations ?? {}) };
   }
 
   async runRuleAlertWindows(
@@ -270,8 +191,6 @@ export class SignificantEventsAlertsReaderV2 implements ISignificantEventsAlerts
               cardinality: { field: 'group_hash' },
             },
             ...buildChangePointTimeSeriesAggs(bucketInterval, {
-              useDistinctSignalCount: true,
-              includeFloorWindow: true,
               recentActivityMinutes,
               extendedBounds: buildChangePointHistogramBounds(lookback, bucketInterval),
             }),
@@ -299,17 +218,8 @@ export class SignificantEventsAlertsReaderV2 implements ISignificantEventsAlerts
       rule_name: { top: [{ metrics: { 'kibana.alert.rule.name': ruleName } }] },
       stream: { buckets: [{ key: streamName }] },
       change_points: changePoints,
-      last_5m: { doc_count: this.distinctSignalCount(bucket.last_5m) },
-      last_floor_window: { doc_count: this.distinctSignalCount(bucket.last_floor_window) },
       rule_schedule: ruleSchedule,
     };
-  }
-
-  private distinctSignalCount(window?: {
-    doc_count?: number;
-    signal_count?: { value?: number };
-  }): number {
-    return window?.signal_count?.value ?? window?.doc_count ?? 0;
   }
 
   private normalizeWindowAggregations(
@@ -329,28 +239,6 @@ export class SignificantEventsAlertsReaderV2 implements ISignificantEventsAlerts
       ...aggregations,
       current_window: normalizeWindow(aggregations.current_window),
       reference_window: normalizeWindow(aggregations.reference_window),
-    };
-  }
-
-  private normalizeActivityAggregations(
-    aggregations: Record<string, unknown>
-  ): Record<string, unknown> {
-    const activityWindows = aggregations.activity_windows as
-      | { buckets?: Array<{ key: string; signal_count?: { value?: number } }> }
-      | undefined;
-
-    if (!activityWindows?.buckets) {
-      return aggregations;
-    }
-
-    return {
-      ...aggregations,
-      activity_windows: {
-        buckets: activityWindows.buckets.map((bucket) => ({
-          key: bucket.key,
-          doc_count: bucket.signal_count?.value ?? 0,
-        })),
-      },
     };
   }
 }

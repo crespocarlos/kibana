@@ -26,10 +26,7 @@ describe('evidenceCollectionEvaluator', () => {
   it('scores 1 when every rule has attributed evidence', async () => {
     const discoveries: Partial<Discovery>[] = [
       {
-        detections: [
-          { kind: 'detection', rule_uuid: 'r1' },
-          { kind: 'detection', rule_uuid: 'r2' },
-        ],
+        detections: [{ rule_uuid: 'r1' }, { rule_uuid: 'r2' }],
         evidences: [{ rule_uuid: 'r1' }, { rule_uuid: 'r2' }],
       },
     ];
@@ -40,8 +37,8 @@ describe('evidenceCollectionEvaluator', () => {
     const discoveries: Partial<Discovery>[] = [
       {
         detections: [
-          { kind: 'detection', rule_uuid: 'r1', rule_name: 'A' },
-          { kind: 'detection', rule_uuid: 'r2', rule_name: 'B' },
+          { rule_uuid: 'r1', rule_name: 'A' },
+          { rule_uuid: 'r2', rule_name: 'B' },
         ],
         evidences: [{ rule_uuid: 'r1' }],
       },
@@ -51,7 +48,7 @@ describe('evidenceCollectionEvaluator', () => {
 
   it('scores 0 when a discovery emits detections but no evidence', async () => {
     const discoveries: Partial<Discovery>[] = [
-      { detections: [{ kind: 'detection', rule_uuid: 'r1' }], evidences: [] },
+      { detections: [{ rule_uuid: 'r1' }], evidences: [] },
     ];
     expect((await evaluate(discoveries)).score).toBe(0);
   });

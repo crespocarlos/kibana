@@ -13,10 +13,11 @@ const toInputDetections = (discoveries: Array<Partial<Discovery>>): Array<Partia
     .flatMap((discovery) => discovery.detections ?? [])
     .map((detection) => ({
       ...detection,
-      detection_evidence: {
-        change_point_type: 'spike',
-        p_value: 0.0001,
-      },
+      // Top-level change-point fields (no nested evidence object). The agent reads
+      // `change_point_type` (+ direction) to decide investigate-vs-resolve — there is no
+      // alert-sourced lifecycle field on the batch.
+      change_point_type: 'spike' as const,
+      p_value: 0.0001,
     }));
 
 /**
@@ -39,37 +40,31 @@ const LEDGER_DB_CASCADE_DISCOVERY: Partial<Discovery> = {
   confidence: 82,
   detections: [
     {
-      kind: 'detection',
       rule_name: 'Transaction history SQL connection failure',
       rule_uuid: '52ad96d3-5d06-5baa-b2de-cd654fbe33f6',
       stream_name: 'logs',
     },
     {
-      kind: 'detection',
       rule_name: 'HikariCP connection pool initialization',
       rule_uuid: 'f0816e40-c465-563f-91fc-280e23a4ef4e',
       stream_name: 'logs',
     },
     {
-      kind: 'detection',
       rule_name: 'Transaction history cache errors',
       rule_uuid: 'e2b04e1f-44ed-582f-8e4f-9f62e4706141',
       stream_name: 'logs',
     },
     {
-      kind: 'detection',
       rule_name: 'Balance reader cache errors',
       rule_uuid: '5961763e-fabc-5bdc-a5fc-aa2c5c4af768',
       stream_name: 'logs',
     },
     {
-      kind: 'detection',
       rule_name: 'Frontend → transactionhistory read timeout',
       rule_uuid: '1432a71f-0833-55c7-93f4-ac40261e47df',
       stream_name: 'logs',
     },
     {
-      kind: 'detection',
       rule_name: 'Ledger writer failed to retrieve account balance',
       rule_uuid: 'c3a7f1e9-4b2d-5e86-9a1c-7d3f2b8e0a64',
       stream_name: 'logs',
@@ -172,13 +167,11 @@ const BENIGN_AUTH_DISCOVERY: Partial<Discovery> = {
   confidence: 68,
   detections: [
     {
-      kind: 'detection',
       rule_name: 'Successful user login',
       rule_uuid: 'cbfedad7-d40c-5dde-a84f-d1cba23084b3',
       stream_name: 'logs',
     },
     {
-      kind: 'detection',
       rule_name: 'New user account created',
       rule_uuid: 'd60afc3c-dac9-51b5-b55d-bfd6c522b269',
       stream_name: 'logs',

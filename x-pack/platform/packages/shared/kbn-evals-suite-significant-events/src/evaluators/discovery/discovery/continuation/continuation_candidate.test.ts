@@ -19,10 +19,10 @@ describe('toSignificantEventSeed', () => {
         confidence: 0.8,
         criticality: 90,
         detections: [
-          { rule_name: 'r1', rule_uuid: 'u1', stream_name: 'logs-a', kind: 'detection' },
-          { rule_name: 'r2', rule_uuid: 'u2', stream_name: 'logs-b', kind: 'detection' },
+          { rule_name: 'r1', rule_uuid: 'u1', stream_name: 'logs-a' },
+          { rule_name: 'r2', rule_uuid: 'u2', stream_name: 'logs-b' },
           // duplicate stream — should be de-duped
-          { rule_name: 'r3', rule_uuid: 'u3', stream_name: 'logs-a', kind: 'detection' },
+          { rule_name: 'r3', rule_uuid: 'u3', stream_name: 'logs-a' },
         ],
       },
     });

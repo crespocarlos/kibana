@@ -5,14 +5,15 @@
  * 2.0.
  */
 
-export { detectionSchema, type Detection } from './detections';
-export { discoverySchema, discoveryDetectionSchema, type Discovery } from './discoveries';
 export {
-  dependencyEdgeSchema,
-  infraComponentSchema,
-  causeKiSchema,
-  evidenceSchema,
-} from './common_schemas';
+  detectionSchema,
+  processedMarkerSchema,
+  CHANGE_POINT_TYPES,
+  type Detection,
+  type ProcessedMarker,
+  type ChangePointType,
+} from './detections';
+export { discoverySchema, type Discovery } from './discoveries';
 export type { KnowledgeIndicator } from '../queries';
 export {
   type SignificantEvent,

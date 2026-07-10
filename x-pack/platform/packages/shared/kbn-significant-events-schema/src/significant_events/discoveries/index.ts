@@ -10,8 +10,7 @@ import { MAX_STREAM_NAME_LENGTH } from '@kbn/streams-schema';
 import { sigEventBaseSchema } from '../common_schemas';
 import { MAX_ID_LENGTH, MAX_RULE_NAME_LENGTH, MAX_TEXT_LENGTH } from '../constants';
 
-export const discoveryDetectionSchema = z.object({
-  kind: z.enum(['detection', 'quiet', 'handled']),
+const discoveryDetectionSchema = z.object({
   detection_id: z.string().max(MAX_ID_LENGTH).optional(),
   rule_name: z.string().max(MAX_RULE_NAME_LENGTH).optional(),
   rule_uuid: z.string().max(MAX_ID_LENGTH).optional(),
@@ -22,13 +21,13 @@ export const discoveryDetectionSchema = z.object({
     .optional()
     .describe(
       'Change point type detected by the alerting rule. ' +
-        '"spike" = sudden increase in alert volume (load surge, cascading failure, noisy rule); ' +
-        '"dip" = sudden decrease — often means the service went DOWN and stopped producing data, not a recovery; ' +
-        '"step_change" = sustained level shift (config change, new deployment, capacity change); ' +
-        '"trend_change" = gradual directional shift (growing workload, degrading performance, slow leak); ' +
-        '"distribution_change" = overall distribution shifted (mixed traffic pattern, deployment rollout); ' +
-        '"non_stationary" = no discrete change point but not stationary — gradual drift, chronic instability, weak signal; ' +
-        '"stationary" = no change point found — distribution stable, rule returned to normal, false positive, or noise.'
+        '"spike" = Sudden increase in alert volume | Load surge, cascading failure, noisy rule. **Escalation.**; ' +
+        '"dip" = Sudden decrease in alert volume | Service down (no data to alert on), rule disabled, data pipeline failure. **Escalation** — a drop to silence usually means the service went DOWN, not that it recovered. ' +
+        '"step_change" = Sustained level shift | Config change, new deployment, capacity change. **Direction decides:** a shift up is an escalation; a shift back down toward low volume is a recovery.sustained level shift (config change, new deployment, capacity change); ' +
+        '"trend_change" = Gradual directional shift | Growing workload, degrading performance, slow leak. **Direction decides:** an upward trend is an escalation; a downward trend toward low volume is a recovery.' +
+        '"distribution_change" = Overall distribution shifted | Mixed traffic pattern change, deployment rollout. Escalation unless the shift is clearly back toward baseline.' +
+        '"non_stationary" = No discrete change point, but not stationary | Gradual drift, chronic instability — weak signal. ' +
+        '"stationary" = The alert rate is flat — no recent change up or down | Steady state. Steady is **not** benign: a stationary rule can be an ongoing failure holding a flat rate. Confirm with a query (signature query if no exact-match KI) and score severity from the **evidence and user impact**, never from the shape or the raw `alert_count`. When observed **after a prior escalation** on the same rule, treat as candidate recovery (confirm with a recovery-lens query).'
     ),
   p_value: z
     .number()

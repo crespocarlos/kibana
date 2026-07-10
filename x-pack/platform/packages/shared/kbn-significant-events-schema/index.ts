@@ -77,6 +77,10 @@ export { tokenCountSchema, iterationResultSchema } from './src/api/features';
 
 export {
   type Detection,
+  type ProcessedMarker,
+  type ChangePointType,
+  processedMarkerSchema,
+  CHANGE_POINT_TYPES,
   type Discovery,
   type KnowledgeIndicator,
   type SignificantEvent,

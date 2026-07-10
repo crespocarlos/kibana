@@ -59,7 +59,9 @@ export const useFetchDetections = ({ from, to }: UseFetchDetectionsParams) => {
   return { ...query, pagination, setPagination };
 };
 
-export const useFetchDetectionHistory = (detectionId: string | undefined) => {
+// History is a rule's change-point timeline, keyed by rule_uuid (detection_id is unique per
+// detection, so it cannot address a rule's history).
+export const useFetchDetectionHistory = (ruleUuid: string | undefined) => {
   const {
     dependencies: {
       start: {
@@ -70,17 +72,17 @@ export const useFetchDetectionHistory = (detectionId: string | undefined) => {
   const showFetchErrorToast = useFetchErrorToast();
 
   return useQuery<{ hits: Detection[] }, Error>({
-    queryKey: ['detectionHistory', detectionId],
+    queryKey: ['detectionHistory', ruleUuid],
     queryFn: async ({ signal }) => {
       return streamsRepositoryClient.fetch(
         'GET /internal/significant_events/detections/{id}/history',
         {
-          params: { path: { id: detectionId! } },
+          params: { path: { id: ruleUuid! } },
           signal: signal ?? null,
         }
       );
     },
-    enabled: !!detectionId,
+    enabled: !!ruleUuid,
     onError: showFetchErrorToast,
   });
 };

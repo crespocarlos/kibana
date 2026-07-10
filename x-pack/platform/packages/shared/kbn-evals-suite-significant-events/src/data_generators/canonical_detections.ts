@@ -9,22 +9,32 @@ import type { Detection } from '@kbn/significant-events-schema';
 
 const CANONICAL_TIMESTAMP = '2026-01-01T00:00:00.000Z';
 
+/**
+ * Detection as the discovery agent receives it: the immutable change-point fields. The agent
+ * decides investigate-vs-resolve by reading `change_point_type` (+ direction) — there is no
+ * alert-sourced lifecycle field on the batch.
+ */
+export type InputDetection = Detection;
+
 export const canonicalDetectionsFromGroundTruth = ({
   streamName,
   rules,
 }: {
   streamName: string;
   rules: Array<Partial<Detection>>;
-}): Detection[] =>
-  rules.map((rule, index) => ({
-    '@timestamp': rule['@timestamp'] ?? CANONICAL_TIMESTAMP,
-    kind: rule.kind ?? 'detection',
-    processed: rule.processed ?? false,
-    detection_id: rule.detection_id ?? `${rule.rule_uuid ?? `rule-${index}`}-canonical-${index}`,
-    rule_uuid: rule.rule_uuid ?? `rule-${index}`,
-    rule_name: rule.rule_name ?? '',
-    stream_name: rule.stream_name ?? streamName,
-    alert_count: rule.alert_count ?? 0,
-    detection_evidence: rule.detection_evidence ?? { change_point_type: 'spike' },
-    ...(rule.rules_activity ? { rules_activity: rule.rules_activity } : {}),
-  }));
+}): InputDetection[] =>
+  rules.map((rule, index) => {
+    const changePointType = rule.change_point_type ?? 'spike';
+    return {
+      '@timestamp': rule['@timestamp'] ?? CANONICAL_TIMESTAMP,
+      detection_id: rule.detection_id ?? `${rule.rule_uuid ?? `rule-${index}`}-canonical-${index}`,
+      rule_uuid: rule.rule_uuid ?? `rule-${index}`,
+      rule_name: rule.rule_name ?? '',
+      stream_name: rule.stream_name ?? streamName,
+      change_point_type: changePointType,
+      p_value: rule.p_value ?? 0.0001,
+      alert_count: rule.alert_count ?? 0,
+      // Derived at read time in production; stamped here to mirror the agent's input contract.
+      processed: rule.processed ?? false,
+    };
+  });

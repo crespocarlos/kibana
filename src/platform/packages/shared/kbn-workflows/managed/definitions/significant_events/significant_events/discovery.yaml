@@ -18,7 +18,7 @@ triggers:
     inputs:
       - name: detectionLookback
         type: string
-        default: 'now-4h'
+        default: 'now-24h'
         required: false
         description: 'Lookback window for unprocessed detections; older detections are considered stale and excluded from the batch.'
       - name: detectionBatchMax
@@ -42,11 +42,11 @@ outputs:
 consts:
   DETECTIONS_INDEX: '.significant_events-detections'
   KIND_CLEARANCE: 'clearance'
-  KIND_DETECTION: 'detection'
   KIND_DISCOVERY: 'discovery'
   KIND_HANDLED: 'handled'
   KIND_QUIET: 'quiet'
-  SCAN_BATCH_SIZE: 100
+  SCAN_BATCH_SIZE: 1000
+  NO_MATCH_IDS: ['__no_processed_marker__']
 
 steps:
   # Copy workflow.spaceId into variables so ES body Liquid expressions can reference it.
@@ -56,9 +56,150 @@ steps:
       spaceId: '{{ workflow.spaceId }}'
 
   # -----------------------------------------------------------------------
-  # Step 1: Fetch unhandled detection batch (active + quiet rules).
+  # Step 1: Fetch latest discovery state per slug.
+  # No kind filter — collapse by slug + sort desc returns the latest doc per
+  # episode. kind:discovery = still open; kind:handled = closed.
   # -----------------------------------------------------------------------
-  - name: get_detected_window
+  - name: get_active_events
+    # Fetch the LATEST event per slug (collapse + sort desc, NO status filter) so `compute_active_slugs`
+    # can inspect its actual current status. Filtering by status *before* the collapse would be a bug:
+    # a later `demoted`/`resolved` event would be excluded, leaving an earlier `promoted` as the
+    # collapse head — keeping a closed episode alive as a continuation candidate forever.
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: '/{{ consts.EVENTS_INDEX }}/_search?ignore_unavailable=true'
+      body:
+        size: '${{ consts.SCAN_BATCH_SIZE }}'
+        sort:
+          - '@timestamp':
+              order: desc
+        collapse:
+          field: discovery_slug
+        _source:
+          includes:
+            - discovery_slug
+            - status
+        query:
+          bool:
+            filter:
+              - term:
+                  kibana.space_ids: '{{ variables.spaceId }}'
+              - range:
+                  '@timestamp':
+                    gte: '{{ inputs.activeDiscoveryLookback }}'
+    on-failure:
+      continue: true
+
+  - name: compute_active_slugs
+    # An episode is active only when its LATEST event is promoted/acknowledged. Reject the closing
+    # statuses (demoted/resolved) from the collapsed latest-per-slug hits; the survivors' slugs are
+    # the continuation candidates. active_slug_count is computed via the `| size` filter (the `.size`
+    # dot-getter is unreliable from later steps) so the write gate below can compare it.
+    type: data.set
+    with:
+      active_slugs: >-
+        ${{ steps.get_active_events.output.hits.hits | default: [] | map: '_source'
+        | reject: 'status', consts.STATUS_DEMOTED
+        | reject: 'status', consts.STATUS_RESOLVED
+        | map: 'discovery_slug' | compact | uniq }}
+      active_slug_count: >-
+        ${{ steps.get_active_events.output.hits.hits | default: [] | map: '_source'
+        | reject: 'status', consts.STATUS_DEMOTED
+        | reject: 'status', consts.STATUS_RESOLVED
+        | map: 'discovery_slug' | compact | uniq | size }}
+
+  - name: get_continuation_candidates
+    if: '${{ steps.compute_active_slugs.output.active_slug_count > 0 }}'
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: '/{{ consts.DISCOVERIES_INDEX }}/_search?ignore_unavailable=true'
+      body:
+        size: '${{ consts.SCAN_BATCH_SIZE }}'
+        sort:
+          - '@timestamp':
+              order: desc
+        collapse:
+          field: discovery_slug
+        _source:
+          includes:
+            - kind
+            - discovery_id
+            - discovery_slug
+            - detections
+            - summary
+            - root_cause
+            - title
+            - confidence
+            - criticality
+            - cause_kis
+            - stream_names
+            - dependency_edges
+            - infra_components
+        query:
+          bool:
+            filter:
+              - term:
+                  kibana.space_ids: '{{ variables.spaceId }}'
+              - terms:
+                  discovery_slug: "${{ steps.compute_active_slugs.output.active_slugs }}"
+              - range:
+                  '@timestamp':
+                    gte: '{{ inputs.activeDiscoveryLookback }}'
+    on-failure:
+      continue: true
+
+  - name: continuation_candidates
+    type: data.set
+    with:
+      hits: '${{ steps.get_continuation_candidates.output.hits.hits | default: [] | slice: 0, consts.CONTINUATION_BATCH_MAX  }}'
+
+  # -----------------------------------------------------------------------
+  # Step 2: Build the work set from UNPROCESSED change-point detections.
+  # A detection is unprocessed when no processed marker references its detection_id. Detections carry
+  # change_point_type; processed markers carry processed_by — so `exists: change_point_type`
+  # selects detections and `must_not exists: processed_by`... is not enough (marker is a separate doc),
+  # hence we fetch marker ids first and exclude them by detection_id.
+  # -----------------------------------------------------------------------
+  - name: get_processed_markers
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: '/{{ consts.DETECTIONS_INDEX }}/_search?ignore_unavailable=true'
+      body:
+        size: '${{ consts.SCAN_BATCH_SIZE }}'
+        _source:
+          includes:
+            - detection_id
+        query:
+          bool:
+            filter:
+              - term:
+                  kibana.space_ids: '{{ variables.spaceId }}'
+              - exists:
+                  field: processed_by
+              - range:
+                  '@timestamp':
+                    gte: '{{ inputs.detectionLookback }}'
+    on-failure:
+      continue: true
+
+  - name: compute_processed_ids
+    type: data.set
+    with:
+      # concat NO_MATCH_IDS so the array is never empty — an empty `terms` value is rejected by ES
+      # (parsing_exception). The sentinel matches no real detection_id, so it never excludes anything.
+      processed_ids: "${{ steps.get_processed_markers.output.hits.hits | default: [] | map: '_source' | map: 'detection_id' | compact | uniq | concat: consts.NO_MATCH_IDS }}"
+
+  # -----------------------------------------------------------------------
+  # Step 3: Materialise the work set — latest UNPROCESSED change-point detection per rule
+  # (collapse rule_uuid). One batch to the agent; the agent reads each row's change_point_type
+  # (+ direction) to decide investigate-vs-resolve. Detections are selected by
+  # `exists: change_point_type` (markers excluded) and processed detections are dropped via
+  # must_not detection_id.
+  # -----------------------------------------------------------------------
+  - name: get_detections
     type: elasticsearch.request
     with:
       method: POST
@@ -70,48 +211,86 @@ steps:
         sort:
           - '@timestamp':
               order: desc
-          - 'detection_evidence.p_value':
+          - 'p_value':
               order: asc
               missing: '_last'
               unmapped_type: double
-          - 'peak_alert_count':
-              order: desc
-              missing: '_last'
-              unmapped_type: long
         _source:
           includes:
-            - kind
             - detection_id
             - rule_name
             - rule_uuid
             - stream_name
-            - detection_evidence
-            - rules_activity
+            - change_point_type
+            - p_value
             - alert_count
         query:
           bool:
             filter:
               - term:
                   kibana.space_ids: '{{ variables.spaceId }}'
+              - exists:
+                  field: change_point_type
               - range:
                   '@timestamp':
                     gte: '{{ inputs.detectionLookback }}'
+            must_not:
+              - terms:
+                  detection_id: '${{ steps.compute_processed_ids.output.processed_ids }}'
     on-failure:
       continue: true
 
   - name: compute_unhandled_detection_candidates
-    # Scan with SCAN_BATCH_SIZE to avoid handled rules (newer timestamps) crowding out
-    # unprocessed ones in the size cap, then reject rules whose latest doc is kind:handled.
     type: data.set
     with:
-      hits: "${{ steps.get_detected_window.output.hits.hits | reject: '_source.kind', 'handled' | default: [] }}"
+      candidates: '${{ steps.get_detections.output.hits.hits | default: [] }}'
 
   - name: compute_active_batch
     # inputs.* is available in ${{ }} as a native type (integer, not string) so it
     # works correctly as a | slice argument.
     type: data.set
     with:
-      hits: '${{ steps.compute_unhandled_detection_candidates.output.hits | slice: 0, inputs.detectionBatchMax }}'
+      hits: '${{ steps.compute_unhandled_detection_candidates.output.candidates | slice: 0, inputs.detectionBatchMax }}'
+
+  - name: compute_active_batch_rule_uuids
+    # Rule UUIDs the agent handled this cycle. Concat NO_MATCH_IDS so get_batch_backlog's `terms` is
+    # never handed an empty array (ES rejects that); the sentinel matches no real rule_uuid.
+    type: data.set
+    with:
+      rule_uuids: "${{ steps.compute_active_batch.output.hits | default: [] | map: '_source' | map: 'rule_uuid' | compact | uniq | concat: consts.NO_MATCH_IDS }}"
+
+  - name: get_batch_backlog
+    # Snapshot (taken BEFORE the agent runs) of ALL unprocessed change-point detections for the rules
+    # in this batch — no collapse, the full per-rule backlog. Pre-agent so a detection the detection
+    # cron writes DURING the ≤20m agent run is NOT in the snapshot: it survives to the next cycle
+    # instead of being stamped processed without investigation. Already-marked detections are excluded
+    # via must_not. The batch rule_uuids carry the NO_MATCH_IDS sentinel so `terms` is never empty.
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: '/{{ consts.DETECTIONS_INDEX }}/_search?ignore_unavailable=true'
+      body:
+        size: '${{ consts.SCAN_BATCH_SIZE }}'
+        _source:
+          includes:
+            - detection_id
+        query:
+          bool:
+            filter:
+              - term:
+                  kibana.space_ids: '{{ variables.spaceId }}'
+              - exists:
+                  field: change_point_type
+              - range:
+                  '@timestamp':
+                    gte: '{{ inputs.detectionLookback }}'
+              - terms:
+                  rule_uuid: '${{ steps.compute_active_batch_rule_uuids.output.rule_uuids }}'
+            must_not:
+              - terms:
+                  detection_id: '${{ steps.compute_processed_ids.output.processed_ids }}'
+    on-failure:
+      continue: true
 
   # NOTE: cross-step references chaining a `.size` property accessor (e.g.
   # `steps.x.output.hits.size`) resolve to undefined once referenced from the
@@ -123,7 +302,7 @@ steps:
   - name: compute_queue_sizes
     type: data.set
     with:
-      candidateCount: '${{ steps.compute_unhandled_detection_candidates.output.hits | size | default: 0 }}'
+      candidateCount: '${{ steps.compute_unhandled_detection_candidates.output.candidates | size | default: 0 }}'
       processedCount: '${{ steps.compute_active_batch.output.hits | size | default: 0 }}'
 
   - name: compute_queue_stats
@@ -134,21 +313,12 @@ steps:
       remainingCount: '${{ steps.compute_queue_sizes.output.candidateCount | minus: steps.compute_queue_sizes.output.processedCount | at_least: 0 }}'
       hasRemaining: '${{ steps.compute_queue_sizes.output.candidateCount > steps.compute_queue_sizes.output.processedCount }}'
       queueEmpty: '${{ steps.compute_queue_sizes.output.candidateCount <= steps.compute_queue_sizes.output.processedCount }}'
-
-  - name: compute_quiet_rule_uuids
-    # Quiet rules are always safe to stamp handled even when not written by the agent —
-    # a rule the pipeline already found quiet costs nothing to re-scan, and the investigator's
-    # own Quiet-without-episode gate intentionally skips discovery_write for many of them.
-    type: data.set
-    with:
-      rule_uuids: >-
-        ${{ steps.compute_active_batch.output.hits
-        | where: '_source.kind', 'quiet'
-        | map: '_source' | map: 'rule_uuid' | compact | uniq | default: [] }}
+      # Work exists when there is at least one detection row in this cycle's batch.
+      hasWork: '${{ steps.compute_queue_sizes.output.processedCount > 0 }}'
 
   - name: output_no_detections
     type: workflow.output
-    if: '${{ steps.compute_queue_sizes.output.processedCount == 0 }}'
+    if: '${{ steps.compute_queue_stats.output.hasWork == false }}'
     with:
       candidateCount: '${{ steps.compute_queue_stats.output.candidateCount }}'
       processedCount: '${{ steps.compute_queue_stats.output.processedCount }}'
@@ -158,7 +328,10 @@ steps:
       noWork: true
 
   # -----------------------------------------------------------------------
-  # Step 2: Correlate detections into discoveries.
+  # Step 4: Correlate detections into discoveries. The agent reads each row's change_point_type
+  # (+ direction) to decide investigate-vs-resolve: escalation change points are investigated;
+  # a downward/settle change point is documented as a recovering episode (the judge issues the
+  # final resolved/demoted verdict from the episode's detections).
   # -----------------------------------------------------------------------
   - name: run_discovery_agent
     type: ai.agent
@@ -172,7 +345,7 @@ steps:
     create-conversation: true
     with:
       message: |
-        ## Active batch
+        ## Detection batch
         {{ steps.compute_active_batch.output.hits | map: '_source' | json }}
       schema:
         type: object
@@ -219,55 +392,25 @@ steps:
         ${{ steps.store_discovery_written_rule_uuids.output.rule_uuids
         | compact | uniq | default: [] }}
 
-  - name: compute_stamp_rule_uuids
-    # Final safe-to-stamp set: quiet rules (always safe, see compute_quiet_rule_uuids)
-    # plus only the rule_uuids the agent confirmed writing a discovery for this cycle.
-    # Active detection rules the agent silently dropped are excluded here, so they
-    # remain unhandled and are retried next cycle instead of being lost permanently.
-    type: data.set
-    with:
-      stamp_rule_uuids: >-
-        ${{ steps.compute_quiet_rule_uuids.output.rule_uuids
-        | concat: steps.compute_written_rule_uuids.output.rule_uuids
-        | compact | uniq | default: [] }}
-
-  - name: get_unhandled_state_docs
-    # Skip handled-stamping if the agent failed, so its detections are retried next cycle.
+  # -----------------------------------------------------------------------
+  # Step 5: Mark processed detections. The agent investigated the LATEST change-point per rule; that
+  # rule's OLDER unprocessed detections (accumulated between review runs, since detection runs on a
+  # faster cron) are superseded by the current state — so we drain the whole per-rule backlog,
+  # not just the batch's latest rows. Otherwise stale change-point types resurface one-per-run on
+  # later review cycles and the same rule is re-investigated repeatedly. The backlog was snapshotted
+  # in `get_batch_backlog` BEFORE the agent ran, so detections written during the run are not stamped
+  # (they survive to next cycle). A minimal marker { @timestamp, detection_id, processed_by } is
+  # written per detection (marker absence == unprocessed). Skip if the agent failed so the detections
+  # are retried next cycle.
+  # -----------------------------------------------------------------------
+  - name: foreach_stamp_processed
     if: >-
-      ${{ steps.compute_stamp_rule_uuids.output.stamp_rule_uuids.size > 0
+      ${{ steps.get_batch_backlog.output.hits.total.value > 0
       and steps.run_discovery_agent.error == null }}
-    type: elasticsearch.request
-    with:
-      method: POST
-      path: '/{{ consts.DETECTIONS_INDEX }}/_search?ignore_unavailable=true'
-      body:
-        size: '${{ consts.SCAN_BATCH_SIZE }}'
-        sort:
-          - '@timestamp':
-              order: desc
-        query:
-          bool:
-            filter:
-              - term:
-                  kibana.space_ids: '{{ variables.spaceId }}'
-              - terms:
-                  kind:
-                    - '{{ consts.KIND_DETECTION }}'
-                    - '{{ consts.KIND_QUIET }}'
-              - terms:
-                  rule_uuid: '${{ steps.compute_stamp_rule_uuids.output.stamp_rule_uuids }}'
-              - range:
-                  '@timestamp':
-                    gte: '{{ inputs.detectionLookback }}'
-    on-failure:
-      continue: true
-
-  - name: foreach_stamp_handled
-    if: '${{ steps.get_unhandled_state_docs.output != null and steps.get_unhandled_state_docs.output.hits != null and steps.get_unhandled_state_docs.output.hits.hits.size > 0 }}'
     type: foreach
-    foreach: '${{ steps.get_unhandled_state_docs.output.hits.hits }}'
+    foreach: '${{ steps.get_batch_backlog.output.hits.hits }}'
     steps:
-      - name: check_handled_exists_after
+      - name: check_marker_exists
         type: elasticsearch.request
         with:
           method: POST
@@ -278,18 +421,15 @@ steps:
                 filter:
                   - term:
                       kibana.space_ids: '{{ variables.spaceId }}'
-                  - term:
-                      kind: '{{ consts.KIND_HANDLED }}'
+                  - exists:
+                      field: processed_by
                   - term:
                       detection_id: '{{ foreach.item._source.detection_id }}'
-                  - range:
-                      '@timestamp':
-                        gt: "{{ foreach.item._source['@timestamp'] }}"
         on-failure:
           continue: true
 
-      - name: write_handled_doc
-        if: '${{ steps.check_handled_exists_after.output.count == 0 }}'
+      - name: write_processed_marker
+        if: '${{ steps.check_marker_exists.output.count == 0 }}'
         type: elasticsearch.request
         with:
           method: POST
@@ -299,19 +439,8 @@ steps:
             kibana:
               space_ids:
                 - '{{ variables.spaceId }}'
-            kind: '{{ consts.KIND_HANDLED }}'
-            alert_count: '${{ foreach.item._source.alert_count | default: 0 }}'
-            alert_index: '{{ foreach.item._source.alert_index }}'
-            detection_evidence:
-              change_point_type: "{{ foreach.item._source.detection_evidence.change_point_type | default: '' }}"
-              p_value: '${{ foreach.item._source.detection_evidence.p_value | default: 0 }}'
             detection_id: '{{ foreach.item._source.detection_id }}'
-            peak_alert_count: '${{ foreach.item._source.peak_alert_count | default: 0 }}'
-            resolution_lookback_minutes: '${{ foreach.item._source.resolution_lookback_minutes | default: 0 | plus: 0 }}'
-            rule_name: '{{ foreach.item._source.rule_name }}'
-            rule_uuid: '{{ foreach.item._source.rule_uuid }}'
-            stream_name: '{{ foreach.item._source.stream_name }}'
-            workflow_execution_id: '{{ execution.id }}'
+            processed_by: '{{ execution.id }}'
         on-failure:
           continue: true
 

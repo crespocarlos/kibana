@@ -37,8 +37,6 @@ interface RawRuleBucket {
   rule_name?: { top?: Array<{ metrics?: Record<string, string> }> };
   stream?: { buckets?: Array<{ key: string }> };
   change_points?: { type?: Record<string, { p_value: number }> };
-  last_5m?: { doc_count?: number };
-  last_floor_window?: { doc_count?: number };
 }
 
 export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlertsReader {
@@ -105,76 +103,6 @@ export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlerts
         buckets: rawBuckets.map((bucket) => this.enrichChangePointBucket(bucket, ruleMetadata)),
       },
     };
-  }
-
-  async runRuleChangePoint(
-    esClient: ElasticsearchClient,
-    {
-      ruleUuid,
-      lookback,
-      bucketInterval,
-      spaceId,
-    }: Parameters<ISignificantEventsAlertsReader['runRuleChangePoint']>[1]
-  ) {
-    const response = await esClient.search({
-      index: this.index,
-      ignore_unavailable: true,
-      size: 0,
-      query: {
-        bool: {
-          filter: [
-            { terms: { 'kibana.space_ids': [spaceId, '*'] } },
-            { term: { 'kibana.alert.rule.uuid': ruleUuid } },
-            { range: { '@timestamp': { gte: lookback } } },
-          ],
-        },
-      },
-      aggs: buildChangePointTimeSeriesAggs(bucketInterval, {
-        useDistinctSignalCount: false,
-        extendedBounds: { min: lookback, max: 'now' },
-      }),
-    });
-
-    return { aggregations: response.aggregations ?? {} };
-  }
-
-  async runRuleActivity(
-    esClient: ElasticsearchClient,
-    {
-      ruleUuid,
-      lookback,
-      windowInterval,
-      spaceId,
-    }: Parameters<ISignificantEventsAlertsReader['runRuleActivity']>[1]
-  ) {
-    const response = await esClient.search({
-      index: this.index,
-      ignore_unavailable: true,
-      size: 0,
-      query: {
-        bool: {
-          filter: [
-            { terms: { 'kibana.space_ids': [spaceId, '*'] } },
-            { term: { 'kibana.alert.rule.uuid': ruleUuid } },
-            { range: { '@timestamp': { gte: lookback } } },
-          ],
-        },
-      },
-      aggs: {
-        activity_windows: {
-          date_histogram: {
-            field: '@timestamp',
-            fixed_interval: windowInterval,
-            min_doc_count: 0,
-          },
-        },
-        peak: {
-          max_bucket: { buckets_path: 'activity_windows._count' },
-        },
-      },
-    });
-
-    return { aggregations: response.aggregations ?? {} };
   }
 
   async runRuleAlertWindows(
@@ -252,8 +180,6 @@ export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlerts
               terms: { field: 'kibana.alert.rule.tags', exclude: 'streams', size: 1 },
             },
             ...buildChangePointTimeSeriesAggs(bucketInterval, {
-              useDistinctSignalCount: false,
-              includeFloorWindow: true,
               recentActivityMinutes,
               extendedBounds: buildChangePointHistogramBounds(lookback, bucketInterval),
             }),
@@ -290,8 +216,6 @@ export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlerts
       rule_name: ruleNameAgg,
       stream: streamAgg,
       change_points: changePoints,
-      last_5m: { doc_count: bucket.last_5m?.doc_count ?? 0 },
-      last_floor_window: { doc_count: bucket.last_floor_window?.doc_count ?? 0 },
       rule_schedule: ruleSchedule,
     };
   }

@@ -32,12 +32,6 @@ export interface ChangePointRuleBucket {
   change_points: {
     type: Record<string, { p_value: number }>;
   };
-  last_5m: {
-    doc_count: number;
-  };
-  last_floor_window: {
-    doc_count: number;
-  };
   rule_schedule: RuleDetectionSchedule;
 }
 
@@ -74,26 +68,6 @@ export interface ISignificantEventsAlertsReader {
     params: ChangePointScanParams,
     queryLinks: QueryLink[]
   ): Promise<{ took?: number; by_rule: { buckets: ChangePointRuleBucket[] } }>;
-
-  runRuleChangePoint(
-    esClient: ElasticsearchClient,
-    params: {
-      ruleUuid: string;
-      lookback: string;
-      bucketInterval: string;
-      spaceId: string;
-    }
-  ): Promise<{ aggregations: Record<string, unknown> }>;
-
-  runRuleActivity(
-    esClient: ElasticsearchClient,
-    params: {
-      ruleUuid: string;
-      lookback: string;
-      windowInterval: string;
-      spaceId: string;
-    }
-  ): Promise<{ aggregations: Record<string, unknown> }>;
 
   runRuleAlertWindows(
     esClient: ElasticsearchClient,

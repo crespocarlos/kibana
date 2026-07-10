@@ -148,80 +148,6 @@ const changePointScanRoute = createServerRoute({
   },
 });
 
-const ruleChangePointRoute = createServerRoute({
-  endpoint: 'POST /internal/significant_events/detections/workflow/_rule_change_point',
-  options: {
-    access: 'internal',
-    summary: 'Run quick-recovery change_point for one rule',
-    description: 'Per-rule short-window change_point aggregation for the Detection workflow.',
-  },
-  security: {
-    authz: {
-      requiredPrivileges: [STREAMS_API_PRIVILEGES.read],
-    },
-  },
-  params: z.object({
-    body: z.object({
-      ruleUuid: z.string().max(256),
-      lookback: z.string().max(64),
-      bucketInterval: z.string().max(64),
-    }),
-  }),
-  handler: async ({ params, request, getScopedClients, server, getSpaceId }) => {
-    const scopedClients = await getScopedClients({ request });
-    const { scopedClusterClient, licensing, uiSettingsClient } = scopedClients;
-
-    await assertSignificantEventsAccess({ server, licensing, uiSettingsClient });
-
-    const { alertsReader } = await scopedClients.getSignificantEventsAlertingContext();
-    const result = await alertsReader.runRuleChangePoint(scopedClusterClient.asCurrentUser, {
-      ruleUuid: params.body.ruleUuid,
-      lookback: params.body.lookback,
-      bucketInterval: params.body.bucketInterval,
-      spaceId: await getSpaceId(request),
-    });
-
-    return { alertIndex: alertsReader.index, ...result };
-  },
-});
-
-const ruleActivityRoute = createServerRoute({
-  endpoint: 'POST /internal/significant_events/detections/workflow/_rule_activity',
-  options: {
-    access: 'internal',
-    summary: 'Fetch per-rule activity windows for the Detection workflow',
-    description: 'Returns activity histogram and peak counts for one rule.',
-  },
-  security: {
-    authz: {
-      requiredPrivileges: [STREAMS_API_PRIVILEGES.read],
-    },
-  },
-  params: z.object({
-    body: z.object({
-      ruleUuid: z.string().max(256),
-      lookback: z.string().max(64),
-      windowInterval: z.string().max(64),
-    }),
-  }),
-  handler: async ({ params, request, getScopedClients, server, getSpaceId }) => {
-    const scopedClients = await getScopedClients({ request });
-    const { scopedClusterClient, licensing, uiSettingsClient } = scopedClients;
-
-    await assertSignificantEventsAccess({ server, licensing, uiSettingsClient });
-
-    const { alertsReader } = await scopedClients.getSignificantEventsAlertingContext();
-    const result = await alertsReader.runRuleActivity(scopedClusterClient.asCurrentUser, {
-      ruleUuid: params.body.ruleUuid,
-      lookback: params.body.lookback,
-      windowInterval: params.body.windowInterval,
-      spaceId: await getSpaceId(request),
-    });
-
-    return { alertIndex: alertsReader.index, ...result };
-  },
-});
-
 const ruleAlertWindowsRoute = createServerRoute({
   endpoint: 'POST /internal/significant_events/detections/workflow/_rule_alert_windows',
   options: {
@@ -265,7 +191,5 @@ const ruleAlertWindowsRoute = createServerRoute({
 export const internalDetectionsWorkflowRoutes = {
   ...countAlertsRoute,
   ...changePointScanRoute,
-  ...ruleChangePointRoute,
-  ...ruleActivityRoute,
   ...ruleAlertWindowsRoute,
 };
