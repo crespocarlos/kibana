@@ -43,8 +43,8 @@ export function createSignificantEventsDiscoveryAgent({
     configuration: {
       instructions,
       skill_ids: [SIGNIFICANT_EVENTS_KI_GROUNDING_SKILL_ID],
-      // This agent's tool set is fully scoped by SIGNIFICANT_EVENTS_DISCOVERY_TOOL_IDS — the
-      // generic platform_core_* tools are irrelevant to discovery and only add noise to tool selection.
+      // The tool set below is fully explicit — the generic platform_core_* tools are irrelevant
+      // to discovery and only add noise to tool selection, so elastic capabilities stay disabled.
       enable_elastic_capabilities: false,
       tools: [
         {
