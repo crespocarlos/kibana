@@ -13,7 +13,6 @@ import {
   buildChangePointTimeSeriesAggs,
 } from './change_point_scan_shared';
 import { ALERTS_READER_V1, ALERTS_READER_V2 } from './alerts_reader';
-import { getRuleDetectionSchedule } from '../rules/schedule';
 
 const SPACE_ID = 'default';
 const RULE_UUID = 'rule-abc';
@@ -168,7 +167,6 @@ describe('SignificantEventsAlertsReaderV1', () => {
         },
         stream: { buckets: [{ key: 'logs.from-es' }] },
         change_points: { type: { mean_shift: { p_value: 0.01 } } },
-        rule_schedule: getRuleDetectionSchedule({ severity_score: 60 }),
       },
     ]);
   });
@@ -197,7 +195,6 @@ describe('SignificantEventsAlertsReaderV1', () => {
         },
         stream: { buckets: [{ key: 'logs.test' }] },
         change_points: { type: {} },
-        rule_schedule: getRuleDetectionSchedule({ severity_score: 60 }),
       })
     );
   });
@@ -354,7 +351,6 @@ describe('SignificantEventsAlertsReaderV2', () => {
         },
         stream: { buckets: [{ key: 'logs.test' }] },
         change_points: { type: { mean_shift: { p_value: 0.02 } } },
-        rule_schedule: getRuleDetectionSchedule({ severity_score: 60 }),
       },
     ]);
   });

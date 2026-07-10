@@ -37,9 +37,6 @@ describe('Significant Events rule scheduling', () => {
       bucket_interval: '30s',
       lookback: 'now-30m',
       lookback_minutes: 30,
-      quick_recovery_lookback: 'now-11m',
-      quick_recovery_lookback_minutes: 11,
-      quiet_stationary_peak_min_alert_count: 30,
     });
   });
 
@@ -50,9 +47,6 @@ describe('Significant Events rule scheduling', () => {
       bucket_interval: '5m',
       lookback: 'now-110m',
       lookback_minutes: 110,
-      quick_recovery_lookback: 'now-110m',
-      quick_recovery_lookback_minutes: 110,
-      quiet_stationary_peak_min_alert_count: 6,
     });
   });
 });

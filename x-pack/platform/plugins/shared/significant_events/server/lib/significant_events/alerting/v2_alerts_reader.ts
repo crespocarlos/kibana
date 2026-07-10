@@ -11,7 +11,6 @@ import type { QueryLink } from '@kbn/significant-events-schema';
 import { toEsqlRequest } from '../../streams/esql';
 import {
   RULES_BUCKET_SIZE,
-  RECENT_ACTIVITY_MINUTES,
   buildChangePointHistogramBounds,
   buildChangePointTimeSeriesAggs,
 } from './change_point_scan_shared';
@@ -26,7 +25,6 @@ import {
   type OccurrencesEsqlParams,
   buildRuleMetadataMap,
 } from './alerts_reader';
-import { getRuleDetectionSchedule } from '../rules/schedule';
 
 interface RawRuleBucket {
   key: string;
@@ -166,7 +164,6 @@ export class SignificantEventsAlertsReaderV2 implements ISignificantEventsAlerts
     bucketInterval,
     spaceId,
     ruleIds,
-    recentActivityMinutes = RECENT_ACTIVITY_MINUTES,
   }: ChangePointScanParams) {
     const filter: Array<Record<string, unknown>> = [
       { term: { type: 'signal' } },
@@ -191,7 +188,6 @@ export class SignificantEventsAlertsReaderV2 implements ISignificantEventsAlerts
               cardinality: { field: 'group_hash' },
             },
             ...buildChangePointTimeSeriesAggs(bucketInterval, {
-              recentActivityMinutes,
               extendedBounds: buildChangePointHistogramBounds(lookback, bucketInterval),
             }),
           },
@@ -207,7 +203,6 @@ export class SignificantEventsAlertsReaderV2 implements ISignificantEventsAlerts
     const meta = ruleMetadata.get(bucket.key);
     const ruleName = meta?.ruleName ?? 'unknown';
     const streamName = meta?.streamName ?? 'unknown';
-    const ruleSchedule = meta?.schedule ?? getRuleDetectionSchedule({});
     const changePoints = bucket.change_points?.type
       ? { type: bucket.change_points.type }
       : { type: {} as Record<string, { p_value: number }> };
@@ -218,7 +213,6 @@ export class SignificantEventsAlertsReaderV2 implements ISignificantEventsAlerts
       rule_name: { top: [{ metrics: { 'kibana.alert.rule.name': ruleName } }] },
       stream: { buckets: [{ key: streamName }] },
       change_points: changePoints,
-      rule_schedule: ruleSchedule,
     };
   }
 

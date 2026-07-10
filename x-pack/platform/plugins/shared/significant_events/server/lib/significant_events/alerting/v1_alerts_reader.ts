@@ -14,7 +14,6 @@ import { termsQuery } from '@kbn/es-query';
 import { toEsqlRequest } from '../../streams/esql';
 import {
   RULES_BUCKET_SIZE,
-  RECENT_ACTIVITY_MINUTES,
   buildChangePointHistogramBounds,
   buildChangePointTimeSeriesAggs,
 } from './change_point_scan_shared';
@@ -29,7 +28,6 @@ import {
   type OccurrencesEsqlParams,
   buildRuleMetadataMap,
 } from './alerts_reader';
-import { getRuleDetectionSchedule } from '../rules/schedule';
 
 interface RawRuleBucket {
   key: string;
@@ -149,7 +147,6 @@ export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlerts
     bucketInterval,
     spaceId,
     ruleIds,
-    recentActivityMinutes = RECENT_ACTIVITY_MINUTES,
   }: ChangePointScanParams) {
     const filter: estypes.QueryDslQueryContainer[] = [
       ...termsQuery('kibana.space_ids', [spaceId, '*']),
@@ -180,7 +177,6 @@ export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlerts
               terms: { field: 'kibana.alert.rule.tags', exclude: 'streams', size: 1 },
             },
             ...buildChangePointTimeSeriesAggs(bucketInterval, {
-              recentActivityMinutes,
               extendedBounds: buildChangePointHistogramBounds(lookback, bucketInterval),
             }),
           },
@@ -199,7 +195,6 @@ export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlerts
     const meta = ruleMetadata.get(bucket.key);
     const ruleName = meta?.ruleName ?? 'unknown';
     const streamName = meta?.streamName ?? 'unknown';
-    const ruleSchedule = meta?.schedule ?? getRuleDetectionSchedule({});
     const changePoints = bucket.change_points?.type
       ? { type: bucket.change_points.type }
       : { type: {} as Record<string, { p_value: number }> };
@@ -216,7 +211,6 @@ export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlerts
       rule_name: ruleNameAgg,
       stream: streamAgg,
       change_points: changePoints,
-      rule_schedule: ruleSchedule,
     };
   }
 }
