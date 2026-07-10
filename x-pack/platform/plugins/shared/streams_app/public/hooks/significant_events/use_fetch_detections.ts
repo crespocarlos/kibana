@@ -59,8 +59,6 @@ export const useFetchDetections = ({ from, to }: UseFetchDetectionsParams) => {
   return { ...query, pagination, setPagination };
 };
 
-// History is a rule's change-point timeline, keyed by rule_uuid (detection_id is unique per
-// detection, so it cannot address a rule's history).
 export const useFetchDetectionHistory = (ruleUuid: string | undefined) => {
   const {
     dependencies: {

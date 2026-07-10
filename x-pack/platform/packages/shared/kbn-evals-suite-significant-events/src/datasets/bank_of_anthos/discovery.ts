@@ -13,9 +13,6 @@ const toInputDetections = (discoveries: Array<Partial<Discovery>>): Array<Partia
     .flatMap((discovery) => discovery.detections ?? [])
     .map((detection) => ({
       ...detection,
-      // Top-level change-point fields (no nested evidence object). The agent reads
-      // `change_point_type` (+ direction) to decide investigate-vs-resolve — there is no
-      // alert-sourced lifecycle field on the batch.
       change_point_type: 'spike' as const,
       p_value: 0.0001,
     }));

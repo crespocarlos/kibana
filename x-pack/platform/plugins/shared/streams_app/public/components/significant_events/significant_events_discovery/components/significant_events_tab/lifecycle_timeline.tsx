@@ -28,9 +28,6 @@ import {
 
 interface TimelineEntry {
   icon: string;
-  // Precomputed badge label + color per entry. Detection entries render their change-point
-  // type (change-point observation only); discovery/event entries render their event-sourced
-  // lifecycle status. A detection's `change_point_type` is never mapped to a lifecycle state.
   label: string;
   color: string;
   timestamp: string;

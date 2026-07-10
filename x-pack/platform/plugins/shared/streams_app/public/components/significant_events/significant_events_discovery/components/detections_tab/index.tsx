@@ -41,8 +41,6 @@ const DISCOVERY_STATUS_LABELS = {
   }),
 };
 
-// The Processed/Pending column reflects discovery-pipeline ingestion of the detection.
-// Detections carry no lifecycle — `change_point_type` is shown as a change-point observation only.
 const DISCOVERY_STATUS_TOOLTIP = i18n.translate('xpack.streams.detectionsTab.discoveryTooltip', {
   defaultMessage: 'Whether the discovery pipeline has ingested this detection.',
 });

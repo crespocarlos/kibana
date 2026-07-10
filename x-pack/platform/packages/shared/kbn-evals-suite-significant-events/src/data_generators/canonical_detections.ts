@@ -9,11 +9,6 @@ import type { Detection } from '@kbn/significant-events-schema';
 
 const CANONICAL_TIMESTAMP = '2026-01-01T00:00:00.000Z';
 
-/**
- * Detection as the discovery agent receives it: the immutable change-point fields. The agent
- * decides investigate-vs-resolve by reading `change_point_type` (+ direction) — there is no
- * alert-sourced lifecycle field on the batch.
- */
 export type InputDetection = Detection;
 
 export const canonicalDetectionsFromGroundTruth = ({

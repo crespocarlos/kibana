@@ -210,7 +210,7 @@ export async function loadDetectionsFromSnapshot(
   snapshotName: string,
   gcs: GcsConfig,
   // `kind` is a legacy snapshot-doc field (pre-detection-remodel captures); filter on the raw
-  // ES field by string. New-model detections carry no `kind`, so this is a no-op for them.
+  // ES field by string.
   options: { kinds?: string[] } = {}
 ): Promise<Detection[]> {
   return loadDocsFromSnapshot<Detection>({

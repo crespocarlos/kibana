@@ -28,8 +28,7 @@ import { assertSignificantEventsAccess } from '../../utils/assert_significant_ev
 const toArray = (val: string | string[] | undefined): string[] | undefined =>
   val === undefined ? undefined : Array.isArray(val) ? val : [val];
 
-// Detections carry `change_point_type`; processed-marker docs do not. Excluding markers
-// here keeps the lifecycle Map (below) from being overwritten by a marker sharing an id.
+// Detections carry `change_point_type`; processed-marker docs do not.
 const isLifecycleDetection = (hit: Detection): boolean => hit.change_point_type != null;
 
 const collectEmbeddedDetections = (discoveries: Discovery[]) => {

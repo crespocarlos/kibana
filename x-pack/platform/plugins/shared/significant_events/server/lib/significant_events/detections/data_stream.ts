@@ -33,9 +33,6 @@ export const detectionsDataStream: DataStreamDefinition<
   StoredDetection
 > = {
   name: DETECTIONS_DATA_STREAM,
-  // Bumped for the detection/marker re-model (top-level change_point_type/p_value,
-  // processed_by; dropped nested detection_evidence + kind). v7: dropped peak_alert_count
-  // (alert_count stays source-only, like alert_index/stream_name). Requires rollover.
   version: 7,
   hidden: true,
   template: {
