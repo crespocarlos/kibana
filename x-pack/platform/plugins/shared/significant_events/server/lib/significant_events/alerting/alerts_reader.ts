@@ -16,7 +16,6 @@ export interface ChangePointScanParams {
   bucketInterval: string;
   spaceId: string;
   ruleIds?: string[];
-  recentActivityMinutes?: number;
 }
 
 export type ChangePointTypeMap = Record<string, { p_value: number }>;
@@ -54,40 +53,6 @@ export interface OccurrencesEsqlParams {
   spaceId: string;
 }
 
-export interface ChangePointSeriesBucket {
-  key?: string | number;
-  key_as_string?: string;
-  doc_count?: number;
-  signal_count?: { value?: number };
-}
-
-export interface RuleChangePointAggregations {
-  over_time?: {
-    buckets?: ChangePointSeriesBucket[];
-  };
-  change_points?: {
-    type?: ChangePointTypeMap;
-  };
-}
-
-export interface RuleActivityAggregations {
-  activity_windows?: {
-    buckets?: Array<{ key: string | number; doc_count: number }>;
-  };
-  peak?: {
-    value?: number | null;
-  };
-}
-
-export interface RuleAlertWindowAggregations {
-  current_window?: {
-    doc_count: number;
-  };
-  reference_window?: {
-    doc_count: number;
-  };
-}
-
 export interface ISignificantEventsAlertsReader {
   readonly index: string;
   readonly ruleIdColumn: 'rule_uuid' | 'rule_id';
@@ -104,17 +69,6 @@ export interface ISignificantEventsAlertsReader {
     params: ChangePointScanParams,
     queryLinks: QueryLink[]
   ): Promise<{ took?: number; by_rule: { buckets: ChangePointRuleBucket[] } }>;
-
-  runRuleAlertWindows(
-    esClient: TracedElasticsearchClient,
-    params: {
-      ruleUuid: string;
-      currentLookback: string;
-      referenceLookbackGte: string;
-      referenceLookbackLt: string;
-      spaceId: string;
-    }
-  ): Promise<{ aggregations: RuleAlertWindowAggregations }>;
 }
 
 export function buildRuleMetadataMap(queryLinks: QueryLink[]): Map<string, RuleMetadata> {

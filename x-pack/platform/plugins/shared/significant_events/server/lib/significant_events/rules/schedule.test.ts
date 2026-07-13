@@ -33,7 +33,6 @@ describe('Significant Events rule scheduling', () => {
   it('keeps critical detection settings on the existing cadence', () => {
     expect(getRuleDetectionSchedule({ severity_score: 80 })).toEqual({
       interval_minutes: 1,
-      recent_activity_minutes: 5,
       bucket_interval: '30s',
       lookback: 'now-30m',
       lookback_minutes: 30,
@@ -43,7 +42,6 @@ describe('Significant Events rule scheduling', () => {
   it('scales non-critical detection settings to the 5m cadence', () => {
     expect(getRuleDetectionSchedule({ severity_score: 60 })).toEqual({
       interval_minutes: 5,
-      recent_activity_minutes: 10,
       bucket_interval: '5m',
       lookback: 'now-125m',
       lookback_minutes: 125,

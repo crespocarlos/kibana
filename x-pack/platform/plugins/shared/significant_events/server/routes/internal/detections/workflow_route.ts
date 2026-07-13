@@ -125,7 +125,6 @@ const changePointScanRoute = createServerRoute({
           {
             lookback: criticalCadence ? params.body.lookback : schedule.lookback,
             bucketInterval: criticalCadence ? params.body.bucketInterval : schedule.bucket_interval,
-            recentActivityMinutes: schedule.recent_activity_minutes,
             ruleIds: groupedLinks.map((queryLink) => queryLink.rule_id),
             spaceId,
           },
@@ -157,52 +156,7 @@ const changePointScanRoute = createServerRoute({
   },
 });
 
-const ruleAlertWindowsRoute = createServerRoute({
-  endpoint: 'POST /internal/significant_events/detections/workflow/_rule_alert_windows',
-  options: {
-    access: 'internal',
-    summary: 'Compare current and reference alert windows for one rule',
-    description:
-      'Day-over-day style alert window counts for quick-recovery logic in the Detection workflow.',
-  },
-  security: {
-    authz: {
-      requiredPrivileges: [STREAMS_API_PRIVILEGES.read],
-    },
-  },
-  params: z.object({
-    body: z.object({
-      ruleUuid: z.string().max(256),
-      currentLookback: z.string().max(64),
-      referenceLookbackGte: z.string().max(64),
-      referenceLookbackLt: z.string().max(64),
-    }),
-  }),
-  handler: async ({ params, request, getScopedClients, server, getSpaceId, logger }) => {
-    const scopedClients = await getScopedClients({ request });
-    const { scopedClusterClient, licensing, uiSettingsClient } = scopedClients;
-
-    await assertSignificantEventsAccess({ server, licensing, uiSettingsClient });
-
-    const esClient = createSignificantEventsTracedEsClient({
-      client: scopedClusterClient.asCurrentUser,
-      logger,
-    });
-    const { alertsReader } = await scopedClients.getSignificantEventsAlertingContext();
-    const result = await alertsReader.runRuleAlertWindows(esClient, {
-      ruleUuid: params.body.ruleUuid,
-      currentLookback: params.body.currentLookback,
-      referenceLookbackGte: params.body.referenceLookbackGte,
-      referenceLookbackLt: params.body.referenceLookbackLt,
-      spaceId: await getSpaceId(request),
-    });
-
-    return { alertIndex: alertsReader.index, ...result };
-  },
-});
-
 export const internalDetectionsWorkflowRoutes = {
   ...countAlertsRoute,
   ...changePointScanRoute,
-  ...ruleAlertWindowsRoute,
 };

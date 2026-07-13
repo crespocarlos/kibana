@@ -199,41 +199,6 @@ describe('SignificantEventsAlertsReaderV1', () => {
       })
     );
   });
-
-  it('returns alert window aggregations as doc_count filters', async () => {
-    const { client, search } = createEsClient();
-    const aggregations = {
-      current_window: { doc_count: 4 },
-      reference_window: { doc_count: 2 },
-    };
-    search.mockResolvedValue({ aggregations });
-
-    const result = await reader.runRuleAlertWindows(client, {
-      ruleUuid: RULE_UUID,
-      currentLookback: 'now-5m',
-      referenceLookbackGte: 'now-10m',
-      referenceLookbackLt: 'now-5m',
-      spaceId: SPACE_ID,
-    });
-
-    expect(search).toHaveBeenCalledWith(
-      'significant_events_alerts_v1_rule_alert_windows',
-      expect.objectContaining({
-        track_total_hits: false,
-        aggs: {
-          current_window: {
-            filter: { range: { '@timestamp': { gte: 'now-5m' } } },
-          },
-          reference_window: {
-            filter: {
-              range: { '@timestamp': { gte: 'now-10m', lt: 'now-5m' } },
-            },
-          },
-        },
-      })
-    );
-    expect(result.aggregations).toEqual(aggregations);
-  });
 });
 
 describe('SignificantEventsAlertsReaderV2', () => {
@@ -360,54 +325,5 @@ describe('SignificantEventsAlertsReaderV2', () => {
         change_points: { type: { mean_shift: { p_value: 0.02 } } },
       },
     ]);
-  });
-
-  it('normalizes alert window aggregations to doc_count from signal_count', async () => {
-    const { client, search } = createEsClient();
-    search.mockResolvedValue({
-      aggregations: {
-        current_window: { doc_count: 100, signal_count: { value: 4 } },
-        reference_window: { doc_count: 80, signal_count: { value: 2 } },
-      },
-    });
-
-    const result = await reader.runRuleAlertWindows(client, {
-      ruleUuid: RULE_UUID,
-      currentLookback: 'now-5m',
-      referenceLookbackGte: 'now-10m',
-      referenceLookbackLt: 'now-5m',
-      spaceId: SPACE_ID,
-    });
-
-    expect(search).toHaveBeenCalledWith(
-      'significant_events_alerts_v2_rule_alert_windows',
-      expect.objectContaining({
-        track_total_hits: false,
-        aggs: {
-          current_window: {
-            filter: { range: { '@timestamp': { gte: 'now-5m' } } },
-            aggs: {
-              signal_count: {
-                cardinality: { field: 'group_hash' },
-              },
-            },
-          },
-          reference_window: {
-            filter: {
-              range: { '@timestamp': { gte: 'now-10m', lt: 'now-5m' } },
-            },
-            aggs: {
-              signal_count: {
-                cardinality: { field: 'group_hash' },
-              },
-            },
-          },
-        },
-      })
-    );
-    expect(result.aggregations).toEqual({
-      current_window: { doc_count: 4 },
-      reference_window: { doc_count: 2 },
-    });
   });
 });

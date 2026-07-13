@@ -110,46 +110,6 @@ export class SignificantEventsAlertsReaderV1 implements ISignificantEventsAlerts
     };
   }
 
-  async runRuleAlertWindows(
-    esClient: TracedElasticsearchClient,
-    {
-      ruleUuid,
-      currentLookback,
-      referenceLookbackGte,
-      referenceLookbackLt,
-      spaceId,
-    }: Parameters<ISignificantEventsAlertsReader['runRuleAlertWindows']>[1]
-  ) {
-    const response = await esClient.search('significant_events_alerts_v1_rule_alert_windows', {
-      index: this.index,
-      ignore_unavailable: true,
-      size: 0,
-      track_total_hits: false,
-      query: {
-        bool: {
-          filter: [
-            { terms: { 'kibana.space_ids': [spaceId, '*'] } },
-            { term: { 'kibana.alert.rule.uuid': ruleUuid } },
-          ],
-        },
-      },
-      aggs: {
-        current_window: {
-          filter: { range: { '@timestamp': { gte: currentLookback } } },
-        },
-        reference_window: {
-          filter: {
-            range: {
-              '@timestamp': { gte: referenceLookbackGte, lt: referenceLookbackLt },
-            },
-          },
-        },
-      },
-    });
-
-    return { aggregations: response.aggregations ?? {} };
-  }
-
   private buildChangePointScanBody({
     lookback,
     bucketInterval,

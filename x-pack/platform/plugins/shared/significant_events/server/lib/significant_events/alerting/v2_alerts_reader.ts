@@ -20,7 +20,6 @@ import type {
   ChangePointTypeMap,
   ChangePointScanParams,
   CountDetectionAlertsParams,
-  RuleAlertWindowAggregations,
   RuleMetadata,
 } from './alerts_reader';
 import {
@@ -35,21 +34,11 @@ interface RawSignalCountAggregation {
   value?: number;
 }
 
-interface RawSignalWindowAggregation {
-  doc_count?: number;
-  signal_count?: RawSignalCountAggregation;
-}
-
 interface RawRuleBucket {
   key: string;
   doc_count: number;
   signal_count?: RawSignalCountAggregation;
   change_points?: { type?: ChangePointTypeMap };
-}
-
-interface RawRuleAlertWindowAggregations {
-  current_window?: RawSignalWindowAggregation;
-  reference_window?: RawSignalWindowAggregation;
 }
 
 export class SignificantEventsAlertsReaderV2 implements ISignificantEventsAlertsReader {
@@ -130,61 +119,6 @@ export class SignificantEventsAlertsReaderV2 implements ISignificantEventsAlerts
     };
   }
 
-  async runRuleAlertWindows(
-    esClient: TracedElasticsearchClient,
-    {
-      ruleUuid,
-      currentLookback,
-      referenceLookbackGte,
-      referenceLookbackLt,
-      spaceId,
-    }: Parameters<ISignificantEventsAlertsReader['runRuleAlertWindows']>[1]
-  ) {
-    const response = await esClient.search('significant_events_alerts_v2_rule_alert_windows', {
-      index: this.index,
-      ignore_unavailable: true,
-      size: 0,
-      track_total_hits: false,
-      query: {
-        bool: {
-          filter: [
-            { term: { type: 'signal' } },
-            { term: { space_id: spaceId } },
-            { term: { 'rule.id': ruleUuid } },
-          ],
-        },
-      },
-      aggs: {
-        current_window: {
-          filter: { range: { '@timestamp': { gte: currentLookback } } },
-          aggs: {
-            signal_count: {
-              cardinality: { field: 'group_hash' },
-            },
-          },
-        },
-        reference_window: {
-          filter: {
-            range: {
-              '@timestamp': { gte: referenceLookbackGte, lt: referenceLookbackLt },
-            },
-          },
-          aggs: {
-            signal_count: {
-              cardinality: { field: 'group_hash' },
-            },
-          },
-        },
-      },
-    });
-
-    return {
-      aggregations: this.normalizeWindowAggregations(
-        (response.aggregations ?? {}) as RawRuleAlertWindowAggregations
-      ),
-    };
-  }
-
   private buildChangePointScanBody({
     lookback,
     bucketInterval,
@@ -239,22 +173,6 @@ export class SignificantEventsAlertsReaderV2 implements ISignificantEventsAlerts
       rule_name: { top: [{ metrics: { 'kibana.alert.rule.name': ruleName } }] },
       stream: { buckets: [{ key: streamName }] },
       change_points: changePoints,
-    };
-  }
-
-  private normalizeWindowAggregations(
-    aggregations: RawRuleAlertWindowAggregations
-  ): RuleAlertWindowAggregations {
-    const normalizeWindow = (window: RawSignalWindowAggregation | undefined) => {
-      if (!window) {
-        return window;
-      }
-      return { doc_count: window.signal_count?.value ?? window.doc_count ?? 0 };
-    };
-
-    return {
-      current_window: normalizeWindow(aggregations.current_window),
-      reference_window: normalizeWindow(aggregations.reference_window),
     };
   }
 }

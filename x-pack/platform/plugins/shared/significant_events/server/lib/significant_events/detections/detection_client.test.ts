@@ -186,28 +186,4 @@ describe('DetectionClient', () => {
       expect(result.hits[0].processed).toBe(true);
     });
   });
-
-  describe('writeProcessedMarkers', () => {
-    it('writes { detection_id, processed_by } marker documents', async () => {
-      const create = jest.fn(async (_arg: { documents: Array<Record<string, unknown>> }) => ({}));
-      const client = new DetectionClient({
-        dataStreamClient: { create } as never,
-        esClient: {} as never,
-        space: 'default',
-      });
-
-      await client.writeProcessedMarkers([
-        {
-          '@timestamp': '2026-01-02T00:00:00.000Z',
-          detection_id: 'f-1',
-          processed_by: 'exec-42',
-        },
-      ]);
-
-      expect(create).toHaveBeenCalledTimes(1);
-      const arg = create.mock.calls[0][0] as { documents: Array<Record<string, unknown>> };
-      expect(arg.documents[0]).toMatchObject({ detection_id: 'f-1', processed_by: 'exec-42' });
-      expect(arg.documents[0]).not.toHaveProperty('change_point_type');
-    });
-  });
 });

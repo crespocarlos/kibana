@@ -9,7 +9,6 @@ import type { IDataStreamClient } from '@kbn/data-streams';
 import { esql } from '@elastic/esql';
 import type { ESQLAstExpression } from '@elastic/esql/types';
 import type { ElasticsearchClient } from '@kbn/core/server';
-import type { ProcessedMarker } from '@kbn/significant-events-schema';
 import {
   type CommonSearchOptions,
   type PaginatedSearchOptions,
@@ -74,18 +73,6 @@ export class DetectionClient {
     return this.clients.dataStreamClient.create({
       space: this.clients.space,
       documents: detections,
-    });
-  }
-
-  /**
-   * Write processed markers into the same data stream. A marker is `{ detection_id,
-   * processed_by }` and records that the referenced detection has been ingested by the
-   * discovery pipeline. Distinguished from a detection by the absence of `change_point_type`.
-   */
-  async writeProcessedMarkers(markers: ProcessedMarker[]) {
-    return this.clients.dataStreamClient.create({
-      space: this.clients.space,
-      documents: markers as unknown as StoredDetection[],
     });
   }
 
