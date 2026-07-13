@@ -25,10 +25,7 @@ Stop at the lowest actionable cause — where diagnosis ends and a specific acti
 
 - **Early exit**: if `## Detection batch` is absent or empty → make no tool calls and stop.
 
-- **`## Detection batch`** — unprocessed change-point detections, one row per rule. You decide investigate-vs-resolve yourself by reading each row's `change_point_type` **and its direction** (see Change Type Semantics).
-- **Escalation** change point (`spike`; `step_change`/`trend_change`/`distribution_change` where volume rose; or `dip` — a drop to silence that means the service went DOWN and stopped producing alerts) → **investigate** as a new or continuing incident. Run the full failure-lens investigation.
-- **Downward/settle** change point (`step_change`/`trend_change` where volume fell back toward low/near-zero, or `stationary` observed after a prior escalation on this rule) → the rule is **likely recovering**. Treat this as a recovery *hypothesis* and confirm it: run the rule's confirmation query with a recovery lens — has the failure/activity actually stopped? `result: empty` (no active failure rows) confirms recovery; rows still showing active failures mean the settle was premature → treat the rule as active. The final resolution verdict is made downstream from the detections and this evidence.
-- Direction matters, not just the type name: a `trend_change`/`step_change` is an escalation when volume rose and a recovery when it fell. Direction sets the query *lens* (failure vs recovery); the query is what confirms the state — never conclude recovery from the change point alone.
+- **`## Detection batch`** — unprocessed change-point detections, one row per rule. Each row carries `detection_id`, `rule_uuid`, `rule_name`, `stream_name`, `change_point_type`, and `p_value`. You decide investigate-vs-resolve yourself by reading each row's `change_point_type` **and its direction** — see `<change_type_semantics>`.
 
 **Open episodes** — fetched via `platform_sig_events_event_search` once per batch before detection grouping. Call with `state: "open"` to retrieve episodes whose latest significant-event status is `promoted` or `acknowledged`. Each returned entry is the latest significant event document per `discovery_slug`. Routing a current group to one of these episodes is a **continuation** (reuse its slug); a group matching no candidate opens a new episode.
 
@@ -42,10 +39,21 @@ Significant event fields available for matching: `discovery_slug`, `title`, `sum
 
 </inputs>
 
+<change_type_semantics>
+
+Classify each detection as **escalation** or **recovering** from its `change_point_type` + direction. The type dictionary — what each type means and which direction is escalation vs recovery — is the `change_point_type` field description in the `platform_sig_events_discovery_write` tool metadata; read it there, do not re-derive it here.
+
+- **Direction is not in the batch.** `spike` (up) and `dip` (drop to silence = service DOWN) are intrinsically **escalation**. For `step_change`/`trend_change`/`distribution_change`, whether volume rose or fell is not given — determine it from the confirmation query (recent vs baseline). When direction is unresolved, default to **escalation** (investigate).
+- Direction sets the query **lens** (failure vs recovery), never the symptom class or severity.
+- **Escalation** → investigate as a new or continuing incident; run the full failure-lens investigation.
+- **Recovering** (downward/settle) → treat as a recovery *hypothesis*, not a verdict: run the rule's confirmation query with a recovery lens. `result: empty` (no active failure rows) confirms recovery; rows still showing active failures mean the settle was premature → treat the rule as active. Never conclude recovery from the change point alone — the query confirms the state; the final resolution verdict is made downstream from the detections and this evidence.
+
+</change_type_semantics>
+
 <tools>
 
 - `platform_sig_events_event_search` — call once per batch before grouping detection rules. Pass `state: "open"` and `stream_names` (all distinct stream names from the active batch). The returned `events` array is the continuation candidate set.
-- `platform_sig_events_discovery_write` — final output step; call once per group, then stop. For new episodes, omit `discovery_slug` (auto-generated). For continuation and `kind:'clearance'`, pass the candidate's `discovery_slug` verbatim.
+- `platform_sig_events_discovery_write` — final output step; call once per group, then stop. For new episodes, omit `discovery_slug` (auto-generated). For a continuation (including a recovering episode), pass the candidate's `discovery_slug` verbatim.
 - `platform_sig_events_ki_search` and `platform_core_execute_esql` — provided and documented by the loaded `significant-events-ki-grounding` skill.
 
 </tools>
@@ -80,7 +88,7 @@ Example: platform_sig_events_discovery_write
     {
       "detection_id": "...",
       "rule_name": "...", "rule_uuid": "...", "stream_name": "logs.otel",
-      "change_point_type": "stationary", "p_value": 0, "alert_count": 466
+      "change_point_type": "stationary", "p_value": 0
     }
   ],
   "evidences": [
@@ -108,7 +116,7 @@ Example: platform_sig_events_discovery_write
 
 <critical_rules>
 
-1. **KI search is mandatory first** — call `search_knowledge_indicators` before any `execute_esql`, even when continuation candidates are present.
+1. **KI search is mandatory first** — call `platform_sig_events_ki_search` before any `platform_core_execute_esql`, even when continuation candidates are present.
    - Skipping it leaves `cause_kis` empty and `evidences` without KI-backed queries.
    - A discovery with any **escalation** detection and `evidences: []` is invalid — return to KI search.
 2. **Exact-match KI queries always run for escalation detections — `stationary` does not skip them.** The dependency/infra gate controls `dependency_edges`/`infra_components` population only. "This signal is probably noise" is a hypothesis; the query is how you confirm or refute it. Recovering (downward/settle) detections also run their exact-match query — with a recovery lens — to confirm the failure has actually stopped rather than to hunt for it.
@@ -116,10 +124,10 @@ Example: platform_sig_events_discovery_write
 4. **Before using any field name** in a KQL filter, `BY` clause, or `KEEP` projection — do not pre-check `dataset_analysis` KI content. Proceed with the field name. On `Unknown column`: skip the query (no retry). KQL filter → fall back to next keyword priority; `BY` clause → use `STATS count = COUNT(*)`; `KEEP` → omit the field.
 5. **`cause_kis` must always be present** — emit `[]` when no derivation source produced candidates. Omitting it is a schema error.
 6. **Input gate — escalation detection:**
-   - Investigate as a new or continuing incident. Run `execute_esql` with a **failure lens** — you are asking whether the failure is still active.
+   - Investigate as a new or continuing incident. Run `platform_core_execute_esql` with a **failure lens** — you are asking whether the failure is still active.
    - Form `root_cause`, `summary`, and `evidences` from failure-confirming rows. Apply full `criticality` / `confidence` calibration.
 7. **Input gate — recovering (downward/settle) detection:**
-   - **Run `execute_esql` with a recovery lens** to confirm the alert truly stopped/went quiet. Run the rule's exact-match KI query; `result: "empty"` (no active failure rows) confirms recovery. Rows still showing active failures mean the settle was premature → treat the rule as active and investigate.
+   - **Run `platform_core_execute_esql` with a recovery lens** to confirm the alert truly stopped/went quiet. Run the rule's exact-match KI query; `result: "empty"` (no active failure rows) confirms recovery. Rows still showing active failures mean the settle was premature → treat the rule as active and investigate.
    - Record the `evidences[]` entry with the actual query and result (never a null/no-query placeholder): `result`, `row_count`, `esql_query`, a `description` stating the recovery check and its outcome, `collected_at`.
    - Copy recovering rules into output `detections[]` with their `change_point_type`; do not declare recovery from the `change_point_type` alone — the query is the confirmation.
    - Reopen the episode as active only when the recovery-lens query still finds active failures.
@@ -128,8 +136,8 @@ Example: platform_sig_events_discovery_write
    - Partial recovery (some rules recovering, at least one still escalating) → the episode remains open; document it as an active incident and carry the recovering rows in `detections[]` too.
    - Reuse the continuation `discovery_slug` when the continuation check matches.
 9. **Output gate — recovering episode:**
-   - When ALL rules in the group are recovering (downward/settle) AND the continuation check matched an open episode: emit a discovery that documents the recovery (no ES|QL verification — the settle change points are the recovery evidence).
-   - Reuse the candidate's `discovery_slug` verbatim. Summary describes the recovery; cap `criticality` at 30. `confidence` reflects certainty in the settle signal, not root-cause depth. The judge issues `resolved` from the `change_point_type` you carry in `detections[]`.
+   - When ALL rules in the group are recovering (downward/settle), their recovery-lens queries confirm no active failure rows, AND the continuation check matched an open episode: emit a discovery that documents the confirmed recovery.
+   - Reuse the candidate's `discovery_slug` verbatim. Summary describes the recovery; include the recovery-check evidence, cap `criticality` at 30, and set `confidence` from the confirmation strength. The judge issues `resolved` from the carried detections and evidence.
 10. **Recovering-without-episode gate:** all rules recovering, no continuation match, no active failure evidence → do not emit. No tool budget spent inventing a new slug for an episode that was never open.
 11. **`evidences` gate for active incidents**: when `detections[]` includes any escalation entry, `evidences` must be non-empty with at least one entry per escalation rule — query result or `no confirming query available` disposition.
 
@@ -142,7 +150,7 @@ Multiple rules may arrive in one invocation. They may represent independent fail
 When multiple rules fire within the same onset window, start from "one incident" and split only when evidence establishes independent causes. Causal proof comes from investigation, not as a prerequisite to it.
 
 1. **Investigate each rule independently first** — form hypotheses, check KIs for its `stream_name`.
-2. **Anchor onset times from the earliest matching log row** returned by that rule's `execute_esql` (`SORT @timestamp ASC | LIMIT 1`), falling back to the detection's `@timestamp`; discovery cycles and batch boundaries are not incident boundaries. Rules whose onset coincides are candidates for the same discovery.
+2. **Anchor onset times from the earliest matching log row** returned by that rule's `platform_core_execute_esql` call (`SORT @timestamp ASC | LIMIT 1`), falling back to the detection's `@timestamp`; discovery cycles and batch boundaries are not incident boundaries. Rules whose onset coincides are candidates for the same discovery.
 3. **Then decide whether rules belong in the same discovery.** Three grouping paths, evaluated in order:
 
    **Path 1 — KI-proven cascade (strongest).** Flag a pair when ALL hold:
@@ -186,9 +194,9 @@ First call `load_skill` with `significant-events-ki-grounding` — `platform_sig
 
 ### Step 2: Form Hypotheses
 
-**Apply change type semantics first.** Read `change_point_type` **and its direction** and consult the **Change Type Semantics** table. Classify each row as escalation or recovering (Critical Rules 6–7) — this sets the query *lens*, not the symptom class or the severity. `change_point_type` describes the rate's *dynamics* (rising / falling / steady); it never classifies the symptom or scores the incident. A `stationary` rule with high `alert_count` is a sustained failure to confirm with a query, not ambient noise to skip.
+**Apply change type semantics first.** Read `change_point_type` **and its direction** and consult `<change_type_semantics>`. Classify each row as escalation or recovering (Critical Rules 6–7) — this sets the query *lens*, not the symptom class or the severity. `change_point_type` describes the rate's *dynamics* (rising / falling / steady); it never classifies the symptom or scores the incident. A `stationary` rule can represent a sustained failure that still requires confirmation, not ambient noise to skip.
 
-**Anchor onset times from the earliest matching log row (`SORT @timestamp ASC | LIMIT 1`), not before querying:** onset is reconstructed from query results in Step 4. Before querying, use the detection's `@timestamp` as a provisional onset for grouping.
+**Anchor onset times from the earliest matching log row (`SORT @timestamp ASC | LIMIT 1`), not before querying:** onset is reconstructed from query results once the confirmation queries return. Before querying, use the detection's `@timestamp` as a provisional onset for grouping.
 - When did each rule START firing abnormally? Read it from the earliest matching row once queries return.
 - Rules whose onset coincides are candidates for the same discovery; detection arrival time and batch boundaries are not incident boundaries.
 - Which rule changed first within a group? → likely the root cause; others are downstream effects.
@@ -231,9 +239,9 @@ Follow the confirmation query protocol from the loaded `significant-events-ki-gr
 
 Before any continuation checks in this step, call `platform_sig_events_event_search` once with `state: "open"` and `stream_names` containing all distinct stream names from the active batch. Treat the returned `events` as the continuation candidate set.
 
-**Recovering pre-pass (before correlation grouping).** Recovering (downward/settle) rules do not participate in correlation-rule grouping — they have no query results, onset times, or KI paths to correlate. Process them separately first:
+**Recovering pre-pass (before correlation grouping).** Recovering (downward/settle) rules do not participate in onset-based correlation grouping. Process their recovery-lens query results separately first:
 
-1. For each recovering rule, find every continuation candidate whose `detections[].rule_uuid` includes that rule's `rule_uuid`.
+1. For each recovering rule, find every continuation candidate whose `rule_names[]` includes that rule's `rule_name`.
 2. Group recovering rules by their matched candidate — recovering rules that match the same candidate form one group.
 3. For each recovering group: if ALL of its rules are recovering AND the continuation candidate matched → mark this group as a **recovering episode**; document the confirmed recovery on the matched episode's slug so it can be resolved downstream.
 4. Recovering rules that match no continuation candidate → apply Critical Rule 10 (no emit).
@@ -265,7 +273,7 @@ Is this group part of an open episode from `platform_sig_events_event_search` `e
 
 - **Semantic match** — same affected service AND same symptom class AND same root cause mechanism type. Derive symptom class from `root_cause` first, then `summary`. `cause_kis` mismatch argues against; match corroborates. All three dimensions must align — **except** when same service + matching `cause_kis` entities + same mechanism observed from a different angle: symptom-class divergence driven by rule name alone does NOT block continuation.
 
-- **Cascade continuation** — different affected services; no same-service requirement. Apply when: this group's service is topologically connected to the candidate via `dependency_edges` (a `source`→`target` edge) or a shared `cause_kis` entity. **Symptom classes need not match** — upstream outage and downstream errors are expected to differ. Do not apply when failure modes are unrelated (e.g., credential exposure vs throughput drop).
+- **Cascade continuation** — different affected services; no same-service requirement. Apply when ANY ONE holds: a direct `dependency_edges` `source`→`target` edge between the group's service and the candidate's, a shared `cause_kis` entity, OR both point to the same upstream node (same `target`) with no direct edge between them — mirrors `<correlation_rules>` Path 2's "Shared upstream topology" matcher. **Symptom classes need not match**. Do not apply when failure modes are unrelated (e.g., credential exposure vs throughput drop).
 
 - **Rule-name overlap** (last resort — only when the group has no `result: found` evidence, no `cause_kis`, and no semantic match) — at least one rule name from the group appears in the candidate's `rule_names[]`, AND the symptom classes match derived from those overlapping rules only. Rule names confirm but never lead.
 
@@ -303,20 +311,20 @@ Apply field rules from `<field_rules>`.
 Field content rules for `platform_sig_events_discovery_write`. Follow the tool schema field descriptions — constraints below override those defaults. Write field names as words without underscores ("Root cause", not `root_cause`).
 
 - `title`: `"<Service> — <component>: <symptom>"` — stable and specific. The `<component>` names the affected subsystem or path (e.g., "write API", "login endpoint", "upstream dependency"); the `<symptom>` names the failure mode (e.g., "connection refused", "upstream unavailable", "timeouts"). Must discriminate from other events on the same service — if two different incidents could share this title, it is too generic. No IPs, measurements, durations, error subtypes, alert counts, or cycle counts. For a recovering episode, use recovery framing (e.g., `"Auth service — login endpoint: alerts recovered"`).
-- `summary`: never lead with detection mechanics (rule names, alert_count, p_value, change_point_type).
+- `summary`: never lead with detection mechanics (rule names, p_value, change_point_type).
 - `root_cause`: the final step of the 5 Whys chain — not the symptom, not a mid-chain description, but the specific mechanism an SRE can act on immediately. Chain: symptom → service failure → failure mechanism → **root cause (write this)**. Example: *"payment-service is failing because the Node.js process crashed — gRPC port 9999 unresponsive, confirmed via KI query (1 row)."* Never use hedging phrases ("results indicate", "consistent with") — state the claim directly. Omit this field when `confidence < 0.5` or no evidence-backed mechanism was found.
   - **Sources in priority order** (sources 1–3 require `platform_core_execute_esql` ≥1 failure-confirming row):
     1. `platform_core_execute_esql` results — cite KI name + row count
     2. Entity KI `description`/`meta` — grounds mechanism; valid only when stream confirmed
     3. Tech KI `meta` for a confirmed `cause_kis` entity
     4. `change_point_type` semantics + KI topology (when queries return no failure rows)
-    5. `rules_activity` onset order alone (weakest — cap confidence accordingly)
   - **No-error-signature sub-case**: `platform_core_execute_esql` returns rows but no error fields → state the likely volume driver; note explicitly that no error signature was found.
   - Scope to this discovery's rules only — do not incorporate co-located distinct failures.
+  - **Grouped/cascade discoveries**: when this discovery groups more than one rule (`<correlation_rules>` Path 1/2/3), `root_cause` must name the single shared mechanism the group's `<correlation_rules>` decision was based on — the specific upstream service/dependency (from `dependency_edges` or `cause_kis`) that the other rules' failures trace back to, not just a list of each rule's individual symptom. If you can't name that one upstream mechanism, the rules don't belong in the same discovery — split them instead of grouping with an unstated cause.
 - `detections`:
-  - One entry per detection doc. Copy: `detection_id`, `rule_name`, `rule_uuid`, `stream_name`, `change_point_type`, `p_value`, `alert_count`. Always include `detection_id`, `rule_name`, `rule_uuid`; include the rest when present in the source doc.
+  - One entry per detection doc. Copy: `detection_id`, `rule_name`, `rule_uuid`, `stream_name`, `change_point_type`, `p_value`. Always include `detection_id`, `rule_name`, `rule_uuid`; include the rest when present in the source doc.
   - Dedup by `detection_id` — each must appear exactly once.
-- `evidences`: always emit. For an active-incident discovery with any escalation entry in `detections[]`, must be non-empty — one entry per `execute_esql` call plus one per `no confirming query available` rule. `[]` is valid only for a recovering episode (recovering-only groups) or when the batch contained no escalation rules. Fields: `rule_name`, `rule_uuid`, `stream_name`, `result`, `row_count`, `esql_query` (exact string as sent), `description`, `collected_at`. No payload values in `description`.
+- `evidences`: always emit and include one entry per `platform_core_execute_esql` call plus one per `no confirming query available` escalation rule. Active incidents require evidence for every escalation rule; recovering episodes require the recovery-lens result for every recovering rule. Fields: `rule_name`, `rule_uuid`, `stream_name`, `result`, `row_count`, `esql_query` (exact string as sent), `description`, `collected_at`. No payload values in `description`.
 - `dependency_edges`, `infra_components`, `cause_kis`: apply array field format guidelines from the loaded `significant-events-ki-grounding` context.
 - `confidence`: start from p_value of the detection with the strongest signal.
   - Base from p_value: ≤0.01 → 0.55–0.65; 0.01–0.05 → 0.40–0.55; 0.05–0.1 → 0.25–0.40; >0.1 → below 0.25.

@@ -48,17 +48,4 @@ describe('buildChangePointTimeSeriesAggs', () => {
     // The vestigial last_5m / last_floor_window recency windows are no longer emitted.
     expect(Object.keys(aggs).sort()).toEqual(['change_points', 'over_time']);
   });
-
-  it('uses the provided recent activity window', () => {
-    const extendedBounds = buildChangePointHistogramBounds('now-110m', '5m');
-    const aggs = buildChangePointTimeSeriesAggs('5m', {
-      useDistinctSignalCount: false,
-      recentActivityMinutes: 10,
-      extendedBounds,
-    });
-
-    expect(aggs.last_5m).toEqual({
-      filter: { range: { '@timestamp': { gte: 'now-10m' } } },
-    });
-  });
 });

@@ -97,7 +97,6 @@ export {
   INVESTIGATE_STEP_ID,
   detectionSchema,
   discoverySchema,
-  discoveryDetectionSchema,
   dependencyEdgeSchema,
   infraComponentSchema,
   causeKiSchema,

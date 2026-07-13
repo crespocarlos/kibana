@@ -45,8 +45,8 @@ describe('Significant Events rule scheduling', () => {
       interval_minutes: 5,
       recent_activity_minutes: 10,
       bucket_interval: '5m',
-      lookback: 'now-110m',
-      lookback_minutes: 110,
+      lookback: 'now-125m',
+      lookback_minutes: 125,
     });
   });
 });

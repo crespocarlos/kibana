@@ -14,6 +14,12 @@ export {
   type ChangePointType,
 } from './detections';
 export { discoverySchema, type Discovery } from './discoveries';
+export {
+  dependencyEdgeSchema,
+  infraComponentSchema,
+  causeKiSchema,
+  evidenceSchema,
+} from './common_schemas';
 export type { KnowledgeIndicator } from '../queries';
 export {
   type SignificantEvent,

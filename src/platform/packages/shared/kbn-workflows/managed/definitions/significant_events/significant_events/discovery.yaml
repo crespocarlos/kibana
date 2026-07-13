@@ -41,10 +41,6 @@ outputs:
     type: boolean
 consts:
   DETECTIONS_INDEX: '.significant_events-detections'
-  KIND_CLEARANCE: 'clearance'
-  KIND_DISCOVERY: 'discovery'
-  KIND_HANDLED: 'handled'
-  KIND_QUIET: 'quiet'
   SCAN_BATCH_SIZE: 1000
   NO_MATCH_IDS: ['__no_processed_marker__']
 
@@ -56,107 +52,7 @@ steps:
       spaceId: '{{ workflow.spaceId }}'
 
   # -----------------------------------------------------------------------
-  # Step 1: Fetch latest discovery state per slug.
-  # No kind filter — collapse by slug + sort desc returns the latest doc per
-  # episode. kind:discovery = still open; kind:handled = closed.
-  # -----------------------------------------------------------------------
-  - name: get_active_events
-    # Fetch the LATEST event per slug (collapse + sort desc, NO status filter) so `compute_active_slugs`
-    # can inspect its actual current status. Filtering by status *before* the collapse would be a bug:
-    # a later `demoted`/`resolved` event would be excluded, leaving an earlier `promoted` as the
-    # collapse head — keeping a closed episode alive as a continuation candidate forever.
-    type: elasticsearch.request
-    with:
-      method: POST
-      path: '/{{ consts.EVENTS_INDEX }}/_search?ignore_unavailable=true'
-      body:
-        size: '${{ consts.SCAN_BATCH_SIZE }}'
-        sort:
-          - '@timestamp':
-              order: desc
-        collapse:
-          field: discovery_slug
-        _source:
-          includes:
-            - discovery_slug
-            - status
-        query:
-          bool:
-            filter:
-              - term:
-                  kibana.space_ids: '{{ variables.spaceId }}'
-              - range:
-                  '@timestamp':
-                    gte: '{{ inputs.activeDiscoveryLookback }}'
-    on-failure:
-      continue: true
-
-  - name: compute_active_slugs
-    # An episode is active only when its LATEST event is promoted/acknowledged. Reject the closing
-    # statuses (demoted/resolved) from the collapsed latest-per-slug hits; the survivors' slugs are
-    # the continuation candidates. active_slug_count is computed via the `| size` filter (the `.size`
-    # dot-getter is unreliable from later steps) so the write gate below can compare it.
-    type: data.set
-    with:
-      active_slugs: >-
-        ${{ steps.get_active_events.output.hits.hits | default: [] | map: '_source'
-        | reject: 'status', consts.STATUS_DEMOTED
-        | reject: 'status', consts.STATUS_RESOLVED
-        | map: 'discovery_slug' | compact | uniq }}
-      active_slug_count: >-
-        ${{ steps.get_active_events.output.hits.hits | default: [] | map: '_source'
-        | reject: 'status', consts.STATUS_DEMOTED
-        | reject: 'status', consts.STATUS_RESOLVED
-        | map: 'discovery_slug' | compact | uniq | size }}
-
-  - name: get_continuation_candidates
-    if: '${{ steps.compute_active_slugs.output.active_slug_count > 0 }}'
-    type: elasticsearch.request
-    with:
-      method: POST
-      path: '/{{ consts.DISCOVERIES_INDEX }}/_search?ignore_unavailable=true'
-      body:
-        size: '${{ consts.SCAN_BATCH_SIZE }}'
-        sort:
-          - '@timestamp':
-              order: desc
-        collapse:
-          field: discovery_slug
-        _source:
-          includes:
-            - kind
-            - discovery_id
-            - discovery_slug
-            - detections
-            - summary
-            - root_cause
-            - title
-            - confidence
-            - criticality
-            - cause_kis
-            - stream_names
-            - dependency_edges
-            - infra_components
-        query:
-          bool:
-            filter:
-              - term:
-                  kibana.space_ids: '{{ variables.spaceId }}'
-              - terms:
-                  discovery_slug: "${{ steps.compute_active_slugs.output.active_slugs }}"
-              - range:
-                  '@timestamp':
-                    gte: '{{ inputs.activeDiscoveryLookback }}'
-    on-failure:
-      continue: true
-
-  - name: continuation_candidates
-    type: data.set
-    with:
-      hits: '${{ steps.get_continuation_candidates.output.hits.hits | default: [] | slice: 0, consts.CONTINUATION_BATCH_MAX  }}'
-
-  # -----------------------------------------------------------------------
-  # Step 2: Build the work set from UNPROCESSED change-point detections.
+  # Step 1: Build the work set from UNPROCESSED change-point detections.
   # A detection is unprocessed when no processed marker references its detection_id. Detections carry
   # change_point_type; processed markers carry processed_by — so `exists: change_point_type`
   # selects detections and `must_not exists: processed_by`... is not enough (marker is a separate doc),
@@ -223,7 +119,6 @@ steps:
             - stream_name
             - change_point_type
             - p_value
-            - alert_count
         query:
           bool:
             filter:
@@ -359,7 +254,7 @@ steps:
               discovery_write call made this cycle — including calls skipped by
               discovery_write's own deduplication (written: false against an
               existing episode still counts; the rule was accounted for). Used by
-              the workflow to verify active (kind:detection) rules were actually
+              the workflow to verify active (escalation) rules were actually
               handled before stamping them. Full discovery data is written via
               the discovery_write tool — this is a compact summary only.
         required: [written_rule_uuids]

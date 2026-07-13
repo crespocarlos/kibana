@@ -28,7 +28,6 @@ export const canonicalDetectionsFromGroundTruth = ({
       stream_name: rule.stream_name ?? streamName,
       change_point_type: changePointType,
       p_value: rule.p_value ?? 0.0001,
-      alert_count: rule.alert_count ?? 0,
       // Derived at read time in production; stamped here to mirror the agent's input contract.
       processed: rule.processed ?? false,
     };
