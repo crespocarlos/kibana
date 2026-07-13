@@ -154,18 +154,12 @@ steps:
       hits: '${{ steps.compute_unhandled_detection_candidates.output.candidates | slice: 0, inputs.detectionBatchMax }}'
 
   - name: compute_active_batch_rule_uuids
-    # Rule UUIDs the agent handled this cycle. Concat NO_MATCH_IDS so get_batch_backlog's `terms` is
-    # never handed an empty array (ES rejects that); the sentinel matches no real rule_uuid.
+    # Rule UUIDs the agent handled this cycle
     type: data.set
     with:
       rule_uuids: "${{ steps.compute_active_batch.output.hits | default: [] | map: '_source' | map: 'rule_uuid' | compact | uniq | concat: consts.NO_MATCH_IDS }}"
 
   - name: get_batch_backlog
-    # Snapshot (taken BEFORE the agent runs) of ALL unprocessed change-point detections for the rules
-    # in this batch — no collapse, the full per-rule backlog. Pre-agent so a detection the detection
-    # cron writes DURING the ≤20m agent run is NOT in the snapshot: it survives to the next cycle
-    # instead of being stamped processed without investigation. Already-marked detections are excluded
-    # via must_not. The batch rule_uuids carry the NO_MATCH_IDS sentinel so `terms` is never empty.
     type: elasticsearch.request
     with:
       method: POST
@@ -230,10 +224,7 @@ steps:
       noWork: true
 
   # -----------------------------------------------------------------------
-  # Step 4: Correlate detections into discoveries. The agent reads each row's change_point_type
-  # (+ direction) to decide investigate-vs-resolve: escalation change points are investigated;
-  # a downward/settle change point is documented as a recovering episode (the judge issues the
-  # final resolved/demoted verdict from the episode's detections).
+  # Step 4: Correlate detections into discoveries.
   # -----------------------------------------------------------------------
   - name: run_discovery_agent
     type: ai.agent
@@ -249,12 +240,6 @@ steps:
       message: |
         ## Detection batch
         {{ steps.compute_active_batch.output.hits | map: '_source' | json }}
-      # Structured output the agent must conform to. Serves two purposes: (1) a hallucination
-      # guardrail — if the agent responds without acting (e.g. a no-op or freeform-only reply
-      # that never calls discovery_write), schema validation fails and the step errors, so the
-      # whole batch is retried next cycle; (2) a per-rule filter for which detections get stamped
-      # as processed — a rule the agent silently dropped mid-batch (schema still valid overall) is
-      # left unstamped and retried, instead of being incorrectly marked processed.
       schema:
         type: object
         properties:
@@ -282,18 +267,7 @@ steps:
       written_rule_uuids: '${{ steps.run_discovery_agent.output.structured_output.written_rule_uuids | default: [] }}'
 
   # -----------------------------------------------------------------------
-  # Step 5: Mark processed detections. The agent investigated the LATEST change-point per rule; that
-  # rule's OLDER unprocessed detections (accumulated between review runs, since detection runs on a
-  # faster cron) are superseded by the current state — so for a CONFIRMED rule we drain its whole
-  # backlog, not just the batch's latest row for it. Otherwise stale change-point types resurface
-  # one-per-run on later review cycles and the same rule is re-investigated repeatedly. The backlog
-  # was snapshotted in `get_batch_backlog` BEFORE the agent ran, so detections written during the
-  # run are not stamped (they survive to next cycle). A minimal marker
-  # { @timestamp, detection_id, processed_by } is written per detection (marker absence ==
-  # unprocessed). A rule is "confirmed" when its rule_uuid appears in `written_rule_uuids`; rules
-  # present in the batch but absent from `written_rule_uuids` (silently dropped by the agent,
-  # without failing the step) are left unstamped and retried next cycle. Skip the whole step if the
-  # agent step itself failed, so nothing in the batch is stamped.
+  # Step 5: Mark processed detections.
   # -----------------------------------------------------------------------
   - name: foreach_stamp_processed
     if: >-
