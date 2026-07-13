@@ -42,6 +42,9 @@ outputs:
 consts:
   DETECTIONS_INDEX: '.significant_events-detections'
   SCAN_BATCH_SIZE: 1000
+  # ES default index.max_result_window; large enough that a busy space's processed-marker
+  # count within the lookback window is very unlikely to exceed it (10x SCAN_BATCH_SIZE).
+  PROCESSED_MARKER_FETCH_SIZE: 10000
   NO_MATCH_IDS: ['__no_processed_marker__']
 
 steps:
@@ -57,6 +60,9 @@ steps:
   # change_point_type; processed markers carry processed_by — so `exists: change_point_type`
   # selects detections and `must_not exists: processed_by`... is not enough (marker is a separate doc),
   # hence we fetch marker ids first and exclude them by detection_id.
+  # size bumped to PROCESSED_MARKER_FETCH_SIZE (10k, ES's default max_result_window) instead of
+  # SCAN_BATCH_SIZE (1k) so a busy space's processed-marker count within the lookback window is
+  # very unlikely to truncate processed_ids and re-surface already-processed detections.
   # -----------------------------------------------------------------------
   - name: get_processed_markers
     type: elasticsearch.request
@@ -64,7 +70,7 @@ steps:
       method: POST
       path: '/{{ consts.DETECTIONS_INDEX }}/_search?ignore_unavailable=true'
       body:
-        size: '${{ consts.SCAN_BATCH_SIZE }}'
+        size: '${{ consts.PROCESSED_MARKER_FETCH_SIZE }}'
         _source:
           includes:
             - detection_id
