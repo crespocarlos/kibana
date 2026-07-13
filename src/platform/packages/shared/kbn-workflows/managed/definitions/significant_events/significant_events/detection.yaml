@@ -169,7 +169,6 @@ steps:
             stream_name: "{{ foreach.item.stream.buckets[0].key }}"
             change_point_type: "{{ steps.compute_rule_context.output.change_point_type }}"
             p_value: "${{ steps.compute_transition.output.detection_p_value }}"
-            alert_count: "${{ foreach.item.doc_count }}"
             alert_index: "{{ steps.run_change_point_aggregation.output.alertIndex }}"
             workflow_execution_id: "{{ execution.id }}"
         on-failure:
