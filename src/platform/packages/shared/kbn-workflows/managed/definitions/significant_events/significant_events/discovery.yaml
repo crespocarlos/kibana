@@ -248,50 +248,8 @@ steps:
       message: |
         ## Detection batch
         {{ steps.compute_active_batch.output.hits | map: '_source' | json }}
-      schema:
-        type: object
-        properties:
-          written_rule_uuids:
-            type: array
-            items:
-              type: string
-            description: >-
-              rule_uuid of every entry across every detections[] array from every
-              discovery_write call made this cycle — including calls skipped by
-              discovery_write's own deduplication (written: false against an
-              existing episode still counts; the rule was accounted for). Used by
-              the workflow to verify active (escalation) rules were actually
-              handled before stamping them. Full discovery data is written via
-              the discovery_write tool — this is a compact summary only.
-        required: [written_rule_uuids]
     on-failure:
       continue: false
-
-  # Eviction-safe snapshot — ai.agent outputs are evictable; data.set outputs are not.
-  # Mirrors triage.yaml's check_judge_agent_output/store_significant_events pattern:
-  # written_rule_uuids is a mechanical echo of what discovery_write already returned to
-  # the agent in-context this same turn, not a claim requiring independent verification.
-  - name: check_discovery_agent_output
-    type: if
-    condition: >-
-      ${{ steps.run_discovery_agent.error == null
-      and steps.run_discovery_agent.output.structured_output.written_rule_uuids != null }}
-    steps:
-      - name: store_discovery_written_rule_uuids
-        type: data.set
-        with:
-          rule_uuids: '${{ steps.run_discovery_agent.output.structured_output.written_rule_uuids }}'
-
-  - name: compute_written_rule_uuids
-    # rule_uuids the agent reported as accounted for by a discovery_write call this
-    # cycle. Empty when the agent errored or returned no structured output — in that
-    # case only quiet rules (compute_quiet_rule_uuids) get stamped, and active detection
-    # rules are left unhandled so they're retried next cycle instead of being lost.
-    type: data.set
-    with:
-      rule_uuids: >-
-        ${{ steps.store_discovery_written_rule_uuids.output.rule_uuids
-        | compact | uniq | default: [] }}
 
   # -----------------------------------------------------------------------
   # Step 5: Mark processed detections. The agent investigated the LATEST change-point per rule; that
@@ -301,8 +259,9 @@ steps:
   # later review cycles and the same rule is re-investigated repeatedly. The backlog was snapshotted
   # in `get_batch_backlog` BEFORE the agent ran, so detections written during the run are not stamped
   # (they survive to next cycle). A minimal marker { @timestamp, detection_id, processed_by } is
-  # written per detection (marker absence == unprocessed). Skip if the agent failed so the detections
-  # are retried next cycle.
+  # written per detection (marker absence == unprocessed). On agent success we stamp every detection
+  # in the pre-agent backlog snapshot — not gated on per-rule discovery_write confirmation. Skip if
+  # the agent failed so the detections are retried next cycle.
   # -----------------------------------------------------------------------
   - name: foreach_stamp_processed
     if: >-
