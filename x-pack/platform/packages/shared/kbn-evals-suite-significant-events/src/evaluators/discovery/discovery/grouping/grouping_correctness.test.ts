@@ -8,6 +8,9 @@
 import type { Discovery, Detection, SignalEntry } from '@kbn/significant-events-schema';
 import { groupingCorrectnessEvaluator } from './grouping_correctness';
 
+// Only `rule_uuid` matters to this evaluator (grouping is judged by rule_uuid membership per
+// discovery) — cast past the full `Discovery['detections']` shape rather than filling in
+// unused required fields, matching the `evaluate()` helper's casts below.
 const buildDiscovery = (...ruleUuids: string[]): Partial<Discovery> => ({
   signals: ruleUuids.map(
     (rule_uuid): SignalEntry => ({

@@ -5,7 +5,14 @@
  * 2.0.
  */
 
-export { detectionSchema, type Detection } from './detections';
+export {
+  detectionSchema,
+  processedMarkerSchema,
+  CHANGE_POINT_TYPES,
+  type Detection,
+  type ProcessedMarker,
+  type ChangePointType,
+} from './detections';
 export { discoverySchema, type Discovery } from './discoveries';
 export {
   blastRadiusEntrySchema,

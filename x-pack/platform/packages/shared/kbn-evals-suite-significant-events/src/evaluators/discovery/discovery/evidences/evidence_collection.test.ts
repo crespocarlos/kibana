@@ -27,6 +27,18 @@ const evaluate = (discoveries: Partial<Discovery>[]) =>
     metadata: null,
   });
 
+const createDetection = (
+  ruleUuid: string,
+  extra: Partial<Discovery['detections'][number]> = {}
+): Discovery['detections'][number] => ({
+  detection_id: `${ruleUuid}-det`,
+  rule_uuid: ruleUuid,
+  rule_name: ruleUuid,
+  change_point_type: 'spike',
+  p_value: 0,
+  ...extra,
+});
+
 describe('evidenceCollectionEvaluator', () => {
   it('is unavailable when there are no detection signals', async () => {
     expect((await evaluate([{ signals: [] }])).score).toBeNull();

@@ -64,17 +64,6 @@ export async function eventsWriteHandler({
     ? null
     : (await eventClient.findLatestByEventIds([eventId])).get(eventId);
 
-  // Skip write if status unchanged
-  if (latestEvent && latestEvent.status === input.status) {
-    return {
-      event_uuid: latestEvent.event_uuid,
-      event_id: eventId,
-      status: input.status,
-      written: false,
-      reason: 'status_unchanged',
-    };
-  }
-
   const now = new Date().toISOString();
   const eventUuid = uuidv4();
 

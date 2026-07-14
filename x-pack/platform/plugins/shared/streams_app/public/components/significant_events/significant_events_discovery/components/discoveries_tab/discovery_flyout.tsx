@@ -154,36 +154,34 @@ export const DiscoveryFlyout = ({
         </EuiTitle>
         <EuiSpacer size="s" />
         <EuiListGroup maxWidth={false}>
-          {(discovery.signals ?? [])
-            .filter((s) => s.metadata?.kind !== 'quiet')
-            .map((signal, idx) => (
-              <EuiFlexGroup
-                key={signal.metadata?.rule_uuid ?? idx}
-                gutterSize="s"
-                alignItems="flexStart"
-                responsive={false}
-                style={{ padding: '4px 0' }}
-              >
-                {signal.metadata?.change_point_type && (
-                  <EuiFlexItem grow={false} style={{ paddingTop: 2 }}>
-                    <EuiBadge color="hollow">
-                      {CHANGE_TYPE_LABELS[signal.metadata.change_point_type] ??
-                        signal.metadata.change_point_type}
-                    </EuiBadge>
-                  </EuiFlexItem>
-                )}
-                <EuiFlexItem>
-                  <EuiText size="s">
-                    <strong>{signal.metadata?.rule_name ?? signal.type}</strong>
-                  </EuiText>
-                  {signal.stream_name && (
-                    <EuiText size="xs" color="subdued">
-                      {signal.stream_name}
-                    </EuiText>
-                  )}
+          {(discovery.signals ?? []).map((signal, idx) => (
+            <EuiFlexGroup
+              key={signal.metadata?.detection_id ?? idx}
+              gutterSize="s"
+              alignItems="flexStart"
+              responsive={false}
+              style={{ padding: '4px 0' }}
+            >
+              {signal.metadata?.change_point_type && (
+                <EuiFlexItem grow={false} style={{ paddingTop: 2 }}>
+                  <EuiBadge color="hollow">
+                    {CHANGE_TYPE_LABELS[signal.metadata.change_point_type] ??
+                      signal.metadata.change_point_type}
+                  </EuiBadge>
                 </EuiFlexItem>
-              </EuiFlexGroup>
-            ))}
+              )}
+              <EuiFlexItem>
+                <EuiText size="s">
+                  <strong>{signal.metadata?.rule_name ?? signal.type}</strong>
+                </EuiText>
+                {signal.stream_name && (
+                  <EuiText size="xs" color="subdued">
+                    {signal.stream_name}
+                  </EuiText>
+                )}
+              </EuiFlexItem>
+            </EuiFlexGroup>
+          ))}
         </EuiListGroup>
 
         <EuiSpacer size="l" />

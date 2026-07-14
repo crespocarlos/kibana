@@ -22,7 +22,7 @@ const baseInput = {
 };
 
 describe('eventsWriteHandler', () => {
-  it('writes a new event when no existing event exists', async () => {
+  it('writes a new event', async () => {
     const eventClient = {
       findLatestByEventIds: jest.fn().mockResolvedValue(new Map()),
       bulkCreate: jest.fn().mockResolvedValue(undefined),
@@ -40,28 +40,7 @@ describe('eventsWriteHandler', () => {
     expect(typeof result.event_uuid).toBe('string');
   });
 
-  it('skips write when status is unchanged', async () => {
-    const eventClient = {
-      findLatestByEventIds: jest
-        .fn()
-        .mockResolvedValue(
-          new Map([['checkout__latency-abc12345', { event_uuid: 'latest-id', status: 'open' }]])
-        ),
-      bulkCreate: jest.fn(),
-    };
-
-    const result = await eventsWriteHandler({
-      eventClient: eventClient as never,
-      input: { ...baseInput, event_id: 'checkout__latency-abc12345', status: 'open' },
-    });
-
-    expect(eventClient.bulkCreate).not.toHaveBeenCalled();
-    expect(result.written).toBe(false);
-    expect(result.reason).toBe('status_unchanged');
-    expect(result.event_uuid).toBe('latest-id');
-  });
-
-  it('generates a synthetic event_id and skips dedup lookup when event_id is absent', async () => {
+  it('generates a synthetic slug and skips dedup lookup when discovery_slug is absent', async () => {
     const eventClient = {
       findLatestByEventIds: jest.fn(),
       bulkCreate: jest.fn().mockResolvedValue(undefined),
