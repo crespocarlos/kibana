@@ -58,7 +58,7 @@ describe('confirmedEvidencesEvaluator', () => {
           {
             type: 'detection',
             description: 'found row.',
-            evidence: { result: 'found', row_count: 1 },
+            evidence: { result: 'found' },
           },
         ],
       },
@@ -108,7 +108,7 @@ describe('confirmedEvidencesEvaluator', () => {
           {
             type: 'detection',
             description: 'empty result.',
-            evidence: { result: 'empty', row_count: 0 },
+            evidence: { result: 'empty' },
           },
         ],
       },

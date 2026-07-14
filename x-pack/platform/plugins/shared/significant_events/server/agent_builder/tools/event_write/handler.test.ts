@@ -12,6 +12,7 @@ const baseInput = {
   status: 'open' as const,
   stream_names: ['logs.checkout'],
   title: 'Checkout latency',
+  symptom_hypothesis: 'Checkout requests are delayed because the payment dependency is timing out.',
   summary: 'P99 latency breached SLO',
   severity: 'high' as const,
   confidence: 0.82,
@@ -34,13 +35,16 @@ describe('eventsWriteHandler', () => {
     });
 
     expect(eventClient.bulkCreate).toHaveBeenCalledTimes(1);
+    expect(eventClient.bulkCreate.mock.calls[0][0][0].symptom_hypothesis).toBe(
+      baseInput.symptom_hypothesis
+    );
     expect(result.written).toBe(true);
     expect(result.event_id).toBe('checkout__latency-abc12345');
     expect(result.status).toBe('open');
     expect(typeof result.event_uuid).toBe('string');
   });
 
-  it('generates a synthetic slug and skips dedup lookup when discovery_slug is absent', async () => {
+  it('skips dedup lookup when event_id is absent', async () => {
     const eventClient = {
       findLatestByEventIds: jest.fn(),
       bulkCreate: jest.fn().mockResolvedValue(undefined),

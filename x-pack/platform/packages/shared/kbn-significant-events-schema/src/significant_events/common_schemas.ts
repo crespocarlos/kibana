@@ -6,8 +6,15 @@
  */
 
 import { z } from '@kbn/zod/v4';
-import { MAX_STREAM_NAME_LENGTH } from '@kbn/streams-schema';
-import { MAX_ID_LENGTH, MAX_TITLE_LENGTH, MAX_TEXT_LENGTH } from './constants';
+import dedent from 'dedent';
+import {
+  MAX_ID_LENGTH,
+  MAX_TITLE_LENGTH,
+  MAX_TEXT_LENGTH,
+  NO_RAW_SENSITIVE_VALUES_RULE,
+  MAX_ARRAY_LENGTH,
+} from './constants';
+import { detectionSchema } from './detections';
 
 const blastRadiusDependencySchema = z.object({
   type: z.literal('dependency'),
@@ -27,15 +34,14 @@ const blastRadiusDependencySchema = z.object({
     .describe('Name of the service or component being called or depended upon.'),
   protocol: z
     .string()
-    .max(100)
+    .max(MAX_ID_LENGTH)
     .optional()
     .describe(
       'Communication protocol used between source and target (e.g. "HTTP", "gRPC", "TCP").'
     ),
   stream_name: z
     .string()
-    .max(MAX_STREAM_NAME_LENGTH)
-    .optional()
+    .max(MAX_ID_LENGTH)
     .describe('Data stream associated with this dependency.'),
 });
 
@@ -56,13 +62,12 @@ const blastRadiusInfrastructureSchema = z.object({
     ),
   workloads: z
     .array(z.string().max(MAX_ID_LENGTH))
-    .max(100)
+    .max(MAX_ARRAY_LENGTH)
     .optional()
     .describe('Workload names (pods, services) that make up this infrastructure component.'),
   stream_name: z
     .string()
-    .max(MAX_STREAM_NAME_LENGTH)
-    .optional()
+    .max(MAX_ID_LENGTH)
     .describe('Data stream associated with this infrastructure component.'),
 });
 
@@ -72,16 +77,8 @@ const blastRadiusEntitySchema = z.object({
     .string()
     .max(MAX_ID_LENGTH)
     .describe('Identifier of the Knowledge Indicator feature this entity entry is based on.'),
-  name: z
-    .string()
-    .max(MAX_TITLE_LENGTH)
-    .optional()
-    .describe('Human-readable name of the affected entity.'),
-  stream_name: z
-    .string()
-    .max(MAX_ID_LENGTH)
-    .optional()
-    .describe('Data stream associated with this entity.'),
+  name: z.string().max(MAX_TITLE_LENGTH).describe('Human-readable name of the affected entity.'),
+  stream_name: z.string().max(MAX_ID_LENGTH).describe('Data stream associated with this entity.'),
 });
 
 export const blastRadiusEntrySchema = z.discriminatedUnion('type', [
@@ -89,13 +86,14 @@ export const blastRadiusEntrySchema = z.discriminatedUnion('type', [
   blastRadiusInfrastructureSchema,
   blastRadiusEntitySchema,
 ]);
+
 export type BlastRadiusEntry = z.infer<typeof blastRadiusEntrySchema>;
 
 export const causalFeatureSchema = z.object({
   feature_id: z
     .string()
     .max(MAX_ID_LENGTH)
-    .describe('Identifier of the Knowledge Indicator feature identified as a root cause.'),
+    .describe('Identifier of the Knowledge Indicator feature identified as a symptom hypothesis.'),
   name: z
     .string()
     .max(MAX_TITLE_LENGTH)
@@ -121,36 +119,31 @@ const signalEvidenceSchema = z.object({
     .describe(
       '"found" = query returned rows; "empty" = 0 rows returned (non-confirming); "error" = query failed to execute.'
     ),
-  row_count: z
-    .number()
-    .optional()
-    .describe('Number of rows the query returned. 0 means no matching data — non-confirming.'),
 });
 
 const signalBaseSchema = z.object({
   stream_name: z
     .string()
-    .max(MAX_STREAM_NAME_LENGTH)
-    .optional()
+    .max(MAX_ID_LENGTH)
     .describe('Data stream this signal was collected from.'),
   description: z
     .string()
     .max(MAX_TEXT_LENGTH)
     .describe(
-      'Human-readable account of what was observed and what it means. ' +
-        'For detection signals, use this structure: ' +
-        '"Testing: [hypothesis]. Expected if true: [pattern]. Found: [result]. Verdict: confirms | refutes | inconclusive." ' +
-        'No raw IDs, UUIDs, or metric values.'
+      dedent`
+        Human-readable account of what was observed and what it means. Detection signals: "Testing: [hypothesis]. Expected if true: [pattern]. Found: [N rows — failing upstream target/endpoint from the row, e.g. service, host:port, or DNS name]. Why: [bounded cause, ≤1–2 steps from the row — failing upstream + failure mode]. Verdict: confirms | refutes | inconclusive — who/what is blocked."
+        ${NO_RAW_SENSITIVE_VALUES_RULE}
+      `
     ),
   confirmed: z
     .boolean()
     .optional()
     .describe(
-      'Whether this signal actively confirms the failure hypothesis. ' +
-        'Omit when the signal is unverified or non-confirming — never set to false.'
-    ),
+      'Whether this signal actively confirms the failure hypothesis. Omit when the signal is unverified or non-confirming — never set to false.'
+    )
+    .default(false),
   collected_at: z.iso
-    .datetime()
+    .datetime({ offset: true })
     .optional()
     .describe('ISO timestamp when this signal was collected.'),
   evidence: signalEvidenceSchema
@@ -163,52 +156,12 @@ const signalBaseSchema = z.object({
 
 const detectionSignalSchema = signalBaseSchema.extend({
   type: z.literal('detection'),
-  metadata: z.object({
-    rule_uuid: z
-      .string()
-      .max(MAX_ID_LENGTH)
-      .optional()
-      .describe(
-        'UUID of the alerting rule that fired. Used to correlate signals with KI query rules.'
-      ),
-    rule_name: z
-      .string()
-      .max(MAX_TEXT_LENGTH)
-      .optional()
-      .describe('Human-readable name of the alerting rule.'),
-    detection_id: z
-      .string()
-      .max(MAX_ID_LENGTH)
-      .optional()
-      .describe('ID of the detection document. Used for traceability back to the source alert.'),
-    kind: z
-      .enum(['detection', 'quiet', 'handled'])
-      .optional()
-      .describe(
-        '"detection" = rule is actively firing; "quiet" = alert rate has returned to baseline.'
-      ),
-    change_point_type: z
-      .string()
-      .max(MAX_ID_LENGTH)
-      .optional()
-      .describe(
-        'Change point type detected by the alerting rule. ' +
-          '"spike" = sudden increase in alert volume (load surge, cascading failure, noisy rule); ' +
-          '"dip" = sudden decrease — often means the service went DOWN and stopped producing data, not a recovery; ' +
-          '"step_change" = sustained level shift (config change, new deployment, capacity change); ' +
-          '"trend_change" = gradual directional shift (growing workload, degrading performance, slow leak); ' +
-          '"distribution_change" = overall distribution shifted (mixed traffic pattern, deployment rollout); ' +
-          '"non_stationary" = no discrete change point but not stationary — gradual drift, chronic instability, weak signal; ' +
-          '"stationary" = no change point found — distribution stable, rule returned to normal, false positive, or noise.'
-      ),
-    p_value: z
-      .number()
-      .optional()
-      .describe(
-        'Statistical p-value for the change-point. Lower values indicate a stronger signal.'
-      ),
-    event_count: z.number().optional().describe('Number of events in the detection window.'),
-    alert_count: z.number().optional().describe('Number of alerts fired by this rule.'),
+  metadata: detectionSchema.omit({
+    '@timestamp': true,
+    alert_index: true,
+    workflow_execution_id: true,
+    processed: true,
+    stream_name: true,
   }),
 });
 
@@ -216,80 +169,160 @@ const detectionSignalSchema = signalBaseSchema.extend({
 export const signalEntrySchema = z.discriminatedUnion('type', [detectionSignalSchema]);
 export type SignalEntry = z.infer<typeof signalEntrySchema>;
 
+/** Domain severity values — what clients read and write. */
+export const severitySchema = z.enum(['critical', 'high', 'medium', 'low']).describe(dedent`
+    "critical" = the most severe outage. Any ONE qualifies independently: 
+      - a site-wide/global outage affecting most customers; 
+      - a user journey completely and unavoidably blocked for every customer who reaches that step (even if unrelated journeys remain up); 
+      - or confirmed severe PII, credential, or secret exposure. 
+    "high" = major, painful customer impact, such as a significant feature or journey being unavailable, but limited below critical scope.
+    "medium" = partial or less widespread degradation, or customer impact is not yet confirmed.
+    "low" = minor customer impact, recovery, noise, false alarm, or non-issue.
+  
+    Assess affected population, journey availability, duration, and spread. When uncertain between tiers, choose the lower one.
+  `);
+
+export type Severity = z.infer<typeof severitySchema>;
+
+/**
+ * Maps human-readable severity labels to prefixed strings that sort correctly
+ * as ES keywords. A numeric prefix guarantees alphabetic keyword sort yields
+ * the right severity order without a script. Sort `desc` to get critical first:
+ *   80-critical > 60-high > 40-medium > 20-low
+ */
+export const SEVERITY_SORT_MAP = {
+  low: '20-low',
+  medium: '40-medium',
+  high: '60-high',
+  critical: '80-critical',
+} as const satisfies Record<Severity, string>;
+
+export type StoredSeverity = (typeof SEVERITY_SORT_MAP)[Severity];
+
+/** Reverse map: stored keyword → domain label. */
+const STORED_TO_DOMAIN = Object.fromEntries(
+  Object.entries(SEVERITY_SORT_MAP).map(([domain, stored]) => [stored, domain])
+) as Record<StoredSeverity, Severity>;
+
+/** Convert a stored sortable severity back to its human-readable label. Falls back to `"low"` for unrecognised values. */
+export const fromStoredSeverity = (stored: string): Severity =>
+  STORED_TO_DOMAIN[stored as StoredSeverity] ?? 'low';
+
+/**
+ * Encodes domain severity (`"high"`) into its sortable ES keyword form (`"60-high"`).
+ * Idempotent — also accepts already-stored input, so it's safe to re-parse a document that's
+ * already been encoded. Used at the write boundary — see `storedDiscoverySchema` /
+ * `storedEventSchema`.
+ */
+export const storedSeveritySchema = z
+  .preprocess(
+    (val): unknown =>
+      typeof val === 'string' && val in STORED_TO_DOMAIN
+        ? STORED_TO_DOMAIN[val as StoredSeverity]
+        : val,
+    severitySchema
+  )
+  .transform((s): StoredSeverity => SEVERITY_SORT_MAP[s]);
+
+/**
+ * Decodes a stored severity keyword (`"60-high"`) back to its domain label (`"high"`).
+ * Idempotent — also accepts already-domain values, so it's safe to apply defensively.
+ * Used at the read boundary to normalize raw ES documents into domain objects.
+ */
+export const severityFromStoredSchema = z.preprocess(
+  (val): unknown =>
+    typeof val === 'string' && val in STORED_TO_DOMAIN
+      ? STORED_TO_DOMAIN[val as StoredSeverity]
+      : val,
+  severitySchema
+);
+
 export const significantEventBaseSchema = z.object({
   event_id: z
     .string()
     .max(MAX_ID_LENGTH)
     .describe(
-      'Stable incident key shared across all documents that belong to the same event. ' +
-        'Auto-generated when creating a new event. ' +
-        'Must be preserved unchanged across all subsequent writes for the same incident.'
+      'Stable incident key shared across all documents that belong to the same event. Auto-generated when creating a new event. Must be preserved unchanged across all subsequent writes for the same incident.'
     ),
   title: z
     .string()
+    .max(MAX_TITLE_LENGTH)
     .describe(
-      'Stable incident identifier. Format: "<Service> — <component>: <symptom>". ' +
-        'Component = affected subsystem (e.g. "write API"); symptom = failure mode (e.g. "connection refused"). ' +
-        'Must be specific enough that no two different incidents could share it. ' +
-        'No IPs, counts, or measurements.'
-    )
-    .max(MAX_TITLE_LENGTH),
+      dedent`
+      Stable incident label. Format: "<Affected flow or service> — <failure domain>".
+      Preserve it verbatim across continuation and recovery. Exclude IPs, counts, measurements, current-cycle details, and state or tense words (e.g. "continues", "detected", "active", "resolved").'
+      
+      Example: "Auth service — login endpoint connection refused".
+    `
+    ),
+  symptom_hypothesis: z
+    .string()
+    .max(MAX_TEXT_LENGTH)
+    .optional()
+    .describe(
+      dedent`
+        Provisional, evidence-grounded explanation of the observed failure. In one sentence, name the affected flow or entity, observed symptom, and best-supported mechanism. 
+       
+        Reflect uncertainty without presenting the hypothesis as a confirmed root cause.
+
+        ${NO_RAW_SENSITIVE_VALUES_RULE}
+        `
+    ),
   summary: z
     .string()
     .max(MAX_TEXT_LENGTH)
     .describe(
-      'Self-contained incident brief. Four elements in order: ' +
-        '(1) service + operator-visible symptom — what the user experiences; ' +
-        '(2) who is affected and blast radius — name the exposed path when blast_radius has dependency entries; ' +
-        '(3) magnitude + recovery — error rate/count, onset time, recovering or stable; ' +
-        '(4) most time-sensitive on-call action. ' +
-        'Format: "{Service}: {symptom}. {Who/blast radius}. {Magnitude, onset, recovery}. {Most urgent action}."'
+      dedent`
+        Objective, self-contained account of the observed state and potential impact. Include:
+          (1) the evidence-backed failure; 
+          (2) the affected flow and potential impact supported by signals or blast_radius;
+          (3) magnitude, onset, and current or recovery state when known.
+          
+        Do not include recommendations, next actions, urgency language, or unsupported impact claims.
+        ${NO_RAW_SENSITIVE_VALUES_RULE}
+      `
     ),
-  // 4-level enum aligned with Elastic Incident Management; replaces `criticality` (0–100 int)
-  severity: z
-    .enum(['critical', 'high', 'medium', 'low'])
-    .describe(
-      '"critical" = core user journey broken or PII/credentials confirmed in logs — page immediately; ' +
-        '"high" = significant feature unavailable, no workaround — respond within the hour; ' +
-        '"medium" = partial degradation, stable workarounds — schedule a fix; ' +
-        '"low" = low-impact, noise, or confirmed false alarm — monitor.'
-    ),
+  // 4-level enum aligned with Elastic Incident Management; replaces `criticality` (0–100 int).
+  // Domain form (`"high"`) — the canonical type for API/application code. Encoded to a sortable
+  // ES keyword (`"60-high"`) only at the storage boundary; see `storedDiscoverySchema` /
+  // `storedEventSchema`, which decode it back on read.
+  severity: severitySchema,
   confidence: z
     .number()
     .min(0)
     .max(1)
     .describe(
-      'Root-cause correctness 0.0–1.0 float. ' +
-        'Higher values reflect stronger evidence grounding and more corroboration. ' +
+      'Symptom-hypothesis correctness 0.0–1.0 float. Higher values reflect stronger evidence grounding and more corroboration. ' +
         'causal_features ceiling: cap at 0.65 when causal_features is empty (applies to open status only).'
     ),
-  stream_names: z.array(z.string().max(MAX_STREAM_NAME_LENGTH)).max(100),
+  stream_names: z
+    .array(z.string().max(MAX_ID_LENGTH))
+    .max(MAX_ARRAY_LENGTH)
+    .describe('Data streams associated with this event.'),
 
-  // entities that are considered to be the root cause of the incident
+  // entities that may contribute to the incident
   causal_features: z
     .array(causalFeatureSchema)
     .optional()
     .describe(
-      'Knowledge Indicator features identified as root causes of this incident. ' +
-        'These are the entities the SRE must act on to stop the incident. ' +
+      'Knowledge Indicator features identified as candidate causal entities. They provide topology context but do not establish a root cause without aligned signal evidence. ' +
         'Empty when no causal entities were identified.'
     ),
   // downstream scope of the incident
   blast_radius: z
     .array(blastRadiusEntrySchema)
+    .max(MAX_ARRAY_LENGTH)
     .optional()
     .describe(
-      'Scope of downstream impact beyond the origin service. ' +
-        'A discriminated union covering affected dependency edges (type "dependency"), infrastructure components (type "infrastructure"), and other affected entities (type "entity").'
+      'Scope of downstream impact beyond the origin service. A discriminated union covering affected dependency edges (type "dependency"), infrastructure components (type "infrastructure"), and other affected entities (type "entity").'
     ),
   // extensible signal union
   signals: z
     .array(signalEntrySchema)
+    .max(MAX_ARRAY_LENGTH)
     .optional()
     .describe(
-      'Evidence signals associated with this incident record. ' +
-        'Each entry represents one alerting rule associated with this event. ' +
-        'Currently only type "detection" is supported; additional types are reserved for future use.'
+      'Evidence signals associated with this incident record. Each entry represents one alerting rule associated with this event. '
     ),
   // traceability
   workflow_execution_id: z
@@ -297,8 +330,7 @@ export const significantEventBaseSchema = z.object({
     .max(MAX_ID_LENGTH)
     .optional()
     .describe(
-      'ID of the workflow execution that produced this write; omit when ' +
-        'the write did not originate from a workflow execution.'
+      'ID of the workflow execution that produced this write; omit when the write did not originate from a workflow execution.'
     ),
   conversation_id: z
     .string()

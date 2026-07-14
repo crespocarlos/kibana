@@ -117,14 +117,6 @@ steps:
               order: asc
               missing: '_last'
               unmapped_type: double
-        _source:
-          includes:
-            - detection_id
-            - rule_name
-            - rule_uuid
-            - stream_name
-            - change_point_type
-            - p_value
         query:
           bool:
             filter:

@@ -11,9 +11,7 @@ import { evidenceCollectionEvaluator } from './evidence_collection';
 const detectionSignal = (ruleUuid: string, ruleName?: string, hasEvidence = true): SignalEntry => ({
   type: 'detection',
   description: 'Testing: something. Expected: error. Found: 1 row. Verdict: confirms.',
-  ...(hasEvidence
-    ? { evidence: { esql_query: 'FROM logs | LIMIT 1', result: 'found', row_count: 1 } }
-    : {}),
+  ...(hasEvidence ? { evidence: { esql_query: 'FROM logs | LIMIT 1', result: 'found' } } : {}),
   metadata: { kind: 'detection', rule_uuid: ruleUuid, rule_name: ruleName },
 });
 

@@ -61,6 +61,7 @@ describe('event_create tool', () => {
       tool as never,
       {
         title: 'T',
+        symptom_hypothesis: 'Requests fail because the upstream dependency is unavailable.',
         summary: 'S',
         stream_names: ['logs.a'],
         severity: 'high',

@@ -142,7 +142,7 @@ describe('createSignificantEventAttachmentType', () => {
     });
 
     expect(formatSignificantEventAsText(event)).toContain('Payment outage');
-    expect(formatSignificantEventAsText(event)).toContain('Payments are failing.');
+    expect(formatSignificantEventAsText(event)).toContain('Payment gateway timeout.');
     expect(type.isReadonly).toBe(true);
     expect(type.getTools?.()).toEqual([]);
     expect(type.getAgentDescription?.()).toContain('significant event attachment');

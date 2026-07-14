@@ -9,6 +9,7 @@ import type { IDataStreamClient } from '@kbn/data-streams';
 import { esql, type ComposerSortShorthand } from '@elastic/esql';
 import type { ESQLAstExpression } from '@elastic/esql/types';
 import type { ElasticsearchClient } from '@kbn/core/server';
+import { severityFromStoredSchema, type StoredSeverity } from '@kbn/significant-events-schema';
 import {
   type BulkCreateOptions,
   type CommonSearchOptions,
@@ -34,18 +35,25 @@ import {
 } from '../latest_source_query';
 import {
   EVENTS_DATA_STREAM,
+  storedEventSchema,
   type SignificantEvent,
   type StoredEvent,
   type eventsMappings,
 } from './data_stream';
 import { FIELD_EVENT_UUID, FIELD_EVENT_ID } from '../field_names';
-import { enrichFromEvidences } from '../utils';
-import { fromSortableSeverity } from '../severity';
 
-const normalizeSeverity = (doc: SignificantEvent): SignificantEvent =>
-  doc.severity
-    ? { ...doc, severity: fromSortableSeverity(doc.severity) as SignificantEvent['severity'] }
-    : doc;
+/**
+ * Shape of a raw ES document before decoding — identical to `SignificantEvent` except
+ * `severity`, which is stored as a sortable keyword (e.g. `"80-critical"`) rather than the
+ * domain enum.
+ */
+type RawEventRow = Omit<SignificantEvent, 'severity'> & { severity: StoredSeverity };
+
+/** Decode a raw ES document's stored severity keyword (e.g. `"80-critical"`) into domain form. */
+const decodeSeverity = (doc: RawEventRow): SignificantEvent => ({
+  ...doc,
+  severity: severityFromStoredSchema.parse(doc.severity),
+});
 
 export type EventDataStreamClient = IDataStreamClient<typeof eventsMappings, StoredEvent>;
 
@@ -101,7 +109,7 @@ export class EventClient {
   ) {
     const response = await this.clients.dataStreamClient.create({
       space: this.clients.space,
-      documents: events,
+      documents: events.map((e) => storedEventSchema.parse(e)),
       refresh,
     });
 
@@ -113,20 +121,20 @@ export class EventClient {
   }
 
   async findLatest(options: CommonSearchOptions = {}): Promise<{ hits: SignificantEvent[] }> {
-    const result = await runLatestSourceEsqlQuery<SignificantEvent>({
+    const result = await runLatestSourceEsqlQuery<RawEventRow>({
       esClient: this.clients.esClient,
       space: this.clients.space,
       options,
       index: EVENTS_DATA_STREAM,
       groupBy: FIELD_EVENT_ID,
     });
-    return { hits: result.hits.map(normalizeSeverity) };
+    return { hits: result.hits.map(decodeSeverity) };
   }
 
   async findLatestPaginated(
     options: EventsPaginatedSearchOptions = {}
   ): Promise<PaginatedResponse<SignificantEvent>> {
-    const result = await runPaginatedLatestSourceEsqlQuery<SignificantEvent>({
+    const result = await runPaginatedLatestSourceEsqlQuery<RawEventRow>({
       esClient: this.clients.esClient,
       space: this.clients.space,
       options,
@@ -135,7 +143,7 @@ export class EventClient {
       groupBy: FIELD_EVENT_ID,
     });
 
-    return { ...result, hits: result.hits.map(enrichFromEvidences).map(normalizeSeverity) };
+    return { ...result, hits: result.hits.map(decodeSeverity) };
   }
 
   async findLatestByCurrentStatePaginated(
@@ -180,7 +188,7 @@ export class EventClient {
         if (isIndexNotFoundError(error)) return null;
         throw error;
       }),
-      executeAndDecodeSource<SignificantEvent>(this.clients.esClient, dataQuery),
+      executeAndDecodeSource<RawEventRow>(this.clients.esClient, dataQuery),
     ]);
 
     const total = countResponse
@@ -190,7 +198,7 @@ export class EventClient {
     const paginatedHits = start >= hits.length ? [] : hits.slice(start, start + perPage);
 
     return {
-      hits: paginatedHits.map(enrichFromEvidences).map(normalizeSeverity),
+      hits: paginatedHits.map(decodeSeverity),
       page,
       perPage,
       total,
@@ -198,30 +206,32 @@ export class EventClient {
   }
 
   async findByEventUuid(id: string): Promise<{ hits: SignificantEvent[] }> {
-    return runFindByIdEsqlQuery<SignificantEvent>({
+    const result = await runFindByIdEsqlQuery<RawEventRow>({
       esClient: this.clients.esClient,
       space: this.clients.space,
       index: EVENTS_DATA_STREAM,
       idField: FIELD_EVENT_UUID,
       idValue: id,
     });
+    return { hits: result.hits.map(decodeSeverity) };
   }
 
   async findByEventId(eventId: string): Promise<{ hits: SignificantEvent[] }> {
-    return runFindByIdEsqlQuery<SignificantEvent>({
+    const result = await runFindByIdEsqlQuery<RawEventRow>({
       esClient: this.clients.esClient,
       space: this.clients.space,
       index: EVENTS_DATA_STREAM,
       idField: FIELD_EVENT_ID,
       idValue: eventId,
     });
+    return { hits: result.hits.map(decodeSeverity) };
   }
 
   async findLatestByEventIds(eventIds: string[]): Promise<Map<string, SignificantEvent>> {
     if (!eventIds.length) return new Map();
     const idLiterals = eventIds.map((s) => esql.str(s));
     const where = esql.exp`${esql.col(FIELD_EVENT_ID)} IN (${idLiterals})`;
-    const { hits } = await runPaginatedLatestSourceEsqlQuery<SignificantEvent>({
+    const { hits } = await runPaginatedLatestSourceEsqlQuery<RawEventRow>({
       esClient: this.clients.esClient,
       space: this.clients.space,
       options: { perPage: eventIds.length },
@@ -231,7 +241,7 @@ export class EventClient {
     });
     const map = new Map<string, SignificantEvent>();
     for (const event of hits) {
-      if (event.event_id) map.set(event.event_id, normalizeSeverity(event));
+      if (event.event_id) map.set(event.event_id, decodeSeverity(event));
     }
     return map;
   }
