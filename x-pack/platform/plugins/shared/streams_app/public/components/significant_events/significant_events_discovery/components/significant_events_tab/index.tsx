@@ -209,7 +209,10 @@ const columns: Array<EuiBasicTableColumn<SignificantEvent>> = [
 ];
 
 const extractCheckedKeys = (options: EuiSelectableOption[]): string[] =>
-  options.filter((opt) => opt.checked === 'on').map((opt) => opt.key ?? opt.label);
+  options.filter((option) => option.checked === 'on').map((option) => option.key ?? option.label);
+
+const isSignificantEventStatus = (value: string): value is SignificantEventStatus =>
+  SIGNIFICANT_EVENT_STATUS_OPTIONS.some((status) => status === value);
 
 const buildSelectableOptions = <T extends string>({
   values,
@@ -231,7 +234,7 @@ export const SigEventsTab = () => {
 
   const { filteredStreams } = useKiGeneration();
   // Closed events are hidden by default; users can opt back in via the Status filter.
-  const [statusFilter, setStatusFilter] = useState<string[]>(() =>
+  const [statusFilter, setStatusFilter] = useState<SignificantEventStatus[]>(() =>
     SIGNIFICANT_EVENT_STATUS_OPTIONS.filter((status) => status === 'open')
   );
   const [streamFilter, setStreamFilter] = useState<string[]>([]);
@@ -259,7 +262,8 @@ export const SigEventsTab = () => {
   const [selectedEvent, setSelectedEvent] = useState<SignificantEvent | undefined>();
 
   const onStatusChange = useCallback(
-    (opts: EuiSelectableOption[]) => setStatusFilter(extractCheckedKeys(opts)),
+    (opts: EuiSelectableOption[]) =>
+      setStatusFilter(extractCheckedKeys(opts).filter(isSignificantEventStatus)),
     []
   );
 
