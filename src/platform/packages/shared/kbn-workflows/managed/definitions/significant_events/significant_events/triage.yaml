@@ -47,6 +47,7 @@ consts:
   KIND_DISCOVERY: 'discovery'
   KIND_HANDLED: 'handled'
   SCAN_BATCH_SIZE: 100
+  INVESTIGATABLE_SEVERITIES: ['critical', 'high']
 steps:
   # Copy workflow.spaceId into variables so ES body Liquid expressions can reference it.
   - name: set_space_vars
@@ -220,46 +221,46 @@ steps:
       and steps.store_significant_events.output.significant_events != null }}
     foreach: '${{ steps.store_significant_events.output.significant_events }}'
     steps:
-      # Look up the full discovery finding for this open event so trigger_investigation
-      # below can build the `message` the investigation workflow requires. The judge's
-      # structured output only echoes event_id/event_uuid/status/written; the finding's
-      # title/summary/root_cause/stream_names still live in collect_discoveries' output.
-      - name: resolve_promoted_finding
-        type: data.set
-        if: '${{ foreach.item.status == "open" and foreach.item.severity contains ("critical" | "high") and foreach.item.written }}'
-        with:
-          finding: >-
-            ${{ steps.collect_discoveries.output.findings
-              | where: 'event_id', foreach.item.event_id
-              | first
-              | default: {} }}
+      - name: gate_open_events
+        type: if
+        condition: '${{ foreach.item.status == "open" and consts.INVESTIGATABLE_SEVERITIES contains foreach.item.severity and foreach.item.written }}'
+        steps:
+          # Look up the full discovery finding for this open event so trigger_investigation
+          # below can build the `message` the investigation workflow requires. The judge's
+          # structured output only echoes event_id/event_uuid/status/written; the finding's
+          # title/summary/root_cause/stream_names still live in collect_discoveries' output.
+          - name: resolve_promoted_finding
+            type: data.set
+            with:
+              finding: >-
+                ${{ steps.collect_discoveries.output.findings
+                  | where: 'event_id', foreach.item.event_id
+                  | first
+                  | default: {} }}
 
-      # Fire-and-forget a root-cause investigation for each newly-promoted event.
-      # Async so triage (30m) never blocks on the investigation (60m).
-      # concurrency_key per event_id ensures a re-promotion cancels the prior in-progress
-      # investigation rather than queuing alongside it (cancel-in-progress / max:1 in the
-      # investigation workflow).
-      - name: trigger_investigation
-        type: workflow.executeAsync
-        if: '${{ foreach.item.status == "open" and foreach.item.severity contains ("critical" | "high") and foreach.item.written }}'
-        with:
-          workflow-id: 'system-significant-events-investigation'
-          inputs:
-            message: |
-              {{ steps.resolve_promoted_finding.output.finding.title }}
+          # Fire-and-forget a root-cause investigation for each newly-promoted event.
+          # Async so triage (30m) never blocks on the investigation (60m).
+          # concurrency_key per event_id ensures a re-promotion cancels the prior in-progress
+          # investigation rather than queuing alongside it (cancel-in-progress / max:1 in the
+          # investigation workflow).
+          - name: trigger_investigation
+            type: workflow.executeAsync
+            with:
+              workflow-id: 'system-significant-events-investigation'
+              inputs:
+                message: |
+                  {{ steps.resolve_promoted_finding.output.finding.title }}
 
-              {{ steps.resolve_promoted_finding.output.finding.summary }}
+                  {{ steps.resolve_promoted_finding.output.finding.summary }}
 
-              Probable cause: {{ steps.resolve_promoted_finding.output.finding.symptom_hypothesis }}
-            stream_names: '${{ steps.resolve_promoted_finding.output.finding.stream_names | default: [] }}'
-            concurrency_key: '{{ foreach.item.event_id }}'
-            context:
-              source: 'significant_event'
-              event_uuid: '{{ foreach.item.event_uuid }}'
-              event_id: '{{ foreach.item.event_id }}'
-              status: '{{ foreach.item.status }}'
-        on-failure:
-          continue: true
+                  Probable cause: {{ steps.resolve_promoted_finding.output.finding.symptom_hypothesis }}
+                stream_names: '${{ steps.resolve_promoted_finding.output.finding.stream_names | default: [] }}'
+                concurrency_key: '{{ foreach.item.event_id }}'
+                context:
+                  source: 'significant_event'
+                  event_uuid: '{{ foreach.item.event_uuid }}'
+                  event_id: '{{ foreach.item.event_id }}'
+                  status: '{{ foreach.item.status }}'
 
   - name: output_result
     type: workflow.output
