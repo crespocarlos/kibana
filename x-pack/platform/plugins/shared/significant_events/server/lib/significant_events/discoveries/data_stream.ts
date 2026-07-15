@@ -52,6 +52,7 @@ export type { Discovery };
  * - `stream_names` is derived from `signals[].stream_name` when not provided
  */
 export const storedDiscoverySchema = discoverySchema
+  .omit({ processed: true })
   .extend({ severity: storedSeveritySchema })
   .transform((doc) => ({
     ...doc,
