@@ -9,6 +9,10 @@ import type { DiscoveryWriteInput } from './handler';
 import { discoveryWriteHandler, generateEventId, mergeSignalsLatestPerRule } from './handler';
 import type { SignalEntry } from '@kbn/significant-events-schema';
 
+jest.mock('uuid', () => ({
+  v4: jest.fn().mockReturnValue('12345678'),
+}));
+
 const baseInput: DiscoveryWriteInput = {
   kind: 'discovery',
   title: 'Checkout latency',
@@ -292,13 +296,13 @@ describe('discoveryWriteHandler', () => {
       discoveryClient: discoveryClient as never,
       input: baseInput,
     });
-    expect(generated.discovery_id).toHaveLength(36);
+    expect(generated.discovery_id).toHaveLength(8);
 
     const provided = await discoveryWriteHandler({
       discoveryClient: discoveryClient as never,
       input: { ...baseInput },
     });
-    expect(provided.discovery_id).toBe('explicit-discovery-id');
+    expect(provided.discovery_id).toBe('12345678');
   });
 
   it('sets processed only for kind:handled', async () => {

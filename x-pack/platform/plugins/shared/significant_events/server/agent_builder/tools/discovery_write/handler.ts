@@ -63,8 +63,9 @@ const extractRuleUuids = (signals: SignalEntry[] | undefined): string[] => {
  * event rather than requiring a separate fingerprint-matching dedup pass.
  */
 export const generateEventId = (streamNames: string[], ruleUuids: string[]): string => {
+  const suffix = uuidv4().replace(/-/g, '').slice(0, 8);
   const primaryStream = [...streamNames].sort()[0] ?? 'unknown';
-  const basis = [primaryStream, ...[...ruleUuids].sort()].join('|');
+  const basis = [primaryStream, ...[...ruleUuids].sort(), suffix].join('|');
   return createHash('sha256').update(basis).digest('hex').slice(0, 16);
 };
 

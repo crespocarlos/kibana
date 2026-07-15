@@ -67,12 +67,12 @@ steps:
       body:
         size: '${{ consts.SCAN_BATCH_SIZE }}'
         sort:
+          - '@timestamp':
+              order: desc
           - severity:
               order: desc
               missing: '_last'
               unmapped_type: keyword
-          - '@timestamp':
-              order: desc
         collapse:
           field: event_id
         _source:

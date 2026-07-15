@@ -131,7 +131,9 @@ const signalBaseSchema = z.object({
     .max(MAX_TEXT_LENGTH)
     .describe(
       dedent`
-        Human-readable account of what was observed and what it means. Detection signals: "Testing: [hypothesis]. Expected if true: [pattern]. Found: [N rows — failing upstream target/endpoint from the row, e.g. service, host:port, or DNS name]. Why: [bounded cause, ≤1–2 steps from the row — failing upstream + failure mode]. Verdict: confirms | refutes | inconclusive — who/what is blocked."
+        Human-readable account of what was observed and what it means. Required format for detection signals — do not use alternative shapes: 
+        
+        "Testing: [hypothesis]. Expected if true: [pattern]. Found: [N rows — failing upstream target/endpoint from the row, e.g. service, host:port, or DNS name]. Why: [causal link visible in the row — name the failing upstream and how it is failing, e.g. "api-service cannot reach db-primary:5432 — connection refused"; do not infer beyond what the row shows]. Verdict: confirms | refutes | inconclusive — who/what is blocked."
         ${NO_RAW_SENSITIVE_VALUES_RULE}
       `
     ),
@@ -255,15 +257,14 @@ export const significantEventBaseSchema = z.object({
       Example: "Auth service — login endpoint connection refused".
     `
     ),
+  // hypothesis of the observed failure. helps agents to understand and group signals that share the same symptom class.
   symptom_hypothesis: z
     .string()
     .max(MAX_TEXT_LENGTH)
     .optional()
     .describe(
       dedent`
-        Provisional, evidence-grounded explanation of the observed failure. In one sentence, name the affected flow or entity, observed symptom, and best-supported mechanism. 
-       
-        Reflect uncertainty without presenting the hypothesis as a confirmed root cause.
+        Provisional, evidence-grounded explanation of the observed signals. In one sentence, name the affected flow or entity, observed symptom, and best-supported mechanism. 
 
         ${NO_RAW_SENSITIVE_VALUES_RULE}
         `
@@ -278,14 +279,11 @@ export const significantEventBaseSchema = z.object({
           (2) the affected flow and potential impact supported by signals or blast_radius;
           (3) magnitude, onset, and current or recovery state when known.
           
-        Do not include recommendations, next actions, urgency language, or unsupported impact claims.
+        Do not include actions, urgency language, or unsupported impact claims.
         ${NO_RAW_SENSITIVE_VALUES_RULE}
       `
     ),
-  // 4-level enum aligned with Elastic Incident Management; replaces `criticality` (0–100 int).
-  // Domain form (`"high"`) — the canonical type for API/application code. Encoded to a sortable
-  // ES keyword (`"60-high"`) only at the storage boundary; see `storedDiscoverySchema` /
-  // `storedEventSchema`, which decode it back on read.
+  // 4-level enum aligned with Elastic Incident Management;
   severity: severitySchema,
   confidence: z
     .number()

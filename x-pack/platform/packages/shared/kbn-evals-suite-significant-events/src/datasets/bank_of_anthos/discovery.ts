@@ -37,6 +37,7 @@ const LEDGER_DB_CASCADE_DISCOVERY: Partial<Discovery> = {
     'balancereader, transactionhistory, and ledgerwriter are all returning connection-refused errors to the frontend, with concurrent cache errors in balancereader/transactionhistory and a SQL connection failure (SQLState 08001) in transactionhistory. Users cannot view account balances, cannot view transaction history, and cannot submit payments or deposits. Onset ~14:30 UTC with no sign of recovery.',
   severity: 'critical',
   confidence: 0.82,
+  stream_names: ['logs'],
   signals: [
     {
       type: 'detection',

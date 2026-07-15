@@ -16,6 +16,7 @@ import {
   EuiFlexGroup,
   EuiFlexItem,
   EuiText,
+  EuiToolTip,
 } from '@elastic/eui';
 import type { EuiBasicTableColumn, EuiSelectableOption } from '@elastic/eui';
 import { css } from '@emotion/react';
@@ -57,19 +58,21 @@ const CLOSE_EVENT_ARIA_LABEL = i18n.translate(
 const RunInvestigationCell = ({ event }: { event: SignificantEvent }) => {
   const { triggerInvestigation, isTriggering } = useTriggerInvestigation();
   return (
-    <EuiButtonIcon
-      iconType="inspect"
-      aria-label={RUN_ARIA_LABEL}
-      onClick={(e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (!isTriggering) triggerInvestigation(event.event_uuid);
-      }}
-      isDisabled={isTriggering}
-      isLoading={isTriggering}
-      size="s"
-      color="primary"
-      data-test-subj="sigEventRunInvestigationIconButton"
-    />
+    <EuiToolTip content={RUN_ARIA_LABEL} disableScreenReaderOutput>
+      <EuiButtonIcon
+        iconType="inspect"
+        aria-label={RUN_ARIA_LABEL}
+        onClick={(e: React.MouseEvent) => {
+          e.stopPropagation();
+          if (!isTriggering) triggerInvestigation(event.event_uuid);
+        }}
+        isDisabled={isTriggering}
+        isLoading={isTriggering}
+        size="s"
+        color="primary"
+        data-test-subj="sigEventRunInvestigationIconButton"
+      />
+    </EuiToolTip>
   );
 };
 
@@ -81,19 +84,21 @@ const CloseEventCell = ({ event }: { event: SignificantEvent }) => {
   }
 
   return (
-    <EuiButtonIcon
-      iconType="cross"
-      aria-label={CLOSE_EVENT_ARIA_LABEL}
-      onClick={(e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (!isUpdating) updateEventStatus({ eventUuid: event.event_uuid, status: 'closed' });
-      }}
-      isDisabled={isUpdating}
-      isLoading={isUpdating}
-      size="s"
-      color="danger"
-      data-test-subj="sigEventCloseIconButton"
-    />
+    <EuiToolTip content={CLOSE_EVENT_ARIA_LABEL} disableScreenReaderOutput>
+      <EuiButtonIcon
+        iconType="cross"
+        aria-label={CLOSE_EVENT_ARIA_LABEL}
+        onClick={(e: React.MouseEvent) => {
+          e.stopPropagation();
+          if (!isUpdating) updateEventStatus({ eventUuid: event.event_uuid, status: 'closed' });
+        }}
+        isDisabled={isUpdating}
+        isLoading={isUpdating}
+        size="s"
+        color="danger"
+        data-test-subj="sigEventCloseIconButton"
+      />
+    </EuiToolTip>
   );
 };
 
@@ -227,7 +232,7 @@ export const SigEventsTab = () => {
   const { filteredStreams } = useKiGeneration();
   // Closed events are hidden by default; users can opt back in via the Status filter.
   const [statusFilter, setStatusFilter] = useState<string[]>(() =>
-    SIGNIFICANT_EVENT_STATUS_OPTIONS.filter((status) => status !== 'closed')
+    SIGNIFICANT_EVENT_STATUS_OPTIONS.filter((status) => status === 'open')
   );
   const [streamFilter, setStreamFilter] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
