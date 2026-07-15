@@ -25,7 +25,7 @@ import type { PaginatedResponse } from '../../../lib/significant_events/query_ut
 import { createServerRoute } from '../../create_server_route';
 import { assertSignificantEventsAccess } from '../../utils/assert_significant_events_access';
 
-const toArray = (val: string | string[] | undefined): string[] | undefined =>
+const toArray = <T extends string>(val: T | T[] | undefined): T[] | undefined =>
   val === undefined ? undefined : Array.isArray(val) ? val : [val];
 
 // Detections carry `change_point_type`; processed-marker docs do not.
@@ -74,7 +74,9 @@ const eventsSearchRoute = createServerRoute({
       to: z.iso.datetime().optional(),
       page: z.coerce.number().int().min(1).optional(),
       perPage: z.coerce.number().int().min(1).max(1000).optional(),
-      status: z.union([z.string().max(50), z.array(z.string().max(50)).max(50)]).optional(),
+      status: z
+        .union([significantEventStatusSchema, z.array(significantEventStatusSchema).max(3)])
+        .optional(),
       stream: z.union([z.string().max(255), z.array(z.string().max(255)).max(50)]).optional(),
       search: z.string().max(500).optional(),
     }),
@@ -91,7 +93,7 @@ const eventsSearchRoute = createServerRoute({
 
     const { status, stream, search, ...rest } = params.query;
 
-    return getEventClient().findLatestPaginated({
+    return getEventClient().findLatestByCurrentStatePaginated({
       ...rest,
       status: toArray(status),
       stream: toArray(stream),

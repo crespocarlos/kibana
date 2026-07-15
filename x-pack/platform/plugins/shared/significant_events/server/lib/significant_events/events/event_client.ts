@@ -20,13 +20,11 @@ import {
 import {
   andWhere,
   applyTimeRange,
-  esqlToObjects,
-  executeAndDecodeSource,
+  executeCountQuery,
   fromIndexForSpace,
   inFilter,
-  isIndexNotFoundError,
+  executeEsqlQuery,
   pickLatestPerGroup,
-  queryEsql,
   runLatestSourceEsqlQuery,
   runPaginatedLatestSourceEsqlQuery,
   runFindByIdEsqlQuery,
@@ -57,23 +55,13 @@ const decodeSeverity = (doc: RawEventRow): SignificantEvent => ({
 
 export type EventDataStreamClient = IDataStreamClient<typeof eventsMappings, StoredEvent>;
 
-const SIGNIFICANT_EVENT_OPEN_STATUS = 'open' as const;
-
 export interface EventsFilterOptions {
-  status?: string[];
+  status?: SignificantEvent['status'][];
   stream?: string[];
   search?: string;
 }
 
 export interface EventsPaginatedSearchOptions extends PaginatedSearchOptions, EventsFilterOptions {}
-
-export type EventStateFilter = 'open' | 'closed';
-
-export interface EventsCurrentStatePaginatedSearchOptions extends PaginatedSearchOptions {
-  state: EventStateFilter;
-  stream?: string[];
-  search?: string;
-}
 
 export class EventClient {
   constructor(
@@ -147,15 +135,14 @@ export class EventClient {
   }
 
   async findLatestByCurrentStatePaginated(
-    options: EventsCurrentStatePaginatedSearchOptions
+    options: EventsPaginatedSearchOptions
   ): Promise<PaginatedResponse<SignificantEvent>> {
     const page = options.page ?? 1;
     const perPage = options.perPage ?? 25;
 
-    const stateWhere =
-      options.state === 'open'
-        ? esql.exp`${esql.col('status')} == ${esql.str(SIGNIFICANT_EVENT_OPEN_STATUS)}`
-        : esql.exp`${esql.col('status')} != ${esql.str(SIGNIFICANT_EVENT_OPEN_STATUS)}`;
+    const statusWhere = options.status
+      ? esql.exp`${esql.col('status')} IN (${options.status.map((s) => esql.str(s))})`
+      : undefined;
 
     // ComposerQuery is mutable — each chaining call mutates the same object and returns `this`.
     // Build the base query twice via a factory so the data branch and count branch get independent
@@ -173,7 +160,7 @@ export class EventClient {
       // stream + search filters run pre-latest; state filter runs post-latest
       q = withWhere(q, this.buildWhere({ stream: options.stream, search: options.search }));
       q = pickLatestPerGroup(q, FIELD_EVENT_ID);
-      q = withWhere(q, stateWhere);
+      q = withWhere(q, statusWhere);
       return q;
     };
 
@@ -183,17 +170,11 @@ export class EventClient {
       .keep('_source');
     const countQuery = buildBase().pipe`STATS total = COUNT(*)`.keep('total');
 
-    const [countResponse, { hits }] = await Promise.all([
-      queryEsql({ esClient: this.clients.esClient, query: countQuery }).catch((error) => {
-        if (isIndexNotFoundError(error)) return null;
-        throw error;
-      }),
-      executeAndDecodeSource<RawEventRow>(this.clients.esClient, dataQuery),
+    const [total, hits] = await Promise.all([
+      executeCountQuery({ esClient: this.clients.esClient, query: countQuery }),
+      executeEsqlQuery<RawEventRow>({ esClient: this.clients.esClient, query: dataQuery }),
     ]);
 
-    const total = countResponse
-      ? esqlToObjects<{ total: number }>(countResponse)[0]?.total ?? 0
-      : 0;
     const start = (page - 1) * perPage;
     const paginatedHits = start >= hits.length ? [] : hits.slice(start, start + perPage);
 

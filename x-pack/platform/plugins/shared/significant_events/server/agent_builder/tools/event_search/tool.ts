@@ -13,6 +13,7 @@ import { i18n } from '@kbn/i18n';
 import { z } from '@kbn/zod/v4';
 import dedent from 'dedent';
 import type { StreamsServer } from '@kbn/streams-plugin/server/types';
+import { significantEventSchema } from '@kbn/significant-events-schema';
 import type { GetScopedClients } from '../../../routes/types';
 import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
 import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
@@ -21,39 +22,30 @@ import { searchEventsToolHandler } from './handler';
 
 export const SIGNIFICANT_EVENTS_SEARCH_EVENTS_TOOL_ID = platformSignificantEventsTools.searchEvent;
 
-const searchEventsSchema = z.object({
-  query: z
-    .string()
-    .optional()
-    .describe(
-      i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.query', {
-        defaultMessage:
-          'Optional substring search over the event title and summary fields. ' +
-          'Use it to narrow results to a known incident phrase or service name. ' +
-          'Matching is case-insensitive and not semantic — omit it when you want all events for a stream or state.',
-      })
-    ),
-  stream_names: z
-    .array(z.string())
-    .optional()
-    .describe(
-      i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.streamNames', {
-        defaultMessage:
-          'Optional list of stream names to scope the search. Omit to search across all streams.',
-      })
-    ),
-  state: z
-    .enum(['open', 'closed'])
-    .optional()
-    .describe(
-      i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.state', {
-        defaultMessage:
-          'Filters results by the latest status of each event. "open" returns active incidents; "closed" returns resolved or dismissed ones. Omit to return all.',
-      })
-    ),
-  page: z.number().int().min(1).optional().default(1),
-  per_page: z.number().int().min(1).max(100).optional().default(20),
-});
+const searchEventsSchema = significantEventSchema
+  .pick({
+    status: true,
+    stream_names: true,
+  })
+  .partial({
+    status: true,
+    stream_names: true,
+  })
+  .extend({
+    query: z
+      .string()
+      .optional()
+      .describe(
+        i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.query', {
+          defaultMessage:
+            'Optional substring search over the event title and summary fields. ' +
+            'Use it to narrow results to a known incident phrase or service name. ' +
+            'Matching is case-insensitive and not semantic — omit it when you want all events for a stream or state.',
+        })
+      ),
+    page: z.number().int().min(1).optional().default(1),
+    per_page: z.number().int().min(1).max(100).optional().default(20),
+  });
 
 export function createSearchEventsTool({
   getScopedClients,
@@ -102,7 +94,7 @@ export function createSearchEventsTool({
           result_count: data.total,
           has_query: toolParams.query !== undefined,
           has_stream_filter: (toolParams.stream_names?.length ?? 0) > 0,
-          state_filter: toolParams.state,
+          status_filter: toolParams.status,
         });
 
         return {
@@ -122,7 +114,7 @@ export function createSearchEventsTool({
           result_count: 0,
           has_query: toolParams.query !== undefined,
           has_stream_filter: (toolParams.stream_names?.length ?? 0) > 0,
-          state_filter: toolParams.state,
+          status_filter: toolParams.status,
           error_message: message,
         });
 

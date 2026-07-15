@@ -43,12 +43,16 @@ evaluate.describe(
     const activeDatasets = getActiveDatasets();
     const availableSnapshotsBySource = new Map<string, Set<string>>();
 
-    evaluate.beforeAll(async ({ esClient, apiServices, log }) => {
+    evaluate.beforeAll(async ({ esClient, kbnClient, apiServices, log }) => {
       // Agent availability is gated on this UI setting (cached per space); enable before any converse.
       await apiServices.core.settings({
         'feature_flags.overrides': {
           'streams.significantEventsAvailable': true,
         },
+      });
+
+      await kbnClient.uiSettings.update({
+        'observability:streamsEnableSignificantEvents': true,
       });
 
       log.info('Enabled significant events UI setting');

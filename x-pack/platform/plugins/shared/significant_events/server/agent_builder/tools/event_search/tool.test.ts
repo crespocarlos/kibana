@@ -72,7 +72,7 @@ describe('event_search tool', () => {
       result_count: 1,
       has_query: false,
       has_stream_filter: true,
-      state_filter: 'open',
+      status_filter: 'open',
     });
   });
 

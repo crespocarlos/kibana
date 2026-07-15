@@ -22,7 +22,7 @@ describe('searchEventsToolHandler', () => {
 
     const result = await searchEventsToolHandler({
       eventClient: eventClient as never,
-      params: { query: 'timeout', stream_names: ['logs.checkout'], state: 'open', page: 2 },
+      params: { query: 'timeout', stream_names: ['logs.checkout'], status: 'open', page: 2 },
     });
 
     expect(eventClient.findLatestByCurrentStatePaginated).toHaveBeenCalledWith({
@@ -41,7 +41,7 @@ describe('searchEventsToolHandler', () => {
 
     await searchEventsToolHandler({
       eventClient: eventClient as never,
-      params: { state: 'closed' },
+      params: { status: 'closed' },
     });
 
     expect(eventClient.findLatestByCurrentStatePaginated).toHaveBeenCalledWith({

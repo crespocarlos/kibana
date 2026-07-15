@@ -229,14 +229,13 @@ steps:
           # below can build the `message` the investigation workflow requires. The judge's
           # structured output only echoes event_id/event_uuid/status/written; the finding's
           # title/summary/root_cause/stream_names still live in collect_discoveries' output.
-          - name: resolve_promoted_finding
+          - name: resolve_open_events
             type: data.set
             with:
               finding: >-
                 ${{ steps.collect_discoveries.output.findings
                   | where: 'event_id', foreach.item.event_id
-                  | first
-                  | default: {} }}
+                  | first }}
 
           # Fire-and-forget a root-cause investigation for each newly-promoted event.
           # Async so triage (30m) never blocks on the investigation (60m).
@@ -249,12 +248,12 @@ steps:
               workflow-id: 'system-significant-events-investigation'
               inputs:
                 message: |
-                  {{ steps.resolve_promoted_finding.output.finding.title }}
+                  {{ steps.resolve_open_events.output.finding.title }}
 
-                  {{ steps.resolve_promoted_finding.output.finding.summary }}
+                  {{ steps.resolve_open_events.output.finding.summary }}
 
-                  Probable cause: {{ steps.resolve_promoted_finding.output.finding.symptom_hypothesis }}
-                stream_names: '${{ steps.resolve_promoted_finding.output.finding.stream_names | default: [] }}'
+                  Probable cause: {{ steps.resolve_open_events.output.finding.symptom_hypothesis }}
+                stream_names: '${{ steps.resolve_open_events.output.finding.stream_names | default: [] }}'
                 concurrency_key: '{{ foreach.item.event_id }}'
                 context:
                   source: 'significant_event'

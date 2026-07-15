@@ -197,6 +197,7 @@ Dispatch is simultaneous for all items in the batch — classify every item befo
 - Row-level queries: use `SORT @timestamp DESC | LIMIT 1` (not `ASC | LIMIT 1`) — retrieve the single most recent row for current-state assessment. Always a new `signals[]` entry, never merged with the input onset entry (see `<tools>`).
 - Time scoping: use the earliest `@timestamp` across all `signals[]` entries (not per-detection).
 - Retry on 0 rows + unknown schema: replace `body.text` with `message`.
+- Never modify `WHERE` clauses, field names, or `FROM`. Skip the query on execution failure.
 
 **Zero-result and stale-result interpretation** (applies to the active-episode path only)
 
@@ -241,7 +242,8 @@ Apply the `severity` field description in the `platform_sig_events_discovery_wri
 1. **Affected population** — establish whether impact is isolated, affects a customer cohort, or is global/most customers. Do not infer broad scope from one endpoint or error row alone.
 2. **Journey availability and workaround** — distinguish complete loss of a core journey from a significant feature failure or partial degradation, per those tier definitions.
 3. **Duration and spread** — use current-state checks, repeated detection windows, exposed dependencies, and affected services to determine persistence and expansion. Service count alone does not select a tier.
-4. **Sensitive data exposure** — an actual PII value, credential, or secret in a `confirmed: true` found row may independently qualify as critical. KI structural metadata (`sensitive_fields_observed`, schema fields, or annotations describing what a service may log) is not live exposure evidence. Do not inspect or mention it unless the discovery concerns sensitive-data exposure or a found row contains an actual sensitive value. Confirming exposure for severity purposes never licenses reproducing the value itself in any output field — describe its type and presence only (e.g. "a full PAN and CVV"), never the literal value, in `summary`, `assessment_note`, `symptom_hypothesis`, and `signals[].description` alike.
+4. **Sensitive data exposure** — an actual PII value, credential, or secret in a `confirmed: true` found row may independently qualify as critical. KI structural metadata (`sensitive_fields_observed`, schema fields, or annotations describing what a service may log) is not live exposure evidence. 
+   - **Do not inspect or mention it** unless the discovery concerns sensitive-data exposure or a found row contains an actual sensitive value. Confirming exposure for severity purposes never licenses reproducing the value itself in any output field — describe its type and presence only (e.g. "a full PAN and CVV"), never the literal value, in `summary`, `assessment_note`, `symptom_hypothesis`, and `signals[].description` alike.
 
 ### Step 7: Emit Output
 
@@ -275,7 +277,7 @@ Emit only fields defined in this schema. Output discipline applies to all narrat
   - **`causal_features` ceiling (`open` only)**: apply the causal_features ceiling from the `confidence` field description.
   - **Increase when**: multiple confirmed signals with no contradiction (+0.05); KI backing aligns (+0.05).
   - **Decrease when**: key queries have `signals[]` `evidence.result` ≠ "found" (−0.10 each, not for healthy-row refutations); no confirmed signal entries (−0.15); recovery re-verification contradicts the settled hypothesis (−0.10).
-  - **Hard caps**: no `confirmed: true` in merged output `signals[]` → cap at 0.55; stale signals only (all `collected_at` > 1h) → cap at 0.65; no KI backing (no `platform_sig_events_ki_search` called this run, or 0 matching KIs returned) → cap at 0.65.
+  - **Hard caps**: no `confirmed: true` in merged output `signals[]` → cap at 0.55; stale signals only (all `collected_at` > 1h) → cap at 0.65; no confirmed failure evidence AND no KI backing → cap at 0.65 (refuted discoveries — where queries returned healthy rows confirming a non-event — are exempt from this cap and may reach 0.75 without KI backing).
   - **Ceiling**: 0.90+ requires discovery confidence ≥ 0.70, multiple confirmed signals, no contradiction. Do not exceed 0.85 when any evidence gap exists. Confidence ≥ 0.85 requires KI backing — `platform_sig_events_ki_search` must have been called and returned at least one matching query KI for the relevant rule.
 - `summary`: per the `summary` field description in the tool metadata. Never lead with detection mechanics. Required for `open`; optional for `dismissed`/`closed`.
 - `assessment_note`: your adversarial reasoning trace — what you independently verified, what signals confirmed or contradicted the discovery, and how customer impact and scope determined severity and status. Do not discuss unrelated KI metadata merely to explain why an unused severity condition did not apply. Apply the sensitive-value rule from the field description. Not operator-facing. Required for `open`; brief for `dismissed` and `closed`.
