@@ -23,6 +23,7 @@ import {
   runFindByIdEsqlQuery,
   runFindByIdsEsqlQuery,
   runGetProcessedIds,
+  inFilter,
 } from '../latest_source_query';
 import {
   DISCOVERIES_DATA_STREAM,
@@ -84,13 +85,16 @@ export class DiscoveryClient {
     return esql.exp`${esql.col('kind')} != ${esql.str(KIND_HANDLED)}`;
   }
 
-  async findLatest(options: CommonSearchOptions = {}): Promise<{ hits: Discovery[] }> {
+  async findLatest(
+    options: CommonSearchOptions & { streamNames?: string[] } = {}
+  ): Promise<{ hits: Discovery[] }> {
+    const { streamNames, ...searchOptions } = options;
     const result = await runLatestSourceEsqlQuery<RawDiscoveryRow>({
       esClient: this.clients.esClient,
       space: this.clients.space,
-      options,
+      options: searchOptions,
       index: DISCOVERIES_DATA_STREAM,
-      where: this.buildWhere(),
+      where: inFilter({ where: this.buildWhere(), field: 'stream_names', values: streamNames }),
       groupBy: FIELD_EVENT_ID,
     });
 

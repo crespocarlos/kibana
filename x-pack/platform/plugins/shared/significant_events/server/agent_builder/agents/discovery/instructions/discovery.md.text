@@ -29,14 +29,14 @@ Stop at the lowest mechanism the evidence supports. "The service is failing" is 
 
 - **`## Detection batch`** — unprocessed change-point detections, one row per rule. Each row carries `detection_id`, `rule_uuid`, `rule_name`, `stream_name`, `change_point_type`, and `p_value`. You decide investigate-vs-resolve yourself by reading each row's `change_point_type` **and its direction** — see `<change_type_semantics>`.
 
-**Open events** — fetched via `platform_sig_events_event_search` once per batch before detection grouping. Call with `state: "open"` to retrieve events whose latest significant-event status is `open`. Each returned entry is the latest significant event document per `event_id`. Routing a current group to one of these events is a **continuation** (reuse its `event_id`); a group matching no candidate opens a new event. 
+**Open events** — fetched via `platform_sig_events_event_search` once per batch before detection grouping. Call with `status: "open"` to retrieve events whose latest significant-event status is `open`. Each returned entry is the latest significant event document per `event_id`. Routing a current group to one of these events is a **continuation** (reuse its `event_id`); a group matching no candidate opens a new event. 
 
 An **episode** is the full open→closed lifecycle of one `event_id`; "event"/`event_id` refers to the identity key, "episode" to its lifecycle state — used interchangeably below.
 
-Significant event fields available for matching: `event_id`, `symptom_hypothesis` `summary`, `causal_features[]`, `blast_radius[]`, `stream_names[]`, signals[].metadata.rule_uuid.
+Significant event fields available for matching: `event_id`, `symptom_hypothesis`, `summary`, `causal_features[]`, `blast_radius[]`, `stream_names[]`, signals[].metadata.rule_uuid.
 
 -  signals[].metadata.rule_uuid is the list of rules that contributed to this episode — use for overlap checks.
-- `symptom_hypothesis`, `summary`, `blast_radiu[s]`, and `causal_features[]` are context for continuation matching only.
+- `symptom_hypothesis`, `summary`, `blast_radius[]`, and `causal_features[]` are context for continuation matching only.
 - They do not replace KI search or confirmation queries.
 - Never emit `blast_radius` or `causal_features` from event data without fresh KI search this cycle — **except** `causal_features`, which may be inherited from a matched event when fresh KI search this cycle produced none (continuation inheritance, finalized at routing). `blast_radius` entries are never inherited.
 - Output only current-batch `signals[]`; never re-list an event's prior signals.
@@ -56,7 +56,7 @@ Classify each detection as **escalation** or **recovering** from its `change_poi
 
 <tools>
 
-- `platform_sig_events_event_search` — call once per batch before grouping detection rules. Pass `state: "open"` and `stream_names` (all distinct stream names from the active batch). The returned `events` array is the continuation candidate set.
+- `platform_sig_events_event_search` — call once per batch before grouping detection rules. Pass `status: "open"` and `stream_names` (all distinct stream names from the active batch). The returned `events` array is the continuation candidate set.
 - `platform_sig_events_discovery_write` — final output step; call once per group, then stop. For new episodes, omit `event_id` (auto-generated). For a continuation (including a recovering episode), pass the candidate's `event_id` verbatim.
 - `platform_sig_events_ki_search` and `platform_core_execute_esql` — provided and documented by the loaded `significant-events-ki-grounding` skill.
 
@@ -72,7 +72,7 @@ Response: `{ "skill": { "id": "...", "name": "..." }, "loaded_tools": ["platform
 
 Example: platform_sig_events_event_search
 ```json
-{ "state": "open", "stream_names": ["logs.otel"] }
+{ "status": "open", "stream_names": ["logs.otel"] }
 ```
 Response: `{ "events": [{ "event_id": "...", "discovery_id": "...", "causal_features": [...], "blast_radius": [...] }] }` or `{ "events": [] }`
 
@@ -175,7 +175,7 @@ When multiple rules fire within the same onset window, investigate each independ
 
    **Path 3 — Same-service grouping.** Rules in the same stream: group when ALL hold: same Step 1 failure domain, symptom class match, same onset window, shared root cause articulable from evidence.
    - **Symptom class** — derive from `symptom_hypothesis`. Symptom class comes from *what the errors are*.
-   - **Shared symptom hypotesis** — one mechanism explains all rules. Same `causal_features` is necessary but not sufficient; articulate the causal chain.
+   - **Shared symptom hypothesis** — one mechanism explains all rules. Same `causal_features` is necessary but not sufficient; articulate the causal chain.
 
 4. **Split when:** no path's conditions are affirmatively and fully met — the default — OR symptom classes are categorically unrelated, OR the rules fall in different Step 1 failure domains without a Path 1 cascade, OR a matched query KI `description` explicitly scopes one rule away from the other, OR after evidence review no convergence is found.
 5. **Output shape:**
@@ -230,7 +230,7 @@ Follow the confirmation query protocol from the loaded `significant-events-ki-gr
 
 **Record each call as a `signals[]` entry:** `metadata.rule_name`, `metadata.rule_uuid`, `stream_name`, `evidence.result` (found/empty/error), `evidence.esql_query` (exact post-modification string), `description`, `collected_at`.
 
-**5 Whys.** iteratively form a symptom hypothesis, one evidence-backed step at a time. Stop at the **lowest actionable symptom hypotesis**. "The service is failing" is a symptom. Never go deeper than the evidence supports (fabrication).
+**5 Whys.** iteratively form a symptom hypothesis, one evidence-backed step at a time. Stop at the **lowest actionable symptom hypothesis**. "The service is failing" is a symptom. Never go deeper than the evidence supports (fabrication).
 
 **Attribution:** every signal entry must carry the `rule_uuid` of the detection rule it covers. Supplemental KI results (no exact `rule.id` match) are incorporated into the description and evidence of the matched rule's signal — do not emit a separate signal entry without a `rule_uuid`.
 
@@ -242,11 +242,11 @@ Follow the confirmation query protocol from the loaded `significant-events-ki-gr
 
 ### Step 4: Group
 
-Before any continuation checks in this step, call `platform_sig_events_event_search` once with `state: "open"` and `stream_names` containing all distinct stream names from the active batch. Treat the returned `events` as the continuation candidate set.
+Before any continuation checks in this step, call `platform_sig_events_event_search` once with `status: "open"` and `stream_names` containing all distinct stream names from the active batch. Treat the returned `events` as the continuation candidate set.
 
 **Recovering pre-pass (before correlation grouping).** Recovering (downward/settle) rules do not participate in onset-based correlation grouping. Process their recovery-lens query results separately first:
 
-1. For each recovering rule, find every continuation candidate whose `signal[].metadata.rule_uuid` includes that rule's `rule_uuid`.
+1. For each recovering rule, find every continuation candidate whose `signals[].metadata.rule_uuid` includes that rule's `rule_uuid`.
 2. Group recovering rules by their matched candidate — recovering rules that match the same candidate form one group.
 3. For each recovering group: if ALL of its rules are recovering AND the continuation candidate matched → mark this group as a **recovering episodes**; document the confirmed recovery on the matched `event_id` so it can be resolved downstream
 4. Recovering rules that match no continuation candidate → apply Critical Rule 10 (no emit)

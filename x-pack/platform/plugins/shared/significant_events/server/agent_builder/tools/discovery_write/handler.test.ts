@@ -305,22 +305,6 @@ describe('discoveryWriteHandler', () => {
     expect(discoveryClient.bulkCreate.mock.calls[0][0][0].discovery_id).toBe(result.discovery_id);
   });
 
-  it('sets processed only for kind:handled', async () => {
-    const discoveryClient = {
-      findByEventId: jest.fn().mockResolvedValue({ hits: [] }),
-      bulkCreate: jest.fn().mockResolvedValue(undefined),
-    };
-
-    await discoveryWriteHandler({
-      discoveryClient: discoveryClient as never,
-      input: { ...baseInput, kind: 'handled', event_id: 'checkout-event-id' },
-    });
-
-    const [[documents]] = discoveryClient.bulkCreate.mock.calls;
-    expect(documents[0].processed).toBe(true);
-    expect(documents[0].discovered_at).toBeUndefined();
-  });
-
   it('sets discovered_at only for kind:discovery', async () => {
     const discoveryClient = {
       findByEventId: jest.fn().mockResolvedValue({ hits: [] }),
@@ -334,7 +318,6 @@ describe('discoveryWriteHandler', () => {
 
     const [[documents]] = discoveryClient.bulkCreate.mock.calls;
     expect(documents[0].discovered_at).toBeDefined();
-    expect(documents[0].processed).toBe(false);
   });
 });
 

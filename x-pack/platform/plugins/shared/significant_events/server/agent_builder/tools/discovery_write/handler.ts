@@ -149,7 +149,7 @@ const findDuplicateDiscovery = async ({
   // Scan recent active discoveries and match on stream+rules fingerprint.
   // Uses findLatest (grouped by event_id, excludes handled) so only the latest doc per incident
   // is considered — prevents stale resolved incidents from blocking new ones.
-  const { hits } = await discoveryClient.findLatest({ from: cutoffIso });
+  const { hits } = await discoveryClient.findLatest({ from: cutoffIso, streamNames });
   return hits.find(
     (h) =>
       h.kind === 'discovery' &&
@@ -206,7 +206,7 @@ export async function discoveryWriteHandler({
   if (duplicate) {
     return {
       discovery_id: duplicate.discovery_id,
-      event_id: resolvedEventId,
+      event_id: duplicate.event_id,
       kind: discoveryInput.kind,
       written: false,
       skipped: true,

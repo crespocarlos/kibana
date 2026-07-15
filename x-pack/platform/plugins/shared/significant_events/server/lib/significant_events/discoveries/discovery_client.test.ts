@@ -13,7 +13,7 @@ import { DiscoveryClient } from './discovery_client';
 
 type StoredRow = Partial<Discovery> & { '@timestamp': string };
 
-const createDiscovery = (overrides: StoredRow): Discovery =>
+const createDiscovery = (overrides: StoredRow): Omit<Discovery, 'processed'> =>
   ({
     kind: 'discovery',
     discovery_id: overrides.discovery_id ?? 'discovery-1',
@@ -24,11 +24,10 @@ const createDiscovery = (overrides: StoredRow): Discovery =>
     severity: 'medium',
     confidence: 0.8,
     signals: [],
-    processed: false,
     ...overrides,
   } as Discovery);
 
-const sourceResponse = (docs: Discovery[]): ESQLSearchResponse =>
+const sourceResponse = (docs: Omit<Discovery, 'processed'>[]): ESQLSearchResponse =>
   ({
     columns: [{ name: '_source', type: 'object' }],
     values: docs.map((d) => [d]),
@@ -49,7 +48,7 @@ const processedResponse = (eventIds: string[]): ESQLSearchResponse =>
 
 interface MockResponses {
   // Latest discovery per group, as returned by the data query (already collapsed by groupBy).
-  discoveries: Discovery[];
+  discoveries: Omit<Discovery, 'processed'>[];
   // Event IDs the processed derivation reports as processed.
   processedSlugs: string[];
 }

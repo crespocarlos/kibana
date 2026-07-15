@@ -64,14 +64,11 @@ export function createSearchEventsTool({
     description: dedent`
       ${i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.description.line1', {
         defaultMessage:
-          'Search latest significant events per slug across all streams or a filtered set.',
+          'Search latest significant events per event_id across all streams or a filtered set.',
       })}
 
       ${i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.description.line2', {
-        defaultMessage:
-          'Use `state: "open"` to filter for active incidents. ' +
-          'Use `state: "closed"` to filter for resolved or dismissed events. ' +
-          'Omit to return all events.',
+        defaultMessage: 'Omit `status` to return all events.',
       })}
     `,
     schema: searchEventsSchema,
