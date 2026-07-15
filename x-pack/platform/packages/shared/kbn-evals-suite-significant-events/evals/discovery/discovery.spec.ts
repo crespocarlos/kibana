@@ -20,7 +20,6 @@ import {
   canonicalDetectionsFromGroundTruth,
   canonicalSignificantEventFromGroundTruth,
 } from '../../src/data_generators/replay';
-import { loadDetectionsFromSnapshot } from '../../src/data_generators/load_from_snapshot';
 import { replayKnowledgeIndicatorsSnapshot } from '../../src/data_generators/replay_knowledge_indicators_snapshot';
 import { evaluate } from '../../src/evaluate';
 import {
@@ -108,28 +107,13 @@ evaluate.describe(
                 }
               }
 
-              let detections: Detection[];
-
-              if (source === 'canonical') {
-                detections = canonicalDetectionsFromGroundTruth({
-                  streamName: scenario.input.stream_name,
-                  rules: scenario.input.detections,
-                });
-              } else {
-                detections = await loadDetectionsFromSnapshot(
-                  esClient,
-                  log,
-                  snapshotSource.snapshotName,
-                  snapshotSource.gcs,
-                  { kinds: ['detection', 'quiet'] }
-                );
-                if (detections.length === 0) {
-                  log.info(
-                    `No snapshot detections for "${snapshotSource.snapshotName}" — skipping snapshot variant`
-                  );
-                  continue;
-                }
-              }
+              // Detections always come from the canonical dataset regardless of source mode.
+              // The snapshot only provides logs and KIs replayed into ES — schema changes
+              // between snapshot capture and current code make snapshot detections unreliable.
+              const detections = canonicalDetectionsFromGroundTruth({
+                streamName: scenario.input.stream_name,
+                rules: scenario.input.detections,
+              });
 
               // Ensure KI features index is available by replaying the snapshot
               await cleanSignificantEventsDataStreams(esClient, log);

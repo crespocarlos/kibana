@@ -19,7 +19,6 @@ import {
   deleteTemporaryReplayIndices,
   canonicalDiscoveryFromGroundTruth,
 } from '../../src/data_generators/replay';
-import { loadDiscoveriesFromSnapshot } from '../../src/data_generators/load_from_snapshot';
 import { replayKnowledgeIndicatorsSnapshot } from '../../src/data_generators/replay_knowledge_indicators_snapshot';
 import { evaluate } from '../../src/evaluate';
 import {
@@ -100,30 +99,16 @@ evaluate.describe(
                 }
               }
 
-              let discoveries: Discovery[];
-
-              if (source === 'canonical') {
-                discoveries = scenario.input.discoveries.map((discovery) =>
-                  canonicalDiscoveryFromGroundTruth({
-                    streamName: 'logs',
-                    scenarioId: scenario.input.scenario_id,
-                    discovery,
-                  })
-                );
-              } else {
-                discoveries = await loadDiscoveriesFromSnapshot(
-                  esClient,
-                  log,
-                  snapshotSource.snapshotName,
-                  snapshotSource.gcs
-                );
-                if (discoveries.length === 0) {
-                  log.info(
-                    `No snapshot discoveries for "${snapshotSource.snapshotName}" — skipping snapshot variant`
-                  );
-                  continue;
-                }
-              }
+              // Discoveries always come from the canonical dataset regardless of source mode.
+              // The snapshot only provides logs and KIs replayed into ES — schema changes
+              // between snapshot capture and current code make snapshot discoveries unreliable.
+              const discoveries = scenario.input.discoveries.map((discovery) =>
+                canonicalDiscoveryFromGroundTruth({
+                  streamName: 'logs',
+                  scenarioId: scenario.input.scenario_id,
+                  discovery,
+                })
+              );
 
               // Ensure the managed stream is replayed so ES|QL queries in judge can execute
               await cleanSignificantEventsDataStreams(esClient, log);

@@ -28,9 +28,14 @@ const evaluate = (significantEvents: unknown, steps: ConverseStep[]) =>
   });
 
 describe('confirmedEvidencesEvaluator', () => {
-  it('is unavailable when nothing is open+critical', async () => {
-    const result = await evaluate([{ status: 'open', severity: 'medium' }], [esqlStep]);
+  it('is unavailable when nothing is open', async () => {
+    const result = await evaluate([], [esqlStep]);
     expect(result.score).toBeNull();
+  });
+
+  it('scores 0 for an open event of any severity with no confirmed signal', async () => {
+    const result = await evaluate([{ status: 'open', severity: 'medium' }], [esqlStep]);
+    expect(result.score).toBe(0);
   });
 
   it('is unavailable when dismissed', async () => {
