@@ -232,7 +232,7 @@ export const SigEventsTab = () => {
   const { filteredStreams } = useKiGeneration();
   // Closed events are hidden by default; users can opt back in via the Status filter.
   const [statusFilter, setStatusFilter] = useState<string[]>(() =>
-    SIGNIFICANT_EVENT_STATUS_OPTIONS.filter((status) => status === 'open')
+    SIGNIFICANT_EVENT_STATUS_OPTIONS.filter((status) => status !== 'dismissed')
   );
   const [streamFilter, setStreamFilter] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');

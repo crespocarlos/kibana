@@ -154,8 +154,8 @@ export class EventClient {
 
     const stateWhere =
       options.state === 'open'
-        ? esql.exp`${esql.col('status')} IN (${esql.str(SIGNIFICANT_EVENT_OPEN_STATUS)})`
-        : esql.exp`${esql.col('status')} NOT IN (${esql.str(SIGNIFICANT_EVENT_OPEN_STATUS)})`;
+        ? esql.exp`${esql.col('status')} == ${esql.str(SIGNIFICANT_EVENT_OPEN_STATUS)}`
+        : esql.exp`${esql.col('status')} != ${esql.str(SIGNIFICANT_EVENT_OPEN_STATUS)}`;
 
     // ComposerQuery is mutable — each chaining call mutates the same object and returns `this`.
     // Build the base query twice via a factory so the data branch and count branch get independent

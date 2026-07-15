@@ -37,7 +37,7 @@ export const confirmedEvidencesEvaluator: DiscoveryJudgeEvaluator = {
     const issues: string[] = [];
 
     openEvents.forEach((event, i) => {
-      const signals = event.signals ?? [];
+      const signals = (event.signals ?? []).filter((s) => s.type === 'detection');
       const hasConfirmed = signals.some((s) => s.confirmed === true);
 
       if (hasConfirmed && sufficientEsqlCoverage) {
