@@ -60,7 +60,7 @@ describe('event_search tool', () => {
 
     const result = await invokeHandler(
       tool as never,
-      { stream_names: ['logs.checkout'], state: 'open' },
+      { stream_names: ['logs.checkout'], status: 'open' },
       createMockToolContext()
     );
 
@@ -98,7 +98,7 @@ describe('event_search tool', () => {
 
     const result = await invokeHandler(
       tool as never,
-      { query: 'latency', state: 'closed' },
+      { query: 'latency', status: 'closed' },
       createMockToolContext()
     );
 

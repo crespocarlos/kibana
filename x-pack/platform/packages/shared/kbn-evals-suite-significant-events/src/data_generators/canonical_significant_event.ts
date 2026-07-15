@@ -38,6 +38,7 @@ export function canonicalSignificantEventFromGroundTruth({
     severity: discovery.severity ?? 'medium',
     stream_names: streamNames.length > 0 ? streamNames : ['unknown'],
     title: discovery.title ?? 'eval-seeded-event',
+    symptom_hypothesis: discovery.symptom_hypothesis,
     summary: discovery.summary ?? '',
     confidence: discovery.confidence ?? 0.5,
     causal_features: discovery.causal_features,

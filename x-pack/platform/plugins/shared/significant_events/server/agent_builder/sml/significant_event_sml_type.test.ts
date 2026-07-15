@@ -26,6 +26,7 @@ const event: SignificantEvent = {
   status: 'open',
   stream_names: ['logs.payment'],
   title: 'Payment outage',
+  symptom_hypothesis: 'Payment gateway timeout.',
   summary: 'Payments are failing.',
   severity: 'high',
   confidence: 0.8,

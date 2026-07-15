@@ -57,16 +57,21 @@ const extractRuleUuids = (signals: SignalEntry[] | undefined): string[] => {
 };
 
 /**
- * Deterministic event id: a hash of the primary stream name plus every detection rule's
- * `rule_uuid`, sorted for order-independence. The same stream+rules combination always produces
- * the same id, so a rule firing again under identical conditions naturally lands on the same
- * event rather than requiring a separate fingerprint-matching dedup pass.
+ * Per-incident event id: a hash of the primary stream name plus every detection rule's
+ * `rule_uuid` and a random UUID8 suffix. The suffix keeps each new incident instance unique so
+ * resolved incidents and new ones for the same rules are treated as separate events in the UI.
+ * Dedup uses `makeFingerprint` (stream + rules only, no suffix) rather than this id.
  */
 export const generateEventId = (streamNames: string[], ruleUuids: string[]): string => {
   const suffix = uuidv4().replace(/-/g, '').slice(0, 8);
   const primaryStream = [...streamNames].sort()[0] ?? 'unknown';
   const basis = [primaryStream, ...[...ruleUuids].sort(), suffix].join('|');
   return createHash('sha256').update(basis).digest('hex').slice(0, 16);
+};
+
+export const makeFingerprint = (streamNames: string[], ruleUuids: string[]): string => {
+  const primaryStream = [...streamNames].sort()[0] ?? 'unknown';
+  return [primaryStream, ...[...ruleUuids].sort()].join('|');
 };
 
 /**
@@ -120,13 +125,15 @@ export const mergeSignalsLatestPerRule = (
 
 const findDuplicateDiscovery = async ({
   discoveryClient,
-  resolvedEventId,
+  streamNames,
+  signals,
   dedupWindow,
   kind,
   isExplicitEventId,
 }: {
   discoveryClient: DiscoveryClient;
-  resolvedEventId: string;
+  streamNames: string[];
+  signals: SignalEntry[] | undefined;
   dedupWindow: string | undefined;
   kind: Discovery['kind'];
   isExplicitEventId: boolean;
@@ -138,8 +145,16 @@ const findDuplicateDiscovery = async ({
   }
 
   const cutoffIso = new Date(Date.now() - windowMs).toISOString();
-  const { hits } = await discoveryClient.findByEventId(resolvedEventId);
-  return hits.find((h) => h['@timestamp'] >= cutoffIso && h.kind !== 'handled');
+  const fingerprint = makeFingerprint(streamNames, extractRuleUuids(signals));
+  // Scan recent active discoveries and match on stream+rules fingerprint.
+  // Uses findLatest (grouped by event_id, excludes handled) so only the latest doc per incident
+  // is considered — prevents stale resolved incidents from blocking new ones.
+  const { hits } = await discoveryClient.findLatest({ from: cutoffIso });
+  return hits.find(
+    (h) =>
+      h.kind === 'discovery' &&
+      makeFingerprint(h.stream_names ?? [], extractRuleUuids(h.signals)) === fingerprint
+  );
 };
 
 const prepareSnapshotSignals = async ({
@@ -182,7 +197,8 @@ export async function discoveryWriteHandler({
 
   const duplicate = await findDuplicateDiscovery({
     discoveryClient,
-    resolvedEventId,
+    streamNames: rest.stream_names,
+    signals: rest.signals,
     dedupWindow,
     kind: rest.kind,
     isExplicitEventId,
@@ -217,7 +233,6 @@ export async function discoveryWriteHandler({
         discovered_at: discoveryInput.kind === 'discovery' ? timestamp : undefined,
         signals,
         discovery_id: discoveryId,
-        processed: discoveryInput.kind === 'handled',
       },
     ],
     { throwOnFail: true }

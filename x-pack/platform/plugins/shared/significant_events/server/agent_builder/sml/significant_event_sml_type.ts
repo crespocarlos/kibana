@@ -22,6 +22,7 @@ const PAGE_SIZE = 100;
 const eventToSmlContent = (event: SignificantEvent): string => {
   return [
     event.title,
+    event.symptom_hypothesis,
     event.summary,
     `status: ${event.status}`,
     `severity: ${event.severity}`,

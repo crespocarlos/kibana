@@ -24,6 +24,7 @@ const createDiscovery = (overrides: StoredRow): Discovery =>
     severity: 'medium',
     confidence: 0.8,
     signals: [],
+    processed: false,
     ...overrides,
   } as Discovery);
 
@@ -105,7 +106,14 @@ describe('DiscoveryClient', () => {
       await expect(client.bulkCreate([discovery])).resolves.toBe(response);
       expect(dataStreamClient.create).toHaveBeenCalledWith({
         space: 'default',
-        documents: [discovery],
+        documents: [
+          expect.objectContaining({
+            discovery_id: discovery.discovery_id,
+            event_id: discovery.event_id,
+            // severity is encoded as a sortable keyword by storedDiscoverySchema
+            severity: '40-medium',
+          }),
+        ],
       });
     });
 

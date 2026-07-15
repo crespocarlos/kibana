@@ -30,7 +30,7 @@ describe('searchEventsToolHandler', () => {
       perPage: undefined,
       search: 'timeout',
       stream: ['logs.checkout'],
-      state: 'open',
+      status: ['open'],
     });
     expect(eventClient.findLatestPaginated).not.toHaveBeenCalled();
     expect(result).toEqual({ events: [{ event_uuid: 'e1' }], page: 1, per_page: 20, total: 1 });
@@ -49,7 +49,7 @@ describe('searchEventsToolHandler', () => {
       perPage: undefined,
       search: undefined,
       stream: undefined,
-      state: 'closed',
+      status: ['closed'],
     });
   });
 

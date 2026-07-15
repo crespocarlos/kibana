@@ -37,10 +37,10 @@ import { FIELD_DISCOVERY_ID, FIELD_EVENT_ID } from '../field_names';
  * Shape of a raw ES document before decoding — identical to `Discovery` except `severity`,
  * which is stored as a sortable keyword (e.g. `"80-critical"`) rather than the domain enum.
  */
-type RawDiscoveryRow = Omit<Discovery, 'severity'> & { severity: StoredSeverity };
+type RawDiscoveryRow = Omit<Discovery, 'severity' | 'processed'> & { severity: StoredSeverity };
 
 /** Decode a raw ES document's stored severity keyword (e.g. `"80-critical"`) into domain form. */
-const decodeSeverity = (doc: RawDiscoveryRow): Discovery => ({
+const decodeSeverity = (doc: RawDiscoveryRow): Omit<Discovery, 'processed'> => ({
   ...doc,
   severity: severityFromStoredSchema.parse(doc.severity),
 });
@@ -64,7 +64,10 @@ export class DiscoveryClient {
     }
   ) {}
 
-  async bulkCreate(discoveries: Discovery[], { throwOnFail = false }: BulkCreateOptions = {}) {
+  async bulkCreate(
+    discoveries: Omit<Discovery, 'processed'>[],
+    { throwOnFail = false }: BulkCreateOptions = {}
+  ) {
     const response = await this.clients.dataStreamClient.create({
       space: this.clients.space,
       documents: discoveries.map((d) => storedDiscoverySchema.parse(d)),
@@ -95,12 +98,10 @@ export class DiscoveryClient {
       result.hits.map((h) => h.event_id).filter((id): id is string => Boolean(id))
     );
     return {
-      hits: result.hits.map((raw) =>
-        decodeSeverity({
-          ...raw,
-          processed: processedEventIds.has(raw.event_id ?? ''),
-        })
-      ),
+      hits: result.hits.map((raw) => ({
+        ...decodeSeverity(raw),
+        processed: processedEventIds.has(raw.event_id),
+      })),
     };
   }
 
@@ -124,12 +125,10 @@ export class DiscoveryClient {
 
     return {
       ...result,
-      hits: result.hits.map((raw) =>
-        decodeSeverity({
-          ...raw,
-          processed: processedEventIds.has(raw.event_id),
-        })
-      ),
+      hits: result.hits.map((raw) => ({
+        ...decodeSeverity(raw),
+        processed: processedEventIds.has(raw.event_id),
+      })),
     };
   }
 
@@ -154,7 +153,17 @@ export class DiscoveryClient {
       idField: FIELD_DISCOVERY_ID,
       idValue: discoveryId,
     });
-    return { hits: result.hits.map(decodeSeverity) };
+
+    const processedEventIds = await this.getProcessedEventIds(
+      result.hits.map((h) => h.event_id).filter((id): id is string => Boolean(id))
+    );
+
+    return {
+      hits: result.hits.map((raw) => ({
+        ...decodeSeverity(raw),
+        processed: processedEventIds.has(raw.event_id),
+      })),
+    };
   }
 
   async findByIds(discoveryIds: string[]): Promise<{ hits: Discovery[] }> {
@@ -165,7 +174,17 @@ export class DiscoveryClient {
       idField: FIELD_DISCOVERY_ID,
       idValues: discoveryIds,
     });
-    return { hits: result.hits.map(decodeSeverity) };
+
+    const processedEventIds = await this.getProcessedEventIds(
+      result.hits.map((h) => h.event_id).filter((id): id is string => Boolean(id))
+    );
+
+    return {
+      hits: result.hits.map((raw) => ({
+        ...decodeSeverity(raw),
+        processed: processedEventIds.has(raw.event_id),
+      })),
+    };
   }
 
   async findByEventId(eventId: string): Promise<{ hits: Discovery[] }> {
@@ -176,6 +195,16 @@ export class DiscoveryClient {
       idField: FIELD_EVENT_ID,
       idValue: eventId,
     });
-    return { hits: result.hits.map(decodeSeverity) };
+
+    const processedEventIds = await this.getProcessedEventIds(
+      result.hits.map((h) => h.event_id).filter((id): id is string => Boolean(id))
+    );
+
+    return {
+      hits: result.hits.map((raw) => ({
+        ...decodeSeverity(raw),
+        processed: processedEventIds.has(raw.event_id),
+      })),
+    };
   }
 }

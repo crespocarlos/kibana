@@ -36,6 +36,7 @@ export const formatSignificantEventAsText = (event: SignificantEvent): string =>
     `Severity: ${event.severity}`,
     `Confidence: ${event.confidence}`,
     `Streams: ${formatList(event.stream_names)}`,
+    event.symptom_hypothesis ? `Symptom hypothesis: ${event.symptom_hypothesis}` : undefined,
     `Summary: ${event.summary}`,
   ]
     .filter((line): line is string => Boolean(line))

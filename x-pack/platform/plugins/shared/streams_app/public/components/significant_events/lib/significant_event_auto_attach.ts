@@ -41,7 +41,7 @@ export const createIdGenerator = (): IdGenerator => {
 const toAttachment = (event: SignificantEvent, id: string): PendingSignificantEventAttachment => ({
   id,
   type: SIGNIFICANT_EVENT_ATTACHMENT_TYPE,
-  origin: event.event_uuid,
+  origin: event.event_id,
   data: event,
 });
 

@@ -9,7 +9,7 @@ import type { IDataStreamClient } from '@kbn/data-streams';
 import { esql, type ComposerSortShorthand } from '@elastic/esql';
 import type { ESQLAstExpression } from '@elastic/esql/types';
 import type { ElasticsearchClient } from '@kbn/core/server';
-import { severityFromStoredSchema, type StoredSeverity } from '@kbn/significant-events-schema';
+import { fromStoredSeverity, type StoredSeverity } from '@kbn/significant-events-schema';
 import {
   type BulkCreateOptions,
   type CommonSearchOptions,
@@ -50,7 +50,7 @@ type RawEventRow = Omit<SignificantEvent, 'severity'> & { severity: StoredSeveri
 /** Decode a raw ES document's stored severity keyword (e.g. `"80-critical"`) into domain form. */
 const decodeSeverity = (doc: RawEventRow): SignificantEvent => ({
   ...doc,
-  severity: severityFromStoredSchema.parse(doc.severity),
+  severity: fromStoredSeverity(doc.severity),
 });
 
 export type EventDataStreamClient = IDataStreamClient<typeof eventsMappings, StoredEvent>;

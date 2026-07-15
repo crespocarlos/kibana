@@ -41,6 +41,7 @@ export const canonicalDiscoveryFromGroundTruth = ({
     discovery_id: discovery.discovery_id ?? `${scenarioId}-canonical`,
     event_id: discovery.event_id ?? `${slugify(scenarioId)}__canonical`,
     stream_names: streamNames,
+    symptom_hypothesis: discovery.symptom_hypothesis ?? '',
     title: discovery.title ?? '',
     summary: discovery.summary ?? '',
     severity: discovery.severity ?? 'low',
