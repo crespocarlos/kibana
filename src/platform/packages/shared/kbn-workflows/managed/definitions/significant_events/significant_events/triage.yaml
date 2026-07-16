@@ -206,10 +206,10 @@ steps:
       continue: false
 
   # -----------------------------------------------------------------------
-  # Step 5: Trigger root-cause investigation for newly-promoted events.
+  # Step 5: Trigger root-cause investigation for newly-opened high-severity events.
   # The judge writes events (events_write) and stamps discoveries
   # (discovery_write kind:handled) directly via tools. The workflow only
-  # needs to fire the async investigation for promoted events.
+  # needs to fire the async investigation for open high-severity events.
   # -----------------------------------------------------------------------
 
   # Eviction-safe snapshot — ai.agent outputs are evictable; data.set outputs are not.
@@ -222,52 +222,70 @@ steps:
         with:
           significant_events: '${{ steps.run_judge_agent.output.structured_output.significant_events }}'
 
-  - name: foreach_significant_event
-    type: foreach
-    if: >-
-      ${{ steps.store_significant_events.output != null
-      and steps.store_significant_events.output.significant_events != null }}
-    foreach: '${{ steps.store_significant_events.output.significant_events }}'
-    steps:
-      - name: gate_open_events
-        type: if
-        condition: '${{ foreach.item.status == "open" and consts.INVESTIGATABLE_SEVERITIES contains foreach.item.severity and foreach.item.written }}'
+      # Size must be computed in a separate step — comparison operators cannot follow
+      # a filter chain in the same expression (see compute_queue_sizes above).
+      - name: count_open_events
+        type: data.set
+        with:
+          openCount: >-
+            ${{ steps.store_significant_events.output.significant_events
+              | default: []
+              | where: 'status', 'open'
+              | reject: 'written', false
+              | size
+              | default: 0 }}
+
+      - name: foreach_significant_event
+        type: foreach
+        if: '${{ steps.count_open_events.output.openCount > 0 }}'
+        foreach: >-
+          ${{
+            steps.store_significant_events.output.significant_events
+              | default: []
+              | where: 'status', 'open'
+              | reject: 'written', false
+              | default: [] }}
+        iteration-on-failure:
+          continue: true
         steps:
-          # Look up the full discovery finding for this open event so trigger_investigation
-          # below can build the `message` the investigation workflow requires. The judge's
-          # structured output only echoes event_id/event_uuid/status/written; the finding's
-          # title/summary/symptom_hypothesis/stream_names still live in collect_discoveries' output.
-          - name: resolve_open_events
-            type: data.set
-            with:
-              finding: >-
-                ${{ steps.collect_discoveries.output.findings
-                  | where: 'event_id', foreach.item.event_id
-                  | first }}
+          - name: gate_investigatable_severity
+            type: if
+            condition: '${{ consts.INVESTIGATABLE_SEVERITIES contains foreach.item.severity }}'
+            steps:
+              # Look up the full discovery finding for this open event so trigger_investigation
+              # below can build the `message` the investigation workflow requires. The judge's
+              # structured output only echoes event_id/event_uuid/status/written; the finding's
+              # title/summary/symptom_hypothesis/stream_names still live in collect_discoveries' output.
+              - name: resolve_open_event
+                type: data.set
+                with:
+                  finding: >-
+                    ${{ steps.collect_discoveries.output.findings
+                      | where: 'event_id', foreach.item.event_id
+                      | first }}
 
-          # Fire-and-forget a root-cause investigation for each newly-promoted event.
-          # Async so triage (30m) never blocks on the investigation (60m).
-          # concurrency_key per event_id ensures a re-promotion cancels the prior in-progress
-          # investigation rather than queuing alongside it (cancel-in-progress / max:1 in the
-          # investigation workflow).
-          - name: trigger_investigation
-            type: workflow.executeAsync
-            with:
-              workflow-id: 'system-significant-events-investigation'
-              inputs:
-                message: |
-                  {{ steps.resolve_open_events.output.finding.title }}
+              # Fire-and-forget a root-cause investigation for each newly-opened event.
+              # Async so triage (30m) never blocks on the investigation (60m).
+              # concurrency_key per event_id ensures a re-opened event cancels the prior
+              # in-progress investigation rather than queuing alongside it.
+              - name: trigger_investigation
+                type: workflow.executeAsync
+                with:
+                  workflow-id: 'system-significant-events-investigation'
+                  inputs:
+                    message: |
+                      {{ steps.resolve_open_event.output.finding.title }}
 
-                  {{ steps.resolve_open_events.output.finding.summary }}
+                      {{ steps.resolve_open_event.output.finding.summary }}
 
-                  Probable cause: {{ steps.resolve_open_events.output.finding.symptom_hypothesis }}
-                stream_names: '${{ steps.resolve_open_events.output.finding.stream_names | default: [] }}'
-                concurrency_key: '{{ foreach.item.event_id }}'
-                context:
-                  source: 'significant_event'
-                  event_uuid: '{{ foreach.item.event_uuid }}'
-                  event_id: '{{ foreach.item.event_id }}'
-                  status: '{{ foreach.item.status }}'
+                      Probable cause: {{ steps.resolve_open_event.output.finding.symptom_hypothesis }}
+                    stream_names: '${{ steps.resolve_open_event.output.finding.stream_names | default: [] }}'
+                    concurrency_key: '{{ foreach.item.event_id }}'
+                    context:
+                      source: 'significant_event'
+                      event_uuid: '{{ foreach.item.event_uuid }}'
+                      event_id: '{{ foreach.item.event_id }}'
+                      status: '{{ foreach.item.status }}'
 
   - name: output_result
     type: workflow.output
