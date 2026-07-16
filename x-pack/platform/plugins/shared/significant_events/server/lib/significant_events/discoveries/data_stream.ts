@@ -20,6 +20,7 @@ export const discoveriesMappings = {
     kind: mappings.keyword(),
     discovery_id: mappings.keyword(),
     event_id: mappings.keyword(),
+    stream_names: mappings.keyword(),
     severity: mappings.keyword(),
     signals: mappings.object({
       properties: {
@@ -66,7 +67,7 @@ export const discoveriesDataStream: DataStreamDefinition<
   StoredDiscovery
 > = {
   name: DISCOVERIES_DATA_STREAM,
-  version: 5,
+  version: 6,
   hidden: true,
   template: {
     priority: 500,

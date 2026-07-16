@@ -92,7 +92,6 @@ Example: platform_sig_events_discovery_write
       "stream_name": "logs.otel",
       "description": "Testing: connection refused errors. Expected if true: ECONNREFUSED messages. Found: 1 row — payment gRPC endpoint refused the connection. Why: checkout cannot reach payment because its endpoint refuses connections. Verdict: confirms — checkout is blocked.",
       "confirmed": true,
-      "confirmed_by": "agent",
       "collected_at": "2026-07-07T09:00:00Z",
       "evidence": { "esql_query": "...", "result": "found" },
       "metadata": {
@@ -249,7 +248,7 @@ Before any continuation checks in this step, call `platform_sig_events_event_sea
 1. For each recovering rule, find every continuation candidate whose `signals[].metadata.rule_uuid` includes that rule's `rule_uuid`.
 2. Group recovering rules by their matched candidate — recovering rules that match the same candidate form one group.
 3. For each recovering group: if ALL of its rules are recovering AND the continuation candidate matched → mark this group as a **recovering episodes**; document the confirmed recovery on the matched `event_id` so it can be resolved downstream
-4. Recovering rules that match no continuation candidate → apply Critical Rule 10 (no emit)
+4. Recovering rules that match no continuation candidate → apply Critical Rule 9 (no emit)
 5. Remove recovering rules from the detection pool before the correlation-rule grouping below.
 
 **Group escalation rules.** Apply `<correlation_rules>` to partition the remaining escalation rules into groups. Each group becomes one discovery. Rules without a shared symptom hypothesis and onset window form separate groups.
@@ -293,7 +292,7 @@ Derive current failure context from `signals[].description` found-row content fi
 
 Discoveries are re-evaluated every cycle — apply this check even when the candidate was already assessed.
 
-**All-recovering episodes:** recovering episodes are identified in the recovering pre-pass above. Document the recovery for each (Critical Rules 9–10) on the matched candidate's `event_id`. A mixed batch — some recovering, some escalating — produces both recovery discoveries (for recovering groups) and active-incident discoveries (for escalation groups) in the same invocation.
+**All-recovering episodes:** recovering episodes are identified in the recovering pre-pass above. Document the recovery for each (Critical Rules 8–9) on the matched candidate's `event_id`. A mixed batch — some recovering, some escalating — produces both recovery discoveries (for recovering groups) and active-incident discoveries (for escalation groups) in the same invocation.
 
 ### Step 6: Emit Output
 

@@ -142,8 +142,7 @@ const signalBaseSchema = z.object({
     .optional()
     .describe(
       'Whether this signal actively confirms the failure hypothesis. Omit when the signal is unverified or non-confirming — never set to false.'
-    )
-    .default(false),
+    ),
   collected_at: z.iso
     .datetime({ offset: true })
     .optional()

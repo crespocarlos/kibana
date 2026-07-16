@@ -185,6 +185,13 @@ steps:
                 event_id:
                   type: string
                   description: 'Echo the event_id verbatim from the input discovery. Also returned by events_write. Required for trigger_investigation context.'
+                event_uuid:
+                  type: string
+                  description: 'UUID assigned by events_write. Required for trigger_investigation context.'
+                severity:
+                  type: string
+                  enum: [critical, high, medium, low]
+                  description: 'Severity of the event as decided by the judge.'
                 status:
                   type: string
                   enum: [open, dismissed, closed]
@@ -192,7 +199,7 @@ steps:
                 written:
                   type: boolean
                   description: 'true when events_write appended the event version.'
-              required: [event_id, status, written]
+              required: [event_id, event_uuid, severity, status, written]
         required: [significant_events]
     on-failure:
       continue: false

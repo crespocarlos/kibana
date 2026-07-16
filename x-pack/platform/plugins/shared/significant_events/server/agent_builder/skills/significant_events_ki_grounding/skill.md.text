@@ -159,17 +159,15 @@ Three entry types, all go in the same `blast_radius` array:
 
 **Dependency entries** (`type: "dependency"`) — from `kind:"feature"`, `feature.type:"dependency"` KIs:
 - Include when `source` or `target` equals the failing service.
-- `exposure: "exposed"` when `target` is the failing service (caller is affected); `"not_exposed"` otherwise.
 - `evidence[]` and `meta` are strong hypothesis seeds — read before querying.
 - Secondary signals when no dependency KI covers an edge: `meta.downstream_services` on entity KIs, `"Dependency: <source> → <target>"` in query KI `evidence`, `properties` keys referencing services.
 
-Each entry: `type: "dependency"`, `feature_id` (from `feature.id`), `source`, `target`, `protocol` (omit if absent), `stream_name` (from `feature.stream_name`, omit if absent).
+Each entry: `type: "dependency"`, `feature_id` (from `feature.id`), `source`, `target`, `protocol` (omit if absent), `stream_name` (from `feature.stream_name`).
 
 **Infrastructure entries** (`type: "infrastructure"`) — from `kind:"feature"`, `feature.type:"infrastructure"` KIs:
 - Include when the failing service appears in `description` or `evidence`.
-- `exposure: "exposed"` when the failing service is in `workloads`.
 
-Each entry: `type: "infrastructure"`, `feature_id` (from `feature.id`), `title` (omit if absent), `workloads`, `stream_name` (from `feature.stream_name`, omit if absent).
+Each entry: `type: "infrastructure"`, `feature_id` (from `feature.id`), `title` (omit if absent), `workloads`, `stream_name` (from `feature.stream_name`).
 
 **Entity entries** (`type: "entity"`) — from `kind:"feature"`, `feature.type:"entity"` KIs that lost the cause decision below (see `causal_features`) — affected by, but not the cause of, the failure:
 - Never duplicate an entity across both arrays in the same discovery — it is either the cause (`causal_features`) or the affected party (`blast_radius` entity entry), never both.
@@ -204,7 +202,6 @@ Each entry is a unified detection+evidence object:
 - `stream_name`: the detection rule's stream
 - `description`: the evidence narrative.
 - `confirmed`: `true` only when the query returned rows consistent with the failure hypothesis. Omit entirely if not confirmed.
-- `confirmed_by`: `"agent"` when `confirmed: true`. Omit otherwise.
 - `collected_at`: ISO-8601 timestamp of when the query ran. Omit for quiet-rule entries with no query.
 - `evidence`: `{ esql_query, result }` when a query was run; omit for quiet rules. `esql_query` is the exact string as sent (or `null` for no-query-available dispositions). `result`: `"found"` | `"empty"` | `"error"`.
 - `metadata`: detection rule metadata — `rule_uuid`, `rule_name`, `detection_id`, `change_point_type`, `p_value`.
