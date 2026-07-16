@@ -238,6 +238,8 @@ steps:
       - name: foreach_stamp_handled
         type: foreach
         foreach: '${{ steps.collect_discoveries.output.findings }}'
+        iteration-on-failure:
+          continue: true
         steps:
           - name: check_event_written
             type: if
