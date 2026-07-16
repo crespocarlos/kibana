@@ -188,18 +188,26 @@ export const severitySchema = z.enum(['20-low', '40-medium', '60-high', '80-crit
 
 export type Severity = z.infer<typeof severitySchema>;
 
+/** Canonical severity values in descending severity order (critical → low). */
+export const SEVERITY_OPTIONS: [Severity, ...Severity[]] = [
+  '80-critical',
+  '60-high',
+  '40-medium',
+  '20-low',
+];
+
 const SEVERITY_LABELS: Record<Severity, string> = {
   '20-low': i18n.translate('xpack.significantEvents.severity.lowLabel', {
-    defaultMessage: 'low',
+    defaultMessage: 'Low',
   }),
   '40-medium': i18n.translate('xpack.significantEvents.severity.mediumLabel', {
-    defaultMessage: 'medium',
+    defaultMessage: 'Medium',
   }),
   '60-high': i18n.translate('xpack.significantEvents.severity.highLabel', {
-    defaultMessage: 'high',
+    defaultMessage: 'High',
   }),
   '80-critical': i18n.translate('xpack.significantEvents.severity.criticalLabel', {
-    defaultMessage: 'critical',
+    defaultMessage: 'Critical',
   }),
 };
 
