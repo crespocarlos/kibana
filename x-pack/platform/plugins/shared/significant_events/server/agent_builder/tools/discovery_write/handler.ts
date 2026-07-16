@@ -146,10 +146,11 @@ const findDuplicateDiscovery = async ({
 
   const cutoffIso = new Date(Date.now() - windowMs).toISOString();
   const fingerprint = makeFingerprint(streamNames, extractRuleUuids(signals));
-  // Scan recent active discoveries and match on stream+rules fingerprint.
+  // Scan recent active discoveries and match on stream+rules fingerprint in memory. ES|QL `IN`
+  // does not perform membership checks on multivalued keyword fields such as `stream_names`.
   // Uses findLatest (grouped by event_id, excludes handled) so only the latest doc per incident
   // is considered — prevents stale resolved incidents from blocking new ones.
-  const { hits } = await discoveryClient.findLatest({ from: cutoffIso, streamNames });
+  const { hits } = await discoveryClient.findLatest({ from: cutoffIso });
   return hits.find(
     (h) =>
       h.kind === 'discovery' &&

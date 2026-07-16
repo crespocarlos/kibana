@@ -47,7 +47,7 @@ consts:
   KIND_DISCOVERY: 'discovery'
   KIND_HANDLED: 'handled'
   SCAN_BATCH_SIZE: 100
-  INVESTIGATABLE_SEVERITIES: ['critical', 'high']
+  INVESTIGATABLE_SEVERITIES: ['80-critical', '60-high']
 steps:
   # Copy workflow.spaceId into variables so ES body Liquid expressions can reference it.
   - name: set_space_vars
@@ -82,6 +82,7 @@ steps:
             - discovery_id
             - event_id
             - title
+            - symptom_hypothesis
             - summary
             - severity
             - confidence
@@ -190,7 +191,7 @@ steps:
                   description: 'UUID assigned by events_write. Required for trigger_investigation context.'
                 severity:
                   type: string
-                  enum: [critical, high, medium, low]
+                  enum: ['80-critical', '60-high', '40-medium', '20-low']
                   description: 'Severity of the event as decided by the judge.'
                 status:
                   type: string
@@ -235,7 +236,7 @@ steps:
           # Look up the full discovery finding for this open event so trigger_investigation
           # below can build the `message` the investigation workflow requires. The judge's
           # structured output only echoes event_id/event_uuid/status/written; the finding's
-          # title/summary/root_cause/stream_names still live in collect_discoveries' output.
+          # title/summary/symptom_hypothesis/stream_names still live in collect_discoveries' output.
           - name: resolve_open_events
             type: data.set
             with:

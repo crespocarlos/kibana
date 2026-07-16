@@ -127,14 +127,44 @@ describe('discoveryWriteHandler', () => {
       input: { ...baseInput, dedup_window: 'now-1h' },
     });
 
-    expect(discoveryClient.findLatest).toHaveBeenCalledWith(
-      expect.objectContaining({ from: expect.any(String) })
-    );
+    expect(discoveryClient.findLatest).toHaveBeenCalledWith({ from: expect.any(String) });
     expect(discoveryClient.bulkCreate).not.toHaveBeenCalled();
     expect(result.written).toBe(false);
     expect(result.skipped).toBe(true);
     expect(result.reason).toBe('duplicate_within_window');
     expect(result.existing_discovery_id).toBe('existing-disc-id');
+  });
+
+  it('deduplicates discoveries with multivalued stream_names', async () => {
+    const streamNames = ['logs.checkout', 'logs.payment'];
+    const activeDoc = {
+      discovery_id: 'existing-multi-stream-disc-id',
+      event_id: 'existing-multi-stream-event-id',
+      kind: 'discovery' as const,
+      stream_names: [...streamNames].reverse(),
+      signals: [],
+      '@timestamp': new Date().toISOString(),
+    };
+    const discoveryClient = {
+      findLatest: jest.fn().mockResolvedValue({ hits: [activeDoc] }),
+      findByEventId: jest.fn().mockResolvedValue({ hits: [] }),
+      bulkCreate: jest.fn(),
+    };
+
+    const result = await discoveryWriteHandler({
+      discoveryClient: discoveryClient as never,
+      input: { ...baseInput, stream_names: streamNames, dedup_window: 'now-1h' },
+    });
+
+    expect(discoveryClient.findLatest).toHaveBeenCalledWith({ from: expect.any(String) });
+    expect(discoveryClient.bulkCreate).not.toHaveBeenCalled();
+    expect(result).toEqual(
+      expect.objectContaining({
+        event_id: 'existing-multi-stream-event-id',
+        written: false,
+        reason: 'duplicate_within_window',
+      })
+    );
   });
 
   it('does not skip when a matching discovery exists but has a different stream', async () => {

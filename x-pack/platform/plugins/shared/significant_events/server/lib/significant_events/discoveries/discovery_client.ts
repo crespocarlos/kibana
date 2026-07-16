@@ -23,7 +23,6 @@ import {
   runFindByIdEsqlQuery,
   runFindByIdsEsqlQuery,
   runGetProcessedIds,
-  inFilter,
 } from '../latest_source_query';
 import {
   DISCOVERIES_DATA_STREAM,
@@ -55,7 +54,6 @@ export class DiscoveryClient {
     }
   ) {}
 
-  /** Accepts raw discovery documents (without the derived `processed` flag). */
   async bulkCreate(
     discoveries: RawDiscoveryRow[],
     { throwOnFail = false }: BulkCreateOptions = {}
@@ -76,16 +74,13 @@ export class DiscoveryClient {
     return esql.exp`${esql.col('kind')} != ${esql.str(KIND_HANDLED)}`;
   }
 
-  async findLatest(
-    options: CommonSearchOptions & { streamNames?: string[] } = {}
-  ): Promise<{ hits: Discovery[] }> {
-    const { streamNames, ...searchOptions } = options;
+  async findLatest(options: CommonSearchOptions = {}): Promise<{ hits: Discovery[] }> {
     const result = await runLatestSourceEsqlQuery<RawDiscoveryRow>({
       esClient: this.clients.esClient,
       space: this.clients.space,
-      options: searchOptions,
+      options,
       index: DISCOVERIES_DATA_STREAM,
-      where: inFilter({ where: this.buildWhere(), field: 'stream_names', values: streamNames }),
+      where: this.buildWhere(),
       groupBy: FIELD_EVENT_ID,
     });
 
