@@ -8,7 +8,7 @@
 import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import dateMath from '@kbn/datemath';
-import type { Discovery, SignalEntry } from '@kbn/significant-events-schema';
+import { type Discovery, type SignalEntry } from '@kbn/significant-events-schema';
 import type { DiscoveryClient } from '../../../lib/significant_events/discoveries';
 
 export type DiscoveryWriteInput = Pick<
@@ -17,8 +17,8 @@ export type DiscoveryWriteInput = Pick<
   | 'title'
   | 'symptom_hypothesis'
   | 'summary'
-  | 'stream_names'
   | 'severity'
+  | 'stream_names'
   | 'confidence'
   | 'signals'
   | 'causal_features'
@@ -27,7 +27,7 @@ export type DiscoveryWriteInput = Pick<
   | 'workflow_execution_id'
   | 'conversation_id'
 > & {
-  /** Omit for new events — deterministically generated from stream names + rule uuids. Pass verbatim for continuation. */
+  /** Omit for new events — auto-generated (stream + rule UUIDs + random suffix; dedup uses `makeFingerprint`, not this id). Pass verbatim for continuation. */
   event_id?: Discovery['event_id'];
   /** Deduplication window (ES date math, e.g. `"now-1h"`). Not stored in the document. */
   dedup_window?: string;
@@ -206,7 +206,7 @@ export async function discoveryWriteHandler({
   if (duplicate) {
     return {
       discovery_id: duplicate.discovery_id,
-      event_id: duplicate.event_id,
+      event_id: duplicate.event_id ?? resolvedEventId,
       kind: discoveryInput.kind,
       written: false,
       skipped: true,
@@ -233,6 +233,7 @@ export async function discoveryWriteHandler({
         discovered_at: discoveryInput.kind === 'discovery' ? timestamp : undefined,
         signals,
         discovery_id: discoveryId,
+        severity: discoveryInput.severity,
       },
     ],
     { throwOnFail: true }

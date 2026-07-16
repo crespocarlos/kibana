@@ -17,7 +17,7 @@ const createEvent = (eventId: string): SignificantEvent => ({
   title: `Event ${eventId}`,
   summary: 'Summary',
   symptom_hypothesis: 'Root cause',
-  severity: 'high',
+  severity: '60-high',
   confidence: 0.8,
   status: 'open',
 });

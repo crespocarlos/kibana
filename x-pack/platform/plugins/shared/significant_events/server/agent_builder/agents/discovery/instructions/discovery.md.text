@@ -83,7 +83,7 @@ Example: platform_sig_events_discovery_write
   "title": "Payment gRPC — checkout connectivity failure",
   "symptom_hypothesis": "Checkout is blocked because the payment gRPC endpoint refuses connections.",
   "summary": "...",
-  "severity": "high",
+  "severity": "60-high",
   "confidence": 0.68,
   "stream_names": ["logs.otel"],
   "signals": [
@@ -139,7 +139,7 @@ Example: platform_sig_events_discovery_write
    - Reuse the continuation `event_id` when the continuation check matches.
 8. **Output gate — recovering episode:**
    - When ALL rules in the group are recovering (downward/settle), their recovery-lens queries confirm no active failure rows, AND the continuation check matched an open episode: emit a discovery that documents the confirmed recovery.
-   - Reuse the candidate's `event_id` verbatim. Summary describes the recovery; include the recovery-check evidence, use `severity: "low"` and set `confidence`  from the confirmation strength.
+   - Reuse the candidate's `event_id` verbatim. Summary describes the recovery; include the recovery-check evidence, use `severity: "20-low"` and set `confidence` from the confirmation strength.
 9. **Recovering-without-episode gate:** all rules recovering (downward/settle change points), no continuation match, no active failure evidence → do not emit. No tool budget spent inventing a new `event_id` for an episode that was never open.
 10. **`signals[]` gate for active incidents**: when `signals[]` includes any entry with `type:'detection'`, `signals` must be non-empty with exactly one entry per active rule — query result or `no confirming query available` disposition. Never two entries for the same rule, even after a contradiction follow-up call.
 
@@ -297,7 +297,7 @@ Discoveries are re-evaluated every cycle — apply this check even when the cand
 ### Step 6: Emit Output
 
 **Pre-emit gate — verify for EVERY group before calling the output tool:**
-1. KI search ran and `signals` covers every `rule.uuid`.
+1. KI search ran and `signals` covers every `metadata.rule_uuid`.
 2. Every non-null `metadata.rule_name` in `signals` matches a detection rule in the group; else set `metadata.rule_name: null`.
 3. `blast_radius` dependency entries: scan query KI `evidence` for `"Dependency: <source> → <target>"` strings. Never populate from continuation-candidate data alone.
 4. `causal_features` ceiling: apply the ceiling from the `confidence` field description in the tool schema.
@@ -320,7 +320,7 @@ Field content rules for `platform_sig_events_discovery_write`. Follow the tool s
   - KI metadata may refine an evidenced hypothesis but cannot establish a live failure by itself. When rows contain no error signature, state the observed volume driver and that no mechanism was confirmed. Scope the hypothesis to this group's rules only.
   - Apply the sensitive-value rule from the field description.
 - `summary`: per the `summary` field description in the tool metadata. Never lead with detection mechanics.
-- `severity`: make a preliminary user-impact classification per the `severity` field description in the `platform_sig_events_discovery_write` tool metadata — the judge makes the final decision. Use `"low"` for confirmed recovery, minor impact, noise, false-alarm candidates, or non-issues; use confidence to distinguish a corroborated low-impact finding from evidence too thin to trust.
+- `severity`: make a preliminary user-impact classification per the `severity` field description in the `platform_sig_events_discovery_write` tool metadata — the judge makes the final decision. Use `"20-low"` for confirmed recovery, minor impact, noise, false-alarm candidates, or non-issues; use confidence to distinguish a corroborated low-impact finding from evidence too thin to trust.
 - `signals`: the unified detection+evidence array.
   - One entry per detection rule. Combine detection metadata and query result in each entry.
   - Dedup by `metadata.rule_uuid` — each must appear exactly once.

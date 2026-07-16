@@ -6,6 +6,7 @@
  */
 
 import { z } from '@kbn/zod/v4';
+import { i18n } from '@kbn/i18n';
 import dedent from 'dedent';
 import {
   MAX_ID_LENGTH,
@@ -170,73 +171,40 @@ const detectionSignalSchema = signalBaseSchema.extend({
 export const signalEntrySchema = z.discriminatedUnion('type', [detectionSignalSchema]);
 export type SignalEntry = z.infer<typeof signalEntrySchema>;
 
-/** Domain severity values — what clients read and write. */
-export const severitySchema = z.enum(['critical', 'high', 'medium', 'low']).describe(dedent`
-    "critical" = the most severe outage. Any ONE qualifies independently: 
-      - a site-wide/global outage affecting most customers; 
-      - a user journey completely and unavoidably blocked for every customer who reaches that step (even if unrelated journeys remain up); 
-      - or confirmed severe PII, credential, or secret exposure. 
-    "high" = major, painful customer impact, such as a significant feature or journey being unavailable, but limited below critical scope.
-    "medium" = partial or less widespread degradation, or customer impact is not yet confirmed.
-    "low" = minor customer impact, recovery, noise, false alarm, or non-issue.
-  
+/** Canonical sortable severity used by storage, APIs, and tools. */
+export const severitySchema = z.enum(['20-low', '40-medium', '60-high', '80-critical'])
+  .describe(dedent`
+    Sortable severity keyword. Higher prefixes indicate greater severity:
+    "80-critical" = the most severe outage. Any ONE qualifies independently:
+      - a site-wide/global outage affecting most customers;
+      - a user journey completely and unavoidably blocked for every customer who reaches that step;
+      - or confirmed severe PII, credential, or secret exposure.
+    "60-high" = major, painful customer impact, such as a significant feature or journey being unavailable, but limited below critical scope.
+    "40-medium" = partial or less widespread degradation, or customer impact is not yet confirmed.
+    "20-low" = minor customer impact, recovery, noise, false alarm, or non-issue.
+
     Assess affected population, journey availability, duration, and spread. When uncertain between tiers, choose the lower one.
   `);
 
 export type Severity = z.infer<typeof severitySchema>;
 
-/**
- * Maps human-readable severity labels to prefixed strings that sort correctly
- * as ES keywords. A numeric prefix guarantees alphabetic keyword sort yields
- * the right severity order without a script. Sort `desc` to get critical first:
- *   80-critical > 60-high > 40-medium > 20-low
- */
-export const SEVERITY_SORT_MAP = {
-  low: '20-low',
-  medium: '40-medium',
-  high: '60-high',
-  critical: '80-critical',
-} as const satisfies Record<Severity, string>;
+const SEVERITY_LABELS: Record<Severity, string> = {
+  '20-low': i18n.translate('xpack.significantEvents.severity.lowLabel', {
+    defaultMessage: 'low',
+  }),
+  '40-medium': i18n.translate('xpack.significantEvents.severity.mediumLabel', {
+    defaultMessage: 'medium',
+  }),
+  '60-high': i18n.translate('xpack.significantEvents.severity.highLabel', {
+    defaultMessage: 'high',
+  }),
+  '80-critical': i18n.translate('xpack.significantEvents.severity.criticalLabel', {
+    defaultMessage: 'critical',
+  }),
+};
 
-export type StoredSeverity = (typeof SEVERITY_SORT_MAP)[Severity];
-
-/** Reverse map: stored keyword → domain label. */
-const STORED_TO_DOMAIN = Object.fromEntries(
-  Object.entries(SEVERITY_SORT_MAP).map(([domain, stored]) => [stored, domain])
-) as Record<StoredSeverity, Severity>;
-
-/** Convert a stored sortable severity back to its human-readable label. Falls back to `"low"` for unrecognised values. */
-export const fromStoredSeverity = (stored: string): Severity =>
-  STORED_TO_DOMAIN[stored as StoredSeverity] ?? 'low';
-
-/**
- * Encodes domain severity (`"high"`) into its sortable ES keyword form (`"60-high"`).
- * Idempotent — also accepts already-stored input, so it's safe to re-parse a document that's
- * already been encoded. Used at the write boundary — see `storedDiscoverySchema` /
- * `storedEventSchema`.
- */
-export const storedSeveritySchema = z
-  .preprocess(
-    (val): unknown =>
-      typeof val === 'string' && val in STORED_TO_DOMAIN
-        ? STORED_TO_DOMAIN[val as StoredSeverity]
-        : val,
-    severitySchema
-  )
-  .transform((s): StoredSeverity => SEVERITY_SORT_MAP[s]);
-
-/**
- * Decodes a stored severity keyword (`"60-high"`) back to its domain label (`"high"`).
- * Idempotent — also accepts already-domain values, so it's safe to apply defensively.
- * Used at the read boundary to normalize raw ES documents into domain objects.
- */
-export const severityFromStoredSchema = z.preprocess(
-  (val): unknown =>
-    typeof val === 'string' && val in STORED_TO_DOMAIN
-      ? STORED_TO_DOMAIN[val as StoredSeverity]
-      : val,
-  severitySchema
-);
+/** Convert canonical sortable severity to its human-readable label. */
+export const getSeverityLabel = (severity: Severity): string => SEVERITY_LABELS[severity];
 
 export const significantEventBaseSchema = z.object({
   event_id: z

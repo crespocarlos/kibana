@@ -74,7 +74,7 @@ Example: platform_sig_events_events_write
 {
   "discovery_id": "...", "event_id": "...",
   "status": "open",
-  "severity": "critical",
+  "severity": "80-critical",
   "title": "Payment gRPC — checkout connectivity failure",
   "symptom_hypothesis": "...",
   "summary": "...",
@@ -100,7 +100,7 @@ Example: platform_sig_events_discovery_write (stamp handled — immediately afte
   "kind": "handled",
   "discovery_id": "...", "event_id": "...",
   "title": "...", "symptom_hypothesis": "...", "summary": "",
-  "severity": "critical", "confidence": 0.73,
+  "severity": "80-critical", "confidence": 0.73,
   "stream_names": ["logs.otel"],
   "signals": [], "blast_radius": [], "causal_features": []
 }
@@ -130,10 +130,10 @@ Verify in uncertainty order: `empty/error` first, then stale, then fresh `found`
 3. **Status consistency**: active failures confirmed by tools → status must be `open`. A status contradicting your evidence is a critical error — fix the status.
 4. **No pre-confirmed evidence**: input `signals[]` arrive without `confirmed` stamps. Stamp `confirmed: true` only after your own `platform_core_execute_esql` returns results that support the status decision.
 5. **Status decision gate — active episode (escalation signals):** tier definitions are the `severity` field description in the `platform_sig_events_discovery_write` tool metadata; apply them here with these additional gates:
-   - `status: "open"` with `severity: "critical"`: evidence supports the `critical` tier, backed by a credible signal (`p_value` ≤ 0.05) and ≥1 `confirmed: true` entry from `platform_core_execute_esql` this cycle. When evidence does not clearly establish that tier's scope, use `high` — never downgrade by crediting an unconfirmed workaround or mitigation.
-   - `status: "open"` with `severity: "high"`: the signal is real and credible (`p_value` ≤ 0.05) and evidence supports the `high` tier.
-   - `status: "open"` with `severity: "medium"`: the signal is credible and evidence supports the `medium` tier. Do not pick `medium` merely to hedge on ambiguous signal quality — express that in `confidence` instead.
-   - `status: "open"` with `severity: "low"`: confirmed false alarm or recovered per the `low` tier — `p_value` > 0.1 with no corroborating KI evidence, OR your current-state check shows the stream is alive and errors have cleared — but still corroborated enough to trust (confidence ≥ 0.5, e.g. ≥1 `confirmed: true` entry). Stays `open` — closing it is a user decision, not yours, **unless** the doubly-confirmed recovery path below applies.
+   - `status: "open"` with `severity: "80-critical"`: evidence supports the critical tier, backed by a credible signal (`p_value` ≤ 0.05) and ≥1 `confirmed: true` entry from `platform_core_execute_esql` this cycle. When evidence does not clearly establish that tier's scope, use `"60-high"` — never downgrade by crediting an unconfirmed workaround or mitigation.
+   - `status: "open"` with `severity: "60-high"`: the signal is real and credible (`p_value` ≤ 0.05) and evidence supports the high tier.
+   - `status: "open"` with `severity: "40-medium"`: the signal is credible and evidence supports the medium tier. Do not pick medium merely to hedge on ambiguous signal quality — express that in `confidence` instead.
+   - `status: "open"` with `severity: "20-low"`: confirmed false alarm or recovered per the low tier — `p_value` > 0.1 with no corroborating KI evidence, OR your current-state check shows the stream is alive and errors have cleared — but still corroborated enough to trust (confidence ≥ 0.5, e.g. ≥1 `confirmed: true` entry). Stays `open` — closing it is a user decision, not yours, **unless** the doubly-confirmed recovery path below applies.
    - `status: "dismissed"`: same low-severity finding as above, but confidence is ALSO **low (< 0.5)** — too few corroborating signals to trust the finding at all (e.g. no `confirmed: true` entries, a single weak signal, or no KI corroboration whatsoever). Too thin to even surface as an open low-priority item.
    - `status: "closed"` — **doubly-confirmed recovery exception**: an active episode may close without a settled-shape signal when Step 3's recovery check is doubly confirmed this cycle — the fresh `platform_core_execute_esql` re-verification (`DESC LIMIT 1`) returned 0/stale rows **and** the follow-up broad `COUNT(*)` confirms a live, non-gapped stream. Two independent negative/healthy checks outweigh the original escalation shape. Anything less — an errored re-verification, a `COUNT(*) == 0` telemetry gap, or no query run at all — is not doubly confirmed and stays `open` per the tiers above.
    - All other outcomes: never `closed` for an active episode; `closed` otherwise requires the settled-episode gate below.
@@ -194,7 +194,7 @@ Dispatch is simultaneous for all items in the batch — classify every item befo
 - Settled episode: re-verify recovery for the **fresh** settled `signals[]` via `platform_core_execute_esql` (recovery lens) before resolving. `closed` only when the fresh re-verification finds no active failure rows (`result: "empty"` or healthy). For a fresh rule the downward/settle `change_point_type` is the hypothesis; the query confirms it.
 
 **`platform_core_execute_esql` modifications** — apply the full protocol from the loaded `significant-events-ki-grounding` context with these overrides:
-- Row-level queries: use `SORT @timestamp DESC | LIMIT 1` (not `ASC | LIMIT 1`) — retrieve the single most recent row for current-state assessment. Always a new `signals[]` entry, never merged with the input onset entry (see `<tools>`).
+- Row-level queries: use `SORT @timestamp DESC | LIMIT 1` (not `ASC | LIMIT 1`) — retrieve the single most recent row for current-state assessment. Fold this result into that rule's single `signals[]` entry (see `<field_rules>` `signals` for the exact per-entry rules).
 - Time scoping: use the earliest `@timestamp` across all `signals[]` entries (not per-detection).
 - Retry on 0 rows + unknown schema: replace `body.text` with `message`.
 - Never modify `WHERE` clauses, field names, or `FROM`. Skip the query on execution failure.
@@ -214,8 +214,8 @@ FROM <rule stream> | WHERE @timestamp >= NOW() - 1 hour | STATS n = COUNT(*)
 Resolve by what actually happened this cycle:
 - **Rule-query re-verification itself errored** (could not determine current state): an error is not recovery — `open`, severity from demonstrated customer impact and scope (Step 6), based on evidence collected before the error.
 - **Re-verification returned 0/stale rows, and broad `COUNT(*) > 0`**: stream alive, errors cleared — **doubly confirmed recovery** → `closed` (`<critical_rules>` #5 doubly-confirmed exception). This is the only branch in this list that can produce `closed` for an active episode.
-- **Re-verification returned 0/stale rows, and broad `COUNT(*) == 0`**: telemetry gap, recovery unconfirmed — not doubly confirmed → `open` + `severity: "medium"` + note uncertainty.
-- **No confirming query could be run at all** (e.g. budget exhausted before this rule): not doubly confirmed → `open` + `severity: "medium"` + note uncertainty; downgrade to `dismissed` if confidence is also low (`<critical_rules>` #5).
+- **Re-verification returned 0/stale rows, and broad `COUNT(*) == 0`**: telemetry gap, recovery unconfirmed — not doubly confirmed → `open` + `severity: "40-medium"` + note uncertainty.
+- **No confirming query could be run at all** (e.g. budget exhausted before this rule): not doubly confirmed → `open` + `severity: "40-medium"` + note uncertainty; downgrade to `dismissed` if confidence is also low (`<critical_rules>` #5).
 
 For a settled episode (all `signals[].metadata.change_point_type` are downward/settle): `signals[].evidence.result` not `"found"` at any age is recovery confirmation — `closed`.
 
@@ -249,7 +249,7 @@ Apply the `severity` field description in the `platform_sig_events_discovery_wri
 
 **Pre-emit gate — verify for EVERY event before calling any output tool:**
 1. `signals[]` is present and non-empty — echo input entries verbatim if you ran no new query.
-2. Every event carries `symptom_hypothesis`; `open` events also carry `summary`, `assessment_note`, and ≥1 `signals[]` entry (`confirmed: true` required for `severity: "critical"`).
+2. Every event carries `symptom_hypothesis`; `open` events also carry `summary`, `assessment_note`, and ≥1 `signals[]` entry (`confirmed: true` required for `severity: "80-critical"`).
 
 For each discovery, in order:
 1. Call `platform_sig_events_events_write` — record the decision.
@@ -269,8 +269,8 @@ Emit only fields defined in this schema. Output discipline applies to all narrat
 - `status`: one of `open`, `closed`, `dismissed`. An active episode (escalation signals) allows `open`, or `closed` only via the doubly-confirmed recovery exception (`<critical_rules>` #5, Step 3); a settled episode (downward/settle signals) allows `closed` via gate #6.
 - `symptom_hypothesis`: exactly one sentence. Reassess against merged signals and fresh queries. Keep it when supported and refine it only within the same operation/path, literal failure point, and mechanism. A different target or operation cannot be added; record it as contradictory or separate in `assessment_note` and lower confidence. Apply the sensitive-value rule from the field description.
 - `severity`: required for all events.
-  - `open`: assess per the `severity` field description in the `platform_sig_events_discovery_write` tool metadata, using the Step 6 evidence dimensions — `low` covers a likely false alarm or confirmed recovery; leave it to the user to close.
-  - `closed` / `dismissed`: always `low` — these statuses are low severity by definition, not a Step 6 assessment.
+  - `open`: assess per the `severity` field description in the `platform_sig_events_discovery_write` tool metadata, using the Step 6 evidence dimensions — `"20-low"` covers a likely false alarm or confirmed recovery; leave it to the user to close.
+  - `closed` / `dismissed`: always `"20-low"` — these statuses are low severity by definition, not a Step 6 assessment.
 - `causal_features`, `blast_radius`: read-only — echo verbatim. Never add, remove, or modify.
 - `confidence`: start from the discovery's `confidence` value (prior):
   - **Low confidence, defined**: see `<critical_rules>` #5 — separates `dismissed` from `open`/`low`.
@@ -283,8 +283,10 @@ Emit only fields defined in this schema. Output discipline applies to all narrat
 - `assessment_note`: your adversarial reasoning trace — what you independently verified, what signals confirmed or contradicted the discovery, and how customer impact and scope determined severity and status. Do not discuss unrelated KI metadata merely to explain why an unused severity condition did not apply. Apply the sensitive-value rule from the field description. Not operator-facing. Required for `open`; brief for `dismissed` and `closed`.
 - `signals` (**required on every event — never omit, never empty**): the merged signal trail built this cycle.
   - Per entry: `type: "detection"`, `stream_name`, `description`, `confirmed` (only when true), `collected_at`, `evidence` (when queried), `metadata`.
-  - **`description` format** — use the format defined in the `platform_sig_events_discovery_write` tool schema: `"Testing: [hypothesis]. Expected if true: [pattern]. Found: [N rows — failing upstream target/endpoint]. Why: [causal link visible in the row — name the failing upstream and how it is failing; do not infer beyond what the row shows]. Verdict: confirms | refutes | inconclusive — who/what is blocked."` Never paste raw log payloads, full stack traces, or multi-line JSON — extract only the decisive field values. This format applies to every entry you write, including re-verification entries. Do not use alternative shapes ("Current-state check:", bare prose summaries, or multi-paragraph accounts).
-  - `confirmed: true` — only on entries you ran `platform_core_execute_esql` for this cycle and got confirming rows. Never `false` — omit the field on unverified entries. A `severity: "critical"` event MUST carry ≥1 entry with `confirmed: true`.
+  - **`description` format** — use the format defined in the `platform_sig_events_discovery_write` tool schema: `"Testing: [hypothesis]. Expected if true: [pattern]. Found: [N rows — failing upstream target/endpoint]. 
+      Why: [causal link visible in the row — name the failing upstream and how it is failing; do not infer beyond what the row shows]. Verdict: confirms | refutes | inconclusive — who/what is blocked."` Never paste raw log payloads, full stack traces, or multi-line JSON — extract only the decisive field values. 
+      This format applies to every entry you write, including re-verification entries. Do not use alternative shapes ("Current-state check:", bare prose summaries, or multi-paragraph accounts).
+  - `confirmed: true` — only on entries you ran `platform_core_execute_esql` for this cycle and got confirming rows. Never `false` — omit the field on unverified entries. A `severity: "80-critical"` event MUST carry ≥1 entry with `confirmed: true`.
   - **Carry forward each carried (not re-run) rule's single input entry unchanged** — do not drop, modify, or truncate entries you did not re-run.
   - **Empty input** → your fallback query results become the output entries.
   - A narrated verification in `assessment_note` is not a substitute — the structured array must be present.

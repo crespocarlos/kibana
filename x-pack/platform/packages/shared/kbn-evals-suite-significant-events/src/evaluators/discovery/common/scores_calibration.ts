@@ -24,7 +24,7 @@ const SEVERITY_CALIBRATION_CRITERIA: EvaluationCriterion[] = [
   },
   {
     id: 'critical_severity_requires_confirmed_impact',
-    text: '"critical" severity is warranted only for confirmed user-task-blocking failures affecting a core user journey or confirmed live sensitive-data exposure with broad blast radius; bounded or partial impact belongs at "high" or "medium".',
+    text: '"80-critical" severity is warranted only for confirmed user-task-blocking failures affecting a core user journey or confirmed live sensitive-data exposure with broad blast radius; bounded or partial impact belongs at "60-high" or "40-medium".',
   },
   {
     id: 'weak_signals_low_severity',

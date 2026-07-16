@@ -9,7 +9,7 @@ import { esql } from '@elastic/esql';
 import type { IDataStreamClient } from '@kbn/data-streams';
 import type { ElasticsearchClient } from '@kbn/core/server';
 import type { ESQLAstExpression } from '@elastic/esql/types';
-import { severityFromStoredSchema, type StoredSeverity } from '@kbn/significant-events-schema';
+import type { Discovery } from '@kbn/significant-events-schema';
 import {
   type BulkCreateOptions,
   type CommonSearchOptions,
@@ -28,23 +28,13 @@ import {
 import {
   DISCOVERIES_DATA_STREAM,
   storedDiscoverySchema,
-  type Discovery,
   type StoredDiscovery,
   type discoveriesMappings,
 } from './data_stream';
 import { FIELD_DISCOVERY_ID, FIELD_EVENT_ID } from '../field_names';
 
-/**
- * Shape of a raw ES document before decoding — identical to `Discovery` except `severity`,
- * which is stored as a sortable keyword (e.g. `"80-critical"`) rather than the domain enum.
- */
-type RawDiscoveryRow = Omit<Discovery, 'severity' | 'processed'> & { severity: StoredSeverity };
-
-/** Decode a raw ES document's stored severity keyword (e.g. `"80-critical"`) into domain form. */
-const decodeSeverity = (doc: RawDiscoveryRow): Omit<Discovery, 'processed'> => ({
-  ...doc,
-  severity: severityFromStoredSchema.parse(doc.severity),
-});
+/** Shape of a raw ES document before the `processed` flag is computed. */
+type RawDiscoveryRow = Omit<Discovery, 'processed'>;
 
 const PROCESSED_CHUNK_SIZE = 250;
 
@@ -65,8 +55,9 @@ export class DiscoveryClient {
     }
   ) {}
 
+  /** Accepts raw (stored-form severity) documents only — encode with `toStoredSeverity` first. */
   async bulkCreate(
-    discoveries: Omit<Discovery, 'processed'>[],
+    discoveries: RawDiscoveryRow[],
     { throwOnFail = false }: BulkCreateOptions = {}
   ) {
     const response = await this.clients.dataStreamClient.create({
@@ -103,7 +94,7 @@ export class DiscoveryClient {
     );
     return {
       hits: result.hits.map((raw) => ({
-        ...decodeSeverity(raw),
+        ...raw,
         processed: processedEventIds.has(raw.event_id),
       })),
     };
@@ -130,7 +121,7 @@ export class DiscoveryClient {
     return {
       ...result,
       hits: result.hits.map((raw) => ({
-        ...decodeSeverity(raw),
+        ...raw,
         processed: processedEventIds.has(raw.event_id),
       })),
     };
@@ -164,7 +155,7 @@ export class DiscoveryClient {
 
     return {
       hits: result.hits.map((raw) => ({
-        ...decodeSeverity(raw),
+        ...raw,
         processed: processedEventIds.has(raw.event_id),
       })),
     };
@@ -185,7 +176,7 @@ export class DiscoveryClient {
 
     return {
       hits: result.hits.map((raw) => ({
-        ...decodeSeverity(raw),
+        ...raw,
         processed: processedEventIds.has(raw.event_id),
       })),
     };
@@ -206,7 +197,7 @@ export class DiscoveryClient {
 
     return {
       hits: result.hits.map((raw) => ({
-        ...decodeSeverity(raw),
+        ...raw,
         processed: processedEventIds.has(raw.event_id),
       })),
     };

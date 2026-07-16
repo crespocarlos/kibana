@@ -21,7 +21,7 @@ const createDiscovery = (overrides: StoredRow): Omit<Discovery, 'processed'> =>
     stream_names: [],
     title: 'Test discovery',
     summary: 'Test summary',
-    severity: 'medium',
+    severity: '40-medium',
     confidence: 0.8,
     signals: [],
     ...overrides,
@@ -109,7 +109,7 @@ describe('DiscoveryClient', () => {
           expect.objectContaining({
             discovery_id: discovery.discovery_id,
             event_id: discovery.event_id,
-            // severity is encoded as a sortable keyword by storedDiscoverySchema
+            // Canonical discoveries retain sortable severity through the write boundary.
             severity: '40-medium',
           }),
         ],

@@ -35,7 +35,7 @@ export function canonicalSignificantEventFromGroundTruth({
     discovery_id: discovery.discovery_id,
     event_id: discovery.event_id ?? eventUuid,
     status: 'open',
-    severity: discovery.severity ?? 'medium',
+    severity: discovery.severity ?? '40-medium',
     stream_names: streamNames.length > 0 ? streamNames : ['unknown'],
     title: discovery.title ?? 'eval-seeded-event',
     symptom_hypothesis: discovery.symptom_hypothesis,

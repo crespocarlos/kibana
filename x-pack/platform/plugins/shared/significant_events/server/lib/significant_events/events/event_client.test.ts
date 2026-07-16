@@ -19,7 +19,7 @@ const createEvent = (): SignificantEvent => ({
   stream_names: ['logs.test'],
   title: 'Test event',
   summary: 'Test summary',
-  severity: 'medium',
+  severity: '40-medium',
   confidence: 0.8,
 });
 

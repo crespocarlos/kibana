@@ -5,16 +5,16 @@
  * 2.0.
  */
 
-import { eventsWriteHandler } from './handler';
+import { eventsWriteHandler, type EventsWriteInput } from './handler';
 
-const baseInput = {
+const baseInput: EventsWriteInput = {
   discovery_id: 'disc-1',
-  status: 'open' as const,
+  status: 'open',
   stream_names: ['logs.checkout'],
   title: 'Checkout latency',
   symptom_hypothesis: 'Checkout requests are delayed because the payment dependency is timing out.',
   summary: 'P99 latency breached SLO',
-  severity: 'high' as const,
+  severity: '60-high',
   confidence: 0.82,
   assessment_note: 'Verified via execute_esql',
   signals: [],

@@ -34,12 +34,12 @@ describe('confirmedEvidencesEvaluator', () => {
   });
 
   it('scores 0 for an open event of any severity with no confirmed signal', async () => {
-    const result = await evaluate([{ status: 'open', severity: 'medium' }], [esqlStep]);
+    const result = await evaluate([{ status: 'open', severity: '40-medium' }], [esqlStep]);
     expect(result.score).toBe(0);
   });
 
   it('is unavailable when dismissed', async () => {
-    const result = await evaluate([{ status: 'dismissed', severity: 'low' }], [esqlStep]);
+    const result = await evaluate([{ status: 'dismissed', severity: '20-low' }], [esqlStep]);
     expect(result.score).toBeNull();
   });
 
@@ -47,7 +47,7 @@ describe('confirmedEvidencesEvaluator', () => {
     const events = [
       {
         status: 'open',
-        severity: 'critical',
+        severity: '80-critical',
         signals: [{ type: 'detection', description: 'confirms.', confirmed: true }],
       },
     ];
@@ -58,7 +58,7 @@ describe('confirmedEvidencesEvaluator', () => {
     const events = [
       {
         status: 'open',
-        severity: 'critical',
+        severity: '80-critical',
         signals: [
           {
             type: 'detection',
@@ -75,7 +75,7 @@ describe('confirmedEvidencesEvaluator', () => {
     const events = [
       {
         status: 'open',
-        severity: 'critical',
+        severity: '80-critical',
         signals: [{ type: 'detection', description: 'confirms.', confirmed: true }],
       },
     ];
@@ -86,12 +86,12 @@ describe('confirmedEvidencesEvaluator', () => {
     const events = [
       {
         status: 'open',
-        severity: 'critical',
+        severity: '80-critical',
         signals: [{ type: 'detection', description: 'confirms.', confirmed: true }],
       },
       {
         status: 'open',
-        severity: 'critical',
+        severity: '80-critical',
         signals: [{ type: 'detection', description: 'confirms.', confirmed: true }],
       },
     ];
@@ -103,12 +103,12 @@ describe('confirmedEvidencesEvaluator', () => {
     const events = [
       {
         status: 'open',
-        severity: 'critical',
+        severity: '80-critical',
         signals: [{ type: 'detection', description: 'confirms.', confirmed: true }],
       },
       {
         status: 'open',
-        severity: 'critical',
+        severity: '80-critical',
         signals: [
           {
             type: 'detection',

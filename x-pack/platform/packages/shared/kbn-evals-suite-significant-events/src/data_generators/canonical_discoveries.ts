@@ -44,7 +44,7 @@ export const canonicalDiscoveryFromGroundTruth = ({
     symptom_hypothesis: discovery.symptom_hypothesis ?? '',
     title: discovery.title ?? '',
     summary: discovery.summary ?? '',
-    severity: discovery.severity ?? 'low',
+    severity: discovery.severity ?? '20-low',
     confidence: discovery.confidence ?? 0,
     processed: discovery.processed ?? false,
     ...(discovery.signals ? { signals: discovery.signals } : {}),

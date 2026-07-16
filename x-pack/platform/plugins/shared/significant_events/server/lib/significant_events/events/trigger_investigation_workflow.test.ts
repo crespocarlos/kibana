@@ -17,7 +17,7 @@ const createEvent = (overrides: Partial<SignificantEvent> = {}): SignificantEven
   stream_names: ['logs.checkout', 'metrics.checkout'],
   title: 'Checkout latency breach',
   summary: 'P99 latency climbed above 2s.',
-  severity: 'high',
+  severity: '60-high',
   confidence: 0.9,
   ...overrides,
 });

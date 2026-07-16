@@ -35,7 +35,7 @@ const LEDGER_DB_CASCADE_DISCOVERY: Partial<Discovery> = {
     'Customer transaction flows are failing because ledger database and cache dependencies refuse connections.',
   summary:
     'balancereader, transactionhistory, and ledgerwriter are all returning connection-refused errors to the frontend, with concurrent cache errors in balancereader/transactionhistory and a SQL connection failure (SQLState 08001) in transactionhistory. Users cannot view account balances, cannot view transaction history, and cannot submit payments or deposits. Onset ~14:30 UTC with no sign of recovery.',
-  severity: 'critical',
+  severity: '80-critical',
   confidence: 0.82,
   stream_names: ['logs'],
   signals: [
@@ -233,7 +233,7 @@ const BENIGN_AUTH_DISCOVERY: Partial<Discovery> = {
     'Successful login and account-creation activity increased without an observed failure.',
   summary:
     'Successful login and account-creation events increased around 14:30 UTC. All sampled events completed successfully, with no observed error signature or blocked user task.',
-  severity: 'low',
+  severity: '20-low',
   confidence: 0.68,
   signals: [
     {
@@ -356,12 +356,12 @@ export const discoveryJudge: DatasetConfig['discoveryJudge'] = [
     output: {
       expected_ground_truth:
         'cascade discovery (transactionhistory/balancereader/ledgerwriter → postgresql SQLState 08001, ' +
-        'user-blocking connection-refused failures)=open/critical; ' +
+        'user-blocking connection-refused failures)=open/80-critical; ' +
         'benign authentication spike (successful logins/signups only, no failures)=dismissed',
       criteria: [
         {
           id: 'open-active-cascade',
-          text: 'Sets status=open with severity=critical for the cascade discovery because active database-connectivity failures broadly break core customer balance, transaction-history, payment, and deposit journeys. Bases critical severity on demonstrated customer impact and scope, without requiring PII exposure or a fixed downstream-service count.',
+          text: 'Sets status=open with severity=80-critical for the cascade discovery because active database-connectivity failures broadly break core customer balance, transaction-history, payment, and deposit journeys. Bases critical severity on demonstrated customer impact and scope, without requiring PII exposure or a fixed downstream-service count.',
           score: 3,
         },
         {

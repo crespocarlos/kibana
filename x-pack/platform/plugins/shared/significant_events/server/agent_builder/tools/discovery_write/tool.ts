@@ -47,7 +47,7 @@ const discoveryWriteSchema = discoverySchema
       .string()
       .default('now-1h')
       .describe(
-        'Deduplication window as an ES date math expression (e.g. "now-1h"). Applies only to new events with auto-generated event_id: if a document with the same kind and event_id already exists within this window, the write is skipped and the existing discovery_id is returned. Continuation writes (explicit event_id) are never deduped. Defaults to "now-1h".'
+        'Deduplication window as an ES date math expression (e.g. "now-1h"). Applies only to new events without an explicit event_id: if a kind:discovery document with the same primary stream and detection rule UUIDs already exists within this window, the write is skipped and the existing discovery_id is returned. Continuation writes (explicit event_id) are never deduped. Defaults to "now-1h".'
       ),
   });
 

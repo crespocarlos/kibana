@@ -6,7 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import type { SignificantEvent } from '@kbn/significant-events-schema';
+import { type SignificantEvent } from '@kbn/significant-events-schema';
 import type { EventClient } from '../../../lib/significant_events/events';
 
 /**
@@ -75,6 +75,7 @@ export async function eventsWriteHandler({
         event_uuid: eventUuid,
         event_id: eventId,
         previous_event_uuid: latestEvent?.event_uuid,
+        severity: input.severity,
       },
     ],
     { throwOnFail: true }

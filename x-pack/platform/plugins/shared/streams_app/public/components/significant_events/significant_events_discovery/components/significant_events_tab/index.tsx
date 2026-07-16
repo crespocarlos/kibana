@@ -23,7 +23,7 @@ import { css } from '@emotion/react';
 import { capitalize } from 'lodash';
 import useInterval from 'react-use/lib/useInterval';
 import { i18n } from '@kbn/i18n';
-import { SIGNIFICANT_EVENT_STATUS_OPTIONS } from '@kbn/significant-events-schema';
+import { getSeverityLabel, SIGNIFICANT_EVENT_STATUS_OPTIONS } from '@kbn/significant-events-schema';
 import type { SignificantEvent, SignificantEventStatus } from '@kbn/significant-events-schema';
 import { RUNNING_POLL_INTERVAL_MS } from '../../../constants';
 import { useFetchSignificantEvents } from '../../../../../hooks/significant_events/use_fetch_significant_events';
@@ -189,7 +189,9 @@ const columns: Array<EuiBasicTableColumn<SignificantEvent>> = [
       defaultMessage: 'Severity',
     }),
     width: '100px',
-    render: (severity: string | undefined) => <EuiText size="xs">{severity ?? '-'}</EuiText>,
+    render: (severity: SignificantEvent['severity']) => (
+      <EuiText size="xs">{getSeverityLabel(severity)}</EuiText>
+    ),
   },
   {
     name: '',

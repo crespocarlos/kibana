@@ -24,7 +24,7 @@ const baseInput: DiscoveryWriteInput = {
   symptom_hypothesis: 'Checkout requests are delayed because the payment dependency is timing out.',
   summary: 'P99 latency breached SLO',
   stream_names: ['logs.checkout'],
-  severity: 'high' as const,
+  severity: '60-high',
   confidence: 0.8,
   signals: [],
 };

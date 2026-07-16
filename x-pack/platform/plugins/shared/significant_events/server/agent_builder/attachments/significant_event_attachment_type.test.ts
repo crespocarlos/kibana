@@ -30,7 +30,7 @@ const event: SignificantEvent = {
   title: 'Payment outage',
   symptom_hypothesis: 'Payment gateway timeout.',
   summary: 'Payments are failing.',
-  severity: 'high',
+  severity: '60-high',
   confidence: 0.8,
 };
 

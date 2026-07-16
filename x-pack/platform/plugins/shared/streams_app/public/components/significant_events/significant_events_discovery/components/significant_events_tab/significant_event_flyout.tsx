@@ -29,7 +29,7 @@ import {
   useGeneratedHtmlId,
 } from '@elastic/eui';
 import { i18n } from '@kbn/i18n';
-import type { SignificantEvent } from '@kbn/significant-events-schema';
+import { getSeverityLabel, type SignificantEvent } from '@kbn/significant-events-schema';
 import { useFetchSignificantEventLifecycle } from '../../../../../hooks/significant_events/use_fetch_significant_event_lifecycle';
 import { useKibana } from '../../../../../hooks/use_kibana';
 import { useTriggerInvestigation } from '../../../../../hooks/significant_events/use_trigger_investigation';
@@ -223,7 +223,7 @@ export const SignificantEventFlyout = ({ event, onClose }: SignificantEventFlyou
           </EuiTitle>
           <EuiText size="xs" color="subdued">
             {formatTimestamp(event['@timestamp'])}
-            {event.severity != null && ` · ${SEVERITY_LABEL}: ${event.severity}`}
+            {` · ${SEVERITY_LABEL}: ${getSeverityLabel(event.severity)}`}
             {event.confidence != null &&
               ` · ${CONFIDENCE_LABEL}: ${Math.round(event.confidence * 100)}%`}
           </EuiText>

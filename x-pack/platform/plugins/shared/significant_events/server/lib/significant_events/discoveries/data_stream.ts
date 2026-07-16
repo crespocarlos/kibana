@@ -6,7 +6,7 @@
  */
 
 import type { DataStreamDefinition } from '@kbn/data-streams';
-import { discoverySchema, storedSeveritySchema } from '@kbn/significant-events-schema';
+import { discoverySchema } from '@kbn/significant-events-schema';
 import type { Discovery } from '@kbn/significant-events-schema';
 import type { GetFieldsOf, MappingsDefinition } from '@kbn/es-mappings';
 import { mappings } from '@kbn/es-mappings';
@@ -52,15 +52,12 @@ export type { Discovery };
  * - `severity` is encoded as a sortable prefixed keyword (e.g. `"60-high"`)
  * - `stream_names` is derived from `signals[].stream_name` when not provided
  */
-export const storedDiscoverySchema = discoverySchema
-  .omit({ processed: true })
-  .extend({ severity: storedSeveritySchema })
-  .transform((doc) => ({
-    ...doc,
-    stream_names: doc.stream_names?.length
-      ? doc.stream_names
-      : [...new Set((doc.signals ?? []).map((s) => s.stream_name).filter(Boolean))],
-  }));
+export const storedDiscoverySchema = discoverySchema.omit({ processed: true }).transform((doc) => ({
+  ...doc,
+  stream_names: doc.stream_names?.length
+    ? doc.stream_names
+    : [...new Set((doc.signals ?? []).map((s) => s.stream_name).filter(Boolean))],
+}));
 
 export const discoveriesDataStream: DataStreamDefinition<
   typeof discoveriesMappings,
