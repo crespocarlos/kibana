@@ -9,6 +9,7 @@ import { esql, type ComposerQuery, type ComposerSortShorthand } from '@elastic/e
 import type { ESQLAstExpression } from '@elastic/esql/types';
 import type { ElasticsearchClient } from '@kbn/core/server';
 import type { ESQLSearchResponse } from '@kbn/es-types';
+import dateMath from '@kbn/datemath';
 import { getSourceColumnIndex, toEsqlRequest } from '../streams/esql';
 import {
   type CommonSearchOptions,
@@ -16,6 +17,7 @@ import {
   type PaginatedSearchOptions,
 } from './query_utils';
 import { runEsqlQuery } from './run_esql_query';
+import { DEFAULT_EVENTS_SEARCH_FROM, DEFAULT_EVENTS_SEARCH_TO } from './events/constants';
 
 export const isIndexNotFoundError = (error: unknown): boolean => {
   if (error instanceof Error) {
@@ -150,23 +152,19 @@ export const fromIndexForSpace = ({
 
 export const applyTimeRange = ({
   query,
-  from,
-  to,
+  from = DEFAULT_EVENTS_SEARCH_FROM,
+  to = DEFAULT_EVENTS_SEARCH_TO,
 }: {
   query: ComposerQuery;
   from?: string;
   to?: string;
 }): ComposerQuery => {
-  let q = query;
-  if (from !== undefined) {
-    const fromIso = from;
-    q = q.where`@timestamp >= TO_DATETIME(${{ fromIso }})`;
-  }
-  if (to !== undefined) {
-    const toIso = to;
-    q = q.where`@timestamp <= TO_DATETIME(${{ toIso }})`;
-  }
-  return q;
+  const fromIso = dateMath.parse(from)?.toISOString() ?? from;
+  const toIso = dateMath.parse(to, { roundUp: true })?.toISOString() ?? to;
+
+  let timeRangeWhere = query.where`@timestamp >= TO_DATETIME(${{ fromIso }})`;
+  timeRangeWhere = timeRangeWhere.where`@timestamp <= TO_DATETIME(${{ toIso }})`;
+  return timeRangeWhere;
 };
 
 interface BuildLatestSourceBaseQueryArgs {

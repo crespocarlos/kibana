@@ -241,7 +241,7 @@ Follow the confirmation query protocol from the loaded `significant-events-ki-gr
 
 ### Step 4: Group
 
-Before any continuation checks in this step, call `platform_sig_events_event_search` once with `status: "open"` and `stream_names` containing all distinct stream names from the active batch. Treat the returned `events` as the continuation candidate set.
+Before any continuation checks in this step, call `platform_sig_events_event_search` once with `state: "open"`, `from: "now-7d"`, `to: "now"`, `stream_names` containing all distinct stream names from the active batch, and `rule_uuids` containing all distinct `detections[].rule_uuid` values from the active batch. Treat the returned `events` as the continuation candidate set.
 
 **Recovering pre-pass (before correlation grouping).** Recovering (downward/settle) rules do not participate in onset-based correlation grouping. Process their recovery-lens query results separately first:
 

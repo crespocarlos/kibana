@@ -41,6 +41,7 @@ import { buildDiscoveryInput } from '../../src/evaluators/discovery/discovery/bu
 import type { ContinuationCycle } from '../../src/evaluators/discovery/discovery/continuation/continuation_stability';
 
 const TRUST_UPSTREAM = process.env.SIGEVENTS_TRUST_UPSTREAM === 'true';
+const OUTSIDE_EVENT_LOOKUP_WINDOW_MS = 8 * 24 * 60 * 60 * 1000;
 
 /** Events data stream — the same index the judge writes to via events_write. */
 const SIGNIFICANT_EVENTS_EVENTS_DATA_STREAM = '.significant_events-events';
@@ -279,6 +280,11 @@ evaluate.describe(
         // `semantic` and `cascade` chains (different rules, same event). One experiment example
         // per (scenario × path); each chain is ground truth, so slug reuse is the correct answer
         // and minting a new slug is the defect ("slug proliferation is a defect").
+        // Continuation over time — does a re-arriving incident fold into ONE slug? We grade three
+        // matchers per scenario: rule-UUID re-detection (same rule re-fires) plus the declared
+        // `semantic` and `cascade` chains (different rules, same episode). One experiment example
+        // per (scenario × path); each chain is ground truth, so slug reuse is the correct answer
+        // and minting a new slug is the defect ("slug proliferation is a defect").
         evaluate(
           'Discovery agent — continuation over time',
           async ({
@@ -296,8 +302,20 @@ evaluate.describe(
               if (detections.length === 0) return [];
               const byRuleName = new Map(detections.map((d) => [d.rule_name, d]));
 
-              const plans: Array<{ path: string; sequence: Detection[] }> = [
+              const plans: Array<{
+                path: string;
+                sequence: Detection[];
+                expectReuse?: boolean;
+                seedAgeMs?: number;
+              }> = [
                 { path: 'rule-uuid', sequence: [detections[0], detections[0]] },
+
+                {
+                  path: 'rule-uuid-outside-window',
+                  sequence: [detections[0], detections[0]],
+                  expectReuse: false,
+                  seedAgeMs: OUTSIDE_EVENT_LOOKUP_WINDOW_MS,
+                },
                 ...Object.entries(scenario.continuationChains ?? {}).map(([path, ruleNames]) => ({
                   path,
                   sequence: ruleNames
@@ -311,6 +329,8 @@ evaluate.describe(
                 scenario,
                 sequence: plan.sequence,
                 snapshotKey,
+                expectReuse: plan.expectReuse,
+                seedAgeMs: plan.seedAgeMs,
               }));
             });
 
@@ -328,7 +348,7 @@ evaluate.describe(
                 datasets: [
                   {
                     name: `sigevents: Discovery agent continuation (${dataset.id})`,
-                    description: `[${dataset.id}] discovery agent folds a re-arriving incident into one slug across rule-UUID re-detection and the declared semantic/cascade chains`,
+                    description: `[${dataset.id}] discovery agent reuses eligible continuation candidates and starts a new episode when the prior event is outside the lookup window`,
                     examples: runs.map((run) => ({
                       id: run.id,
                       input: {
@@ -340,6 +360,8 @@ evaluate.describe(
                       metadata: {
                         ...run.scenario.metadata,
                         test_index: MANAGED_STREAM_SEARCH_PATTERN,
+                        continuation_expect_reuse: run.expectReuse ?? true,
+                        continuation_seed_age_ms: run.seedAgeMs,
                       },
                     })),
                   },
@@ -395,9 +417,9 @@ evaluate.describe(
                   );
 
                   const cycles: ContinuationCycle[] = [];
-                  // Tracks event_uuids seeded by this run so they can be deleted after all cycles
+                  // Tracks event_ids seeded by this run so they can be deleted after all cycles
                   // complete. Without this cleanup the next run's cycle-0 event_search would
-                  // find the previous run's open events and either reuse a foreign slug or
+                  // find the previous run's open episodes and either reuse a foreign slug or
                   // produce spurious noise. Deleting by explicit IDs is safer than wiping the
                   // entire stream and works correctly even when concurrency > 1.
                   const seededEventUuids: string[] = [];
@@ -428,20 +450,27 @@ evaluate.describe(
                       cycles.push({
                         ruleName: detection.rule_name,
                         producedSlugs,
+                        expectReuse: i === 0 ? undefined : run.expectReuse ?? true,
                         steps: converseResult.steps,
                       });
 
                       // Seed a SignificantEvent per produced discovery so event_search resolves it
-                      // as an open event in subsequent cycles.
+                      // as an open episode in subsequent cycles.
                       for (const [idx, discovery] of discoveries.entries()) {
                         if (!discovery.event_id) continue;
                         const eventUuid = `${discovery.event_id}-cycle-${i}-${idx}`;
+                        const event = canonicalSignificantEventFromGroundTruth({
+                          discovery,
+                          eventUuid,
+                        });
+                        if (i === 0 && run.seedAgeMs !== undefined) {
+                          const seededAt = new Date(Date.now() - run.seedAgeMs).toISOString();
+                          event['@timestamp'] = seededAt;
+                        }
+
                         await esClient.index({
                           index: SIGNIFICANT_EVENTS_EVENTS_DATA_STREAM,
-                          document: canonicalSignificantEventFromGroundTruth({
-                            discovery,
-                            eventUuid,
-                          }),
+                          document: event,
                         });
                         seededEventUuids.push(eventUuid);
                       }
@@ -455,7 +484,7 @@ evaluate.describe(
                     if (seededEventUuids.length > 0) {
                       await esClient.deleteByQuery({
                         index: SIGNIFICANT_EVENTS_EVENTS_DATA_STREAM,
-                        query: { terms: { event_uuid: seededEventUuids } },
+                        query: { terms: { event_id: seededEventUuids } },
                         refresh: true,
                       });
                     }

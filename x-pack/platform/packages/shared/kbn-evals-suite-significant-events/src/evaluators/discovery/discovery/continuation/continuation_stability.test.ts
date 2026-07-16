@@ -34,6 +34,28 @@ describe('scoreContinuationStability', () => {
     expect(result.distinctSlugs).toBe(3);
   });
 
+  it('rewards a new slug when the prior event is outside the lookup window', () => {
+    const result = scoreContinuationStability([
+      { producedSlugs: ['svc__old-1111'] },
+      { producedSlugs: ['svc__new-2222'], expectReuse: false },
+    ]);
+
+    expect(result.score).toBe(1);
+    expect(result.correctCycles).toBe(1);
+    expect(result.reusedCycles).toBe(0);
+  });
+
+  it('penalizes reuse when the prior event is outside the lookup window', () => {
+    const result = scoreContinuationStability([
+      { producedSlugs: ['svc__old-1111'] },
+      { producedSlugs: ['svc__old-1111'], expectReuse: false },
+    ]);
+
+    expect(result.score).toBe(0);
+    expect(result.correctCycles).toBe(0);
+    expect(result.reusedCycles).toBe(1);
+  });
+
   it('gives partial credit when one follow-up reuses and one proliferates', () => {
     const result = scoreContinuationStability([
       { producedSlugs: ['svc__cascade-aaaa1111'] },

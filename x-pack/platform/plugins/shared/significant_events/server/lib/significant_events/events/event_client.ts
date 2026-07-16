@@ -6,10 +6,14 @@
  */
 
 import type { IDataStreamClient } from '@kbn/data-streams';
-import { esql, type ComposerSortShorthand } from '@elastic/esql';
+import { esql, type ComposerQuery } from '@elastic/esql';
 import type { ESQLAstExpression } from '@elastic/esql/types';
 import type { ElasticsearchClient } from '@kbn/core/server';
-import type { SignificantEvent, Severity } from '@kbn/significant-events-schema';
+import type {
+  SignificantEvent,
+  Severity,
+  SignificantEventStatus,
+} from '@kbn/significant-events-schema';
 import {
   type BulkCreateOptions,
   type CommonSearchOptions,
@@ -28,8 +32,6 @@ import {
   runLatestSourceEsqlQuery,
   runPaginatedLatestSourceEsqlQuery,
   runFindByIdEsqlQuery,
-  withSort,
-  withWhere,
 } from '../latest_source_query';
 import {
   EVENTS_DATA_STREAM,
@@ -41,11 +43,55 @@ import { FIELD_EVENT_UUID, FIELD_EVENT_ID } from '../field_names';
 
 export type EventDataStreamClient = IDataStreamClient<typeof eventsMappings, StoredEvent>;
 
+const multiValueContainsAnyFilter = ({
+  where,
+  field,
+  values,
+}: {
+  where: ESQLAstExpression | undefined;
+  field: string;
+  values: string[] | undefined;
+}): ESQLAstExpression | undefined => {
+  if (!values?.length) return where;
+
+  return andWhere(
+    where,
+    esql.exp`MV_INTERSECTS(${esql.col(field)}, [${values.map((value) => esql.str(value))}])`
+  );
+};
+
+const continuationCandidateFilter = ({
+  streamNames,
+  ruleUuids,
+}: {
+  streamNames: string[] | undefined;
+  ruleUuids: string[] | undefined;
+}): ESQLAstExpression | undefined => {
+  const streamFilter = multiValueContainsAnyFilter({
+    where: undefined,
+    field: 'stream_names',
+    values: streamNames,
+  });
+  const ruleFilter = multiValueContainsAnyFilter({
+    where: undefined,
+    field: 'evidences.rule_uuid',
+    values: ruleUuids,
+  });
+
+  if (streamFilter && ruleFilter) {
+    return esql.exp`CASE(${streamFilter}, true, ${ruleFilter})`;
+  }
+
+  return streamFilter ?? ruleFilter;
+};
+
 export interface EventsFilterOptions {
-  status?: SignificantEvent['status'][];
+  status?: SignificantEventStatus[];
   severity?: Severity[];
   stream?: string[];
   search?: string;
+
+  ruleUuids?: string[];
 }
 
 export interface EventsPaginatedSearchOptions extends PaginatedSearchOptions, EventsFilterOptions {}
@@ -62,8 +108,11 @@ export class EventClient {
   private buildWhere(options: EventsFilterOptions): ESQLAstExpression | undefined {
     let where: ESQLAstExpression | undefined;
     where = inFilter({ where, field: 'status', values: options.status });
-    where = inFilter({ where, field: 'stream_names', values: options.stream });
-
+    where = multiValueContainsAnyFilter({
+      where,
+      field: 'stream_names',
+      values: options.stream,
+    });
     if (options.search) {
       const escaped = options.search.toLowerCase().replace(/\\/g, '\\\\').replace(/[*?]/g, '\\$&');
       const pattern = esql.str(`*${escaped}*`);
@@ -127,19 +176,13 @@ export class EventClient {
     const page = options.page ?? 1;
     const perPage = options.perPage ?? 25;
 
-    const statusWhere = options.status
-      ? esql.exp`${esql.col('status')} IN (${options.status.map((s) => esql.str(s))})`
-      : undefined;
+    const candidateWhere = continuationCandidateFilter({
+      streamNames: options.stream,
+      ruleUuids: options.ruleUuids,
+    });
 
-    const severityWhere = options.severity
-      ? esql.exp`${esql.col('severity')} IN (${options.severity.map((s) => esql.str(s))})`
-      : undefined;
-
-    // ComposerQuery is mutable — each chaining call mutates the same object and returns `this`.
-    // Build the base query twice via a factory so the data branch and count branch get independent
-    // instances; sharing a single reference causes the count pipeline to corrupt the data query.
-    const buildBase = () => {
-      let q = applyTimeRange({
+    const buildBaseQuery = (): ComposerQuery => {
+      const query = applyTimeRange({
         query: fromIndexForSpace({
           index: EVENTS_DATA_STREAM,
           space: this.clients.space,
@@ -148,19 +191,37 @@ export class EventClient {
         from: options.from,
         to: options.to,
       });
-      // stream + search filters run pre-latest; status + severity filters run post-latest
-      q = withWhere(q, this.buildWhere({ stream: options.stream, search: options.search }));
-      q = pickLatestPerGroup(q, FIELD_EVENT_ID);
-      q = withWhere(q, statusWhere);
-      q = withWhere(q, severityWhere);
-      return q;
+
+      // Free-text search runs pre-latest; current state and continuation-candidate filters run
+      // post-latest so stale versions cannot make a closed episode appear open.
+      const searchWhere = this.buildWhere({ search: options.search });
+      if (searchWhere) {
+        query.where`${searchWhere}`;
+      }
+
+      pickLatestPerGroup(query, FIELD_EVENT_ID);
+
+      if (options.status?.length) {
+        query.where`${esql.col('status')} IN (${options.status.map((status) => esql.str(status))})`;
+      }
+      if (options.severity?.length) {
+        query.where`${esql.col('severity')} IN (${options.severity.map((severity) =>
+          esql.str(severity)
+        )})`;
+      }
+      if (candidateWhere) {
+        query.where`${candidateWhere}`;
+      }
+
+      return query;
     };
 
-    const sortArgs: ComposerSortShorthand[] = [['@timestamp', 'DESC']];
-    const dataQuery = withSort(buildBase(), sortArgs)
+    // ComposerQuery is mutable and has no clone API, so each branch needs a fresh base query.
+    const dataQuery = buildBaseQuery()
+      .sort(['@timestamp', 'DESC'])
       .limit(page * perPage)
       .keep('_source');
-    const countQuery = buildBase().pipe`STATS total = COUNT(*)`.keep('total');
+    const countQuery = buildBaseQuery().pipe`STATS total = COUNT(*)`.keep('total');
 
     const [total, hits] = await Promise.all([
       executeCountQuery({ esClient: this.clients.esClient, query: countQuery }),

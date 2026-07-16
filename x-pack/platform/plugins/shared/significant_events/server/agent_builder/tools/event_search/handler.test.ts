@@ -22,15 +22,24 @@ describe('searchEventsToolHandler', () => {
 
     const result = await searchEventsToolHandler({
       eventClient: eventClient as never,
-      params: { query: 'timeout', stream_names: ['logs.checkout'], status: 'open', page: 2 },
+      params: {
+        query: 'timeout',
+        stream_names: ['logs.checkout'],
+        rule_uuids: ['rule-uuid-1'],
+        status: 'open',
+        page: 2,
+      },
     });
 
     expect(eventClient.findLatestByCurrentStatePaginated).toHaveBeenCalledWith({
       page: 2,
-      perPage: undefined,
+      perPage: 100,
+      ruleUuids: ['rule-uuid-1'],
       search: 'timeout',
       stream: ['logs.checkout'],
       status: ['open'],
+      from: 'now-7d',
+      to: 'now',
     });
     expect(eventClient.findLatestPaginated).not.toHaveBeenCalled();
     expect(result).toEqual({
@@ -50,11 +59,14 @@ describe('searchEventsToolHandler', () => {
     });
 
     expect(eventClient.findLatestByCurrentStatePaginated).toHaveBeenCalledWith({
-      page: undefined,
-      perPage: undefined,
+      page: 1,
+      perPage: 100,
+      ruleUuids: undefined,
       search: undefined,
       stream: undefined,
       status: ['closed'],
+      from: 'now-7d',
+      to: 'now',
     });
   });
 
@@ -69,7 +81,11 @@ describe('searchEventsToolHandler', () => {
     });
 
     expect(eventClient.findLatestPaginated).toHaveBeenCalledWith(
-      expect.objectContaining({ stream: ['logs.checkout', 'logs.payment', 'logs.otel'] })
+      expect.objectContaining({
+        stream: ['logs.checkout', 'logs.payment', 'logs.otel'],
+        from: 'now-7d',
+        to: 'now',
+      })
     );
     expect(eventClient.findLatestByCurrentStatePaginated).not.toHaveBeenCalled();
   });

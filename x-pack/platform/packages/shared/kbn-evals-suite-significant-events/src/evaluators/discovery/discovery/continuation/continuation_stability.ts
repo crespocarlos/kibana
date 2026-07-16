@@ -13,13 +13,17 @@ export interface ContinuationCycle {
   ruleName?: string;
   /** event_id(s) the agent emitted this cycle (one per produced discovery). */
   producedSlugs: string[];
+  /** Whether this cycle should reuse an established slug. Defaults to true. */
+  expectReuse?: boolean;
 
   steps?: ConverseStep[];
 }
 
 export interface ContinuationStabilityResult {
-  /** Fraction of comparable post-establishing cycles that reused an already-seen slug; null when not gradable. */
+  /** Fraction of comparable post-establishing cycles that matched the expected reuse decision. */
   score: number | null;
+  /** Cycles whose actual reuse decision matched expectReuse. */
+  correctCycles: number;
   /** Cycles after the establishing cycle that reused a prior slug. */
   reusedCycles: number;
   /** Cycles after the establishing cycle that were gradable (produced at least one slug). */
@@ -33,8 +37,9 @@ export interface ContinuationStabilityResult {
 
 /**
  * Score whether related detections arriving one-at-a-time fold into the SAME slug rather than
- * proliferating new ones. score = reusedCycles / comparableCycles (a cycle is "reused" when any slug
- * it produced was already seen). Null when there are fewer than two gradable cycles.
+ * proliferating new ones. Each follow-up declares whether reuse is expected; score is the fraction
+ * whose actual reuse decision matches that expectation. Null when there are fewer than two gradable
+ * cycles.
  *
  * A post-establishing cycle that produced NO discovery at all (`producedSlugs: []`) is excluded
  * from `comparableCycles` rather than counted as a continuation miss — "the agent produced
@@ -49,6 +54,7 @@ export function scoreContinuationStability(
   const seen = new Set<string>();
   const allSlugs = new Set<string>();
   let reusedCycles = 0;
+  let correctCycles = 0;
   let comparableCycles = 0;
   let emptyCycles = 0;
   let establishedFirstCycle = false;
@@ -79,6 +85,9 @@ export function scoreContinuationStability(
     if (reused) {
       reusedCycles += 1;
     }
+    if (reused === (cycle.expectReuse ?? true)) {
+      correctCycles += 1;
+    }
     slugs.forEach((slug) => {
       seen.add(slug);
       allSlugs.add(slug);
@@ -91,6 +100,7 @@ export function scoreContinuationStability(
   if (comparableCycles === 0) {
     return {
       score: null,
+      correctCycles: 0,
       reusedCycles: 0,
       comparableCycles: 0,
       emptyCycles,
@@ -101,16 +111,18 @@ export function scoreContinuationStability(
     };
   }
 
-  const score = reusedCycles / comparableCycles;
+  const score = correctCycles / comparableCycles;
   return {
     score,
+    correctCycles,
     reusedCycles,
     comparableCycles,
     emptyCycles,
     distinctSlugs: allSlugs.size,
     explanation:
-      `${reusedCycles}/${comparableCycles} follow-up cycle(s) reused an established slug ` +
-      `(${allSlugs.size} distinct slug(s) across the run; ideal is 1 for a single cascade)${emptyNote}`,
+      `${correctCycles}/${comparableCycles} follow-up cycle(s) matched the expected reuse decision; ` +
+      `${reusedCycles} actually reused an established slug ` +
+      `(${allSlugs.size} distinct slug(s) across the run)${emptyNote}`,
   };
 }
 
@@ -121,7 +133,7 @@ export interface ContinuationStabilityOutput {
 
 export type ContinuationEvaluator = Evaluator<Example, ContinuationStabilityOutput>;
 
-/** CODE evaluator: scores whether re-arriving detections reuse one stable slug. Score = reused / comparable cycles. */
+/** CODE evaluator: scores whether each re-arriving detection makes the expected reuse decision. */
 export const continuationStabilityEvaluator: ContinuationEvaluator = {
   name: 'continuation_stability',
   kind: 'CODE',

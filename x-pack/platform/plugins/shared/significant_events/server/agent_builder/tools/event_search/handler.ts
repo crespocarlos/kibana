@@ -6,7 +6,11 @@
  */
 
 import type { SignificantEvent, SignificantEventStatus } from '@kbn/significant-events-schema';
-import type { EventClient } from '../../../lib/significant_events/events';
+import {
+  DEFAULT_EVENTS_SEARCH_FROM,
+  DEFAULT_EVENTS_SEARCH_TO,
+  type EventClient,
+} from '../../../lib/significant_events/events';
 
 export interface EventSearchInput {
   query?: string;
@@ -14,6 +18,9 @@ export interface EventSearchInput {
   per_page?: number;
   stream_names?: string[];
   status?: SignificantEventStatus;
+  rule_uuids?: string[];
+  from?: string;
+  to?: string;
 }
 export async function searchEventsToolHandler({
   eventClient,
@@ -28,10 +35,12 @@ export async function searchEventsToolHandler({
   total: number;
 }> {
   const sharedParams = {
-    page: params.page,
-    perPage: params.per_page,
+    page: params.page ?? 1,
+    perPage: params.per_page ?? 100,
     search: params.query,
     stream: params.stream_names,
+    from: params.from ?? DEFAULT_EVENTS_SEARCH_FROM,
+    to: params.to ?? DEFAULT_EVENTS_SEARCH_TO,
   };
 
   const response =
@@ -39,6 +48,7 @@ export async function searchEventsToolHandler({
       ? await eventClient.findLatestByCurrentStatePaginated({
           ...sharedParams,
           status: params.status ? [params.status] : undefined,
+          ruleUuids: params.rule_uuids,
         })
       : await eventClient.findLatestPaginated(sharedParams);
 

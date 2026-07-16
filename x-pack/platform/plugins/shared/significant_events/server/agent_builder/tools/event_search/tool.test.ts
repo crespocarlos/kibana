@@ -60,7 +60,11 @@ describe('event_search tool', () => {
 
     const result = await invokeHandler(
       tool as never,
-      { stream_names: ['logs.checkout'], status: 'open' },
+      {
+        stream_names: ['logs.checkout'],
+        rule_uuids: ['rule-uuid-1'],
+        status: 'open',
+      },
       createMockToolContext()
     );
 
@@ -74,6 +78,11 @@ describe('event_search tool', () => {
       has_stream_filter: true,
       status_filter: 'open',
     });
+    expect(searchEventsToolHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: expect.objectContaining({ rule_uuids: ['rule-uuid-1'] }),
+      })
+    );
   });
 
   it('accepts cross-stream searches without stream_names', async () => {

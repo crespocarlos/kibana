@@ -26,6 +26,11 @@ export const eventsMappings = {
     severity: mappings.keyword(),
     title: mappings.text(),
     summary: mappings.text(),
+    evidences: mappings.object({
+      properties: {
+        rule_uuid: mappings.keyword(),
+      },
+    }),
   },
 } satisfies MappingsDefinition;
 export type StoredEvent = GetFieldsOf<typeof eventsMappings>;

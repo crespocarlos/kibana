@@ -17,6 +17,10 @@ import { significantEventSchema } from '@kbn/significant-events-schema';
 import type { GetScopedClients } from '../../../routes/types';
 import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
 import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
+import {
+  DEFAULT_EVENTS_SEARCH_FROM,
+  DEFAULT_EVENTS_SEARCH_TO,
+} from '../../../lib/significant_events/events';
 import { createSignificantEventsAvailability } from '../significant_events_availability';
 import { searchEventsToolHandler } from './handler';
 
@@ -43,8 +47,49 @@ const searchEventsSchema = significantEventSchema
             'Matching is case-insensitive and not semantic — omit it when you want all events for a stream or state.',
         })
       ),
+    rule_uuids: z
+      .array(z.string())
+      .max(100)
+      .optional()
+      .describe(
+        i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.ruleUuids', {
+          defaultMessage:
+            'Optional rule UUIDs for continuation candidates. With stream names, events matching either filter are returned.',
+        })
+      ),
     page: z.number().int().min(1).optional().default(1),
-    per_page: z.number().int().min(1).max(100).optional().default(20),
+    per_page: z
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .optional()
+      .default(100)
+      .describe(
+        i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.perPage', {
+          defaultMessage: 'Number of events to return. Defaults to 100.',
+        })
+      ),
+    from: z
+      .string()
+      .optional()
+      .default(DEFAULT_EVENTS_SEARCH_FROM)
+      .describe(
+        i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.from', {
+          defaultMessage:
+            'Start of the search range as ISO 8601 or Elasticsearch date math. Defaults to now-7d.',
+        })
+      ),
+    to: z
+      .string()
+      .optional()
+      .default(DEFAULT_EVENTS_SEARCH_TO)
+      .describe(
+        i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.to', {
+          defaultMessage:
+            'End of the search range as ISO 8601 or Elasticsearch date math. Defaults to now.',
+        })
+      ),
   });
 
 export function createSearchEventsTool({
