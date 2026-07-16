@@ -489,6 +489,38 @@ describe('discoveryWriteHandler — continuation snapshot merge', () => {
     expect(Object.keys(signalsByRule(persisted)).sort()).toEqual(['ruleA', 'ruleB']); // ruleA carried forward
   });
 
+  it('excludes handled prior docs from the continuation signal merge', async () => {
+    const discoveryClient = {
+      findByEventId: jest.fn().mockResolvedValue({
+        hits: [
+          {
+            kind: 'discovery',
+            '@timestamp': '2026-01-01T00:00:00.000Z',
+            signals: [createSignal('ruleA')],
+          },
+          {
+            kind: 'handled',
+            '@timestamp': '2026-01-02T00:00:00.000Z',
+            signals: [createSignal('ruleB', { change_point_type: 'spike' })],
+          },
+        ],
+      }),
+      bulkCreate: jest.fn().mockResolvedValue(undefined),
+    };
+
+    await discoveryWriteHandler({
+      discoveryClient: discoveryClient as never,
+      input: {
+        ...baseInput,
+        event_id: 'otel__x-abc12345',
+        signals: [createSignal('ruleC')],
+      },
+    });
+
+    const persisted: SignalEntry[] = discoveryClient.bulkCreate.mock.calls[0][0][0].signals;
+    expect(Object.keys(signalsByRule(persisted)).sort()).toEqual(['ruleA', 'ruleC']);
+  });
+
   it('does not merge or fetch prior docs for a handled marker write', async () => {
     const discoveryClient = {
       findByEventId: jest.fn(),

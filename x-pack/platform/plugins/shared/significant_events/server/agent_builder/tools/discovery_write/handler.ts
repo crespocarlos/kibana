@@ -174,7 +174,10 @@ const prepareSnapshotSignals = async ({
   }
 
   const { hits: priorDocs } = await discoveryClient.findByEventId(input.event_id);
-  return mergeSignalsLatestPerRule(priorDocs, input.signals ?? [], timestamp);
+  // Exclude handled stamps — the old findStateBySlug path filtered these out so processed
+  // cycles do not carry their detection signals into a fresh continuation write.
+  const stateDocs = priorDocs.filter((doc) => doc.kind !== 'handled');
+  return mergeSignalsLatestPerRule(stateDocs, input.signals ?? [], timestamp);
 };
 
 export async function discoveryWriteHandler({
