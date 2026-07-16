@@ -6,6 +6,7 @@
  */
 
 import { SIGNIFICANT_EVENTS_DISCOVERY_AGENT_ID } from '@kbn/significant-events-plugin/server';
+import { STREAMS_SIGNIFICANT_EVENTS_AVAILABLE_FLAG } from '@kbn/significant-events-plugin/common';
 import { tags } from '@kbn/scout';
 import { getCurrentTraceId } from '@kbn/evals';
 import type { Detection } from '@kbn/significant-events-schema';
@@ -51,18 +52,20 @@ evaluate.describe(
     const activeDatasets = getActiveDatasets();
     const availableSnapshotsBySource = new Map<string, Set<string>>();
 
-    evaluate.beforeAll(async ({ esClient, kbnClient, apiServices, log }) => {
-      // Agent availability is gated on this UI setting (cached per space); enable before any converse.
-      await apiServices.core.settings({
-        'feature_flags.overrides': {
-          'streams.significantEventsAvailable': true,
+    evaluate.beforeAll(async ({ esClient, kbnClient, log }) => {
+      // Agent availability is gated on the significant events availability feature flag (defaults to
+      // false); force it on before any converse.
+      await kbnClient.request({
+        path: '/internal/core/_settings',
+        method: 'PUT',
+        headers: { 'elastic-api-version': '1' },
+        body: {
+          'feature_flags.overrides': {
+            [STREAMS_SIGNIFICANT_EVENTS_AVAILABLE_FLAG]: true,
+          },
         },
       });
-      await kbnClient.uiSettings.update({
-        'observability:streamsEnableSignificantEvents': true,
-      });
-
-      log.info('Enabled significant events UI setting');
+      log.info('Enabled significant events availability feature flag');
 
       const snapshots = await buildAvailableSnapshotsBySource(
         activeDatasets,
