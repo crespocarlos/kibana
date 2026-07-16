@@ -55,7 +55,7 @@ export class DiscoveryClient {
     }
   ) {}
 
-  /** Accepts raw (stored-form severity) documents only — encode with `toStoredSeverity` first. */
+  /** Accepts raw discovery documents (without the derived `processed` flag). */
   async bulkCreate(
     discoveries: RawDiscoveryRow[],
     { throwOnFail = false }: BulkCreateOptions = {}
