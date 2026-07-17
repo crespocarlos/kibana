@@ -25,6 +25,7 @@ import useInterval from 'react-use/lib/useInterval';
 import { i18n } from '@kbn/i18n';
 import {
   getSeverityLabel,
+  severitySchema,
   SIGNIFICANT_EVENT_STATUS_OPTIONS,
   SEVERITY_OPTIONS,
 } from '@kbn/significant-events-schema';
@@ -243,8 +244,7 @@ const extractCheckedKeys = (options: EuiSelectableOption[]): string[] =>
 const isSignificantEventStatus = (value: string): value is SignificantEventStatus =>
   SIGNIFICANT_EVENT_STATUS_OPTIONS.some((status) => status === value);
 
-const isSeverity = (value: string): value is Severity =>
-  SEVERITY_OPTIONS.some((severity) => severity === value);
+const isSeverity = (value: string): value is Severity => severitySchema.safeParse(value).success;
 
 const buildSelectableOptions = <T extends string>({
   values,
