@@ -9,6 +9,7 @@ import { platformSignificantEventsTools } from '@kbn/agent-builder-common';
 import type { ConverseStep } from '@kbn/evals';
 import {
   extractDiscoveriesFromToolCall,
+  extractRequestedEventIdsFromToolCall,
   extractSignificantEventsFromToolCall,
 } from './parse_agent_output';
 
@@ -49,6 +50,29 @@ describe('extractDiscoveriesFromToolCall', () => {
     ];
     const discoveries = extractDiscoveriesFromToolCall(steps);
     expect(discoveries[0].event_id).toBe('original-slug');
+  });
+});
+
+describe('extractRequestedEventIdsFromToolCall', () => {
+  it('returns only event IDs explicitly passed by the agent', () => {
+    const steps: ConverseStep[] = [
+      {
+        type: 'tool_call',
+        tool_id: TOOL_ID_DISCOVERY_WRITE,
+        tool_call_id: 'dw-new',
+        params: { kind: 'discovery', title: 'New event' },
+        results: [{ data: { event_id: 'handler-generated' } }],
+      },
+      {
+        type: 'tool_call',
+        tool_id: TOOL_ID_DISCOVERY_WRITE,
+        tool_call_id: 'dw-continuation',
+        params: { kind: 'discovery', title: 'Continuation', event_id: 'agent-selected' },
+        results: [{ data: { event_id: 'agent-selected' } }],
+      },
+    ];
+
+    expect(extractRequestedEventIdsFromToolCall(steps)).toEqual(['agent-selected']);
   });
 });
 
