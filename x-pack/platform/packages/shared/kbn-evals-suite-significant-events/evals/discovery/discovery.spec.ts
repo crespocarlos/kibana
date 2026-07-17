@@ -484,7 +484,7 @@ evaluate.describe(
                     if (seededEventUuids.length > 0) {
                       await esClient.deleteByQuery({
                         index: SIGNIFICANT_EVENTS_EVENTS_DATA_STREAM,
-                        query: { terms: { event_id: seededEventUuids } },
+                        query: { terms: { event_uuid: seededEventUuids } },
                         refresh: true,
                       });
                     }

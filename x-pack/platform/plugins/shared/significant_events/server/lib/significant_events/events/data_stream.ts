@@ -26,9 +26,13 @@ export const eventsMappings = {
     severity: mappings.keyword(),
     title: mappings.text(),
     summary: mappings.text(),
-    evidences: mappings.object({
+    signals: mappings.object({
       properties: {
-        rule_uuid: mappings.keyword(),
+        metadata: mappings.object({
+          properties: {
+            rule_uuid: mappings.keyword(),
+          },
+        }),
       },
     }),
   },
@@ -50,7 +54,7 @@ export const storedEventSchema = significantEventSchema.transform((doc) => ({
 
 export const eventsDataStream: DataStreamDefinition<typeof eventsMappings, StoredEvent> = {
   name: EVENTS_DATA_STREAM,
-  version: 7,
+  version: 9,
   hidden: true,
   template: {
     priority: 500,

@@ -29,7 +29,7 @@ Stop at the lowest mechanism the evidence supports. "The service is failing" is 
 
 - **`## Detection batch`** — unprocessed change-point detections, one row per rule. Each row carries `detection_id`, `rule_uuid`, `rule_name`, `stream_name`, `change_point_type`, and `p_value`. You decide investigate-vs-resolve yourself by reading each row's `change_point_type` **and its direction** — see `<change_type_semantics>`.
 
-**Open events** — fetched via `platform_sig_events_event_search` once per batch before detection grouping. Call with `status: "open"` to retrieve events whose latest significant-event status is `open`. Each returned entry is the latest significant event document per `event_id`. Routing a current group to one of these events is a **continuation** (reuse its `event_id`); a group matching no candidate opens a new event. 
+**Open events** — the latest open event documents eligible for continuation matching. Fetch them once per batch before grouping. Routing a current group to one of these events is a **continuation** (reuse its `event_id`); a group matching no candidate opens a new event.
 
 An **episode** is the full open→closed lifecycle of one `event_id`; "event"/`event_id` refers to the identity key, "episode" to its lifecycle state — used interchangeably below.
 
@@ -56,7 +56,7 @@ Classify each detection as **escalation** or **recovering** from its `change_poi
 
 <tools>
 
-- `platform_sig_events_event_search` — call once per batch before grouping detection rules. Pass `status: "open"` and `stream_names` (all distinct stream names from the active batch). The returned `events` array is the continuation candidate set.
+- `platform_sig_events_event_search` — fetch the continuation candidate set exactly once per batch before grouping detection rules. See `<tool_examples>` for the required call.
 - `platform_sig_events_discovery_write` — final output step; call once per group, then stop. For new episodes, omit `event_id` (auto-generated). For a continuation (including a recovering episode), pass the candidate's `event_id` verbatim.
 - `platform_sig_events_ki_search` and `platform_core_execute_esql` — provided and documented by the loaded `significant-events-ki-grounding` skill.
 
@@ -70,9 +70,16 @@ Example: load_skill (must be called alone — do not batch with any other tool)
 ```
 Response: `{ "skill": { "id": "...", "name": "..." }, "loaded_tools": ["platform_sig_events_ki_search", "platform_core_execute_esql"] }`
 
-Example: platform_sig_events_event_search
+Example: platform_sig_events_event_search. Populate `stream_names` and `rule_uuids` with all distinct non-empty values from the detection batch.
 ```json
-{ "status": "open", "stream_names": ["logs.otel"] }
+{
+  "status": "open",
+  "from": "now-7d",
+  "to": "now",
+  "per_page": 100,
+  "stream_names": ["logs.otel"],
+  "rule_uuids": ["rule-uuid-1"]
+}
 ```
 Response: `{ "events": [{ "event_id": "...", "discovery_id": "...", "causal_features": [...], "blast_radius": [...] }] }` or `{ "events": [] }`
 
@@ -241,7 +248,7 @@ Follow the confirmation query protocol from the loaded `significant-events-ki-gr
 
 ### Step 4: Group
 
-Before any continuation checks in this step, call `platform_sig_events_event_search` once with `state: "open"`, `from: "now-7d"`, `to: "now"`, `stream_names` containing all distinct stream names from the active batch, and `rule_uuids` containing all distinct `detections[].rule_uuid` values from the active batch. Treat the returned `events` as the continuation candidate set.
+Before grouping, fetch the continuation candidate set using the `platform_sig_events_event_search` call defined in `<tool_examples>`. Treat the returned `events` array as the complete candidate set for this cycle; do not call the tool again during per-group routing.
 
 **Recovering pre-pass (before correlation grouping).** Recovering (downward/settle) rules do not participate in onset-based correlation grouping. Process their recovery-lens query results separately first:
 

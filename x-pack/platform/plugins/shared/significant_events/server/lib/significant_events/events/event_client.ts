@@ -74,7 +74,7 @@ const continuationCandidateFilter = ({
   });
   const ruleFilter = multiValueContainsAnyFilter({
     where: undefined,
-    field: 'evidences.rule_uuid',
+    field: 'signals.metadata.rule_uuid',
     values: ruleUuids,
   });
 
