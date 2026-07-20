@@ -56,7 +56,7 @@ Response when empty:
 
 ### Step 1 — Call platform_sig_events_ki_search
 
-First apply any explicit KI-search skip gate from the calling agent. When the gate applies, skip this step and use the supplied rule-matched queries. Otherwise, make one call for the entire detection batch, with only these parameters:
+First apply any explicit KI-search skip gate from the calling agent. When the gate applies, skip this step and use the supplied rule-matched queries. When it does not apply, make one call for the entire detection batch, with only these parameters:
 - `kind: ["feature", "query"]`
 - `stream_names`: deduplicated union of all `stream_name` values in the batch
 
@@ -64,7 +64,7 @@ First apply any explicit KI-search skip gate from the calling agent. When the ga
 - If 0 query KIs returned → fire one follow-up call with `kind: ["query"]`, same `stream_names`.
 - Deferred entity KI follow-up: after recording all results, for each failure domain where (1) the entity KI was absent from the initial search AND (2) ≥1 rule has no confirmed ES|QL rows — fire one `platform_sig_events_ki_search` with `kind: ["feature"]`, same `stream_names`. Dispatch qualifying domains in parallel.
 
-**Dedup results** by `feature.uuid` / `query.id`. Keep ALL Dependency-type and Infrastructure-type KIs regardless of score. **Discard `dataset_analysis` KIs immediately** — schema field-distribution metadata with no diagnostic value.
+**Dedup results** by `feature.uuid` / `query.id`. Keep all dependency and infrastructure feature KIs regardless of score. **Discard `dataset_analysis` KIs immediately** — schema field-distribution metadata with no diagnostic value.
 
 ---
 
@@ -85,11 +85,13 @@ For each returned KI (see `<output_arrays>` for full type rules):
 
 Before dispatching any `platform_core_execute_esql`, write one line per signal:
 
-`"<rule_uuid> → <query_ki.id> — <query.description>"` (match) or `"<rule_uuid> → NO MATCH"`
+`"<rule_uuid> → <query.id> — <query.description>"` (match) or `"<rule_uuid> → NO MATCH"`
 
-Match criteria: `query_ki.rule.id` equals `rule_uuid` **exactly** AND `query_ki.rule.backed` is `true`. Scan the **entire** query KI list before writing NO MATCH.
+Match criteria: `query.rule.id` equals `rule_uuid` **exactly** AND `query.rule.backed` is `true`. Scan the **entire** query KI list before writing NO MATCH.
 
-**Carry `query.description` forward** alongside each match — it is the rule author's own statement of what the rule detects and its scope (e.g. explicitly naming what it is or isn't caused by). This is authored intent, not inferred evidence, and the caller's correlation logic (see the loading agent's correlation rules) uses it to confirm or rule out a shared mechanism between rules — do not discard it after mapping.
+For each match, retain a **correlation context**: `query.description`, `query.features[]`, `query.evidence[]`, referenced feature KIs (`id`, `type`, `description`, `properties`, `meta`, `filter`), and their dependency edges.
+
+This context may support or reject an incident match when rows are sparse. It never proves current activity, sets `confirmed: true`, or determines severity; missing referenced features are neutral.
 
 ---
 
@@ -113,7 +115,7 @@ Before: FROM logs.* | WHERE body.text : "ECONNREFUSED" | LIMIT 1
 After:  FROM logs.* | WHERE @timestamp >= "2026-06-11T15:03:00Z" AND @timestamp <= NOW() | WHERE body.text : "ECONNREFUSED" | KEEP @timestamp, body.text | SORT @timestamp ASC | LIMIT 1
 ```
 
-**Budget — one call per rule by default.** Run the exact-match KI query with the required `ASC | LIMIT 1` modification.
+**Budget — one call per rule by default.** Run the ES|QL from the exact-match query KI with the required `ASC | LIMIT 1` modification.
 
 **Contradiction follow-up (exception, not routine):** run a second call for the same rule only when the first result contradicts the hypothesis — 0 rows when failure was expected, or only healthy/unrelated rows. Skip additional rules past this exception budget; note them in `summary`.
 
@@ -135,7 +137,7 @@ Follow the `description` field format defined in the `platform_sig_events_discov
 - **Inconclusive (signature mismatch)**: `"Testing: metrics-exporter failing to push metrics. Expected if true: export timeout or connection errors to the metrics endpoint. Found: 1 row — content is an unrelated upstream API error, not a metrics export failure; hypothesis unconfirmed. Verdict: inconclusive."`
 - **Refutes (healthy rows)**: `"Testing: elevated error rate on orders service. Expected if true: error-signature rows. Found: 1 row — healthy transaction log, no error signature. Verdict: refutes."`
 
-`result: found` means rows were returned — it does **not** mean the hypothesis is confirmed. Healthy or off-topic rows require `refutes` or `inconclusive` in the Verdict.
+`result: found` means rows were returned — it does **not** mean the hypothesis is confirmed. Healthy or off-topic rows require `refutes` or `inconclusive` in the Verdict. The calling agent sets `confirmed: false` when verified evidence does not support its final event grouping.
 
 ---
 
@@ -149,7 +151,7 @@ See `<output_arrays>` for derivation rules, format, and mandatory fields.
 
 Every array documented here is mandatory in every `platform_sig_events_discovery_write` call. Never omit any of them.
 
-**Failing service name**: prefer `feature.properties.name` from a matching entity KI. Fall back to the detection `stream_name` with index suffix stripped (e.g. `logs-orders-*` → `orders`). `feature.id` is NOT the same as `properties.name`.
+**Failing service name**: prefer the service named by current evidence, then `feature.properties.name` from one uniquely scoped entity KI. Use a stripped `stream_name` only when it identifies a service (e.g. `logs-orders-*` → `orders`); never use a generic stream such as `logs.otel` or `logs.*`. `feature.id` is not a service name.
 
 ---
 
@@ -157,7 +159,7 @@ Every array documented here is mandatory in every `platform_sig_events_discovery
 
 Three entry types, all go in the same `blast_radius` array:
 
-**Dependency entries** (`type: "dependency"`) — from `kind:"feature"`, `feature.type:"dependency"` KIs:
+**Dependency entries** (`type: "dependency"`) — from dependency feature KIs (`kind: "feature"`, `feature.type: "dependency"`):
 - Include when `source` or `target` equals the failing service.
 - `evidence[]` and `meta` are strong hypothesis seeds — read before querying.
 - Secondary signals when no dependency KI covers an edge: `meta.downstream_services` on entity KIs, `"Dependency: <source> → <target>"` in query KI `evidence`, `properties` keys referencing services.
@@ -201,7 +203,7 @@ Each entry is a unified detection+evidence object:
 - `type`: always `"detection"`
 - `stream_name`: the detection rule's stream
 - `description`: the evidence narrative.
-- `confirmed`: `true` only when the query returned rows consistent with the failure hypothesis. Omit entirely if not confirmed.
+- `confirmed`: `true` when verified evidence supports the containing record's symptom or evidenced cascade; `false` when verified evidence does not; omit when verification failed or did not run.
 - `collected_at`: ISO-8601 timestamp of when the query ran. Omit for quiet-rule entries with no query.
 - `evidence`: `{ esql_query, result }` when a query was run; omit for quiet rules. `esql_query` is the exact string as sent (or `null` for no-query-available dispositions). `result`: `"found"` | `"empty"` | `"error"`.
 - `metadata`: detection rule metadata — `rule_uuid`, `rule_name`, `detection_id`, `change_point_type`, `p_value`.

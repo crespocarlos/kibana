@@ -42,6 +42,7 @@ import {
 } from '../../src/evaluators/discovery/utils/parse_agent_output';
 import { buildDiscoveryInput } from '../../src/evaluators/discovery/discovery/build_agent_input';
 import type { ContinuationCycle } from '../../src/evaluators/discovery/discovery/continuation/continuation_stability';
+import { KNOWLEDGE_INDICATORS_DATA_STREAM } from '../../src/data_generators/snapshot_indices';
 
 const TRUST_UPSTREAM = process.env.SIGEVENTS_TRUST_UPSTREAM === 'true';
 const OUTSIDE_EVENT_LOOKUP_WINDOW_MS = 8 * 24 * 60 * 60 * 1000;
@@ -98,6 +99,8 @@ evaluate.describe(
           expectReuse?: boolean;
           seedAgeMs?: number;
           seedStatus?: 'closed';
+          stripSeedTopology?: boolean;
+          seedUnconfirmedDetection?: Detection;
         }
 
         const collectedExamples: CollectedExample[] = [];
@@ -179,7 +182,7 @@ evaluate.describe(
           }) => {
             // Concurrency must remain 1 — this variable is not safe under concurrent tasks.
             // Raising concurrency requires replacing it with a per-invocation approach or a proper lock.
-            let lastReplayedSnapshotKey: string | undefined;
+            let lastReplayKey: string | undefined;
 
             const detectionsByScenario = new Map(
               collectedExamples.map(({ scenario, detections, snapshotKey }) => [
@@ -194,20 +197,40 @@ evaluate.describe(
                   {
                     name: `sigevents: Discovery (${dataset.id})`,
                     description: `[${dataset.id}] discovery agent across scenarios`,
-                    examples: collectedExamples.map(({ scenario }) => ({
-                      id: scenario.input.scenario_id,
-                      input: { ...scenario.input, snapshot_source: scenario.snapshot_source },
-                      output: { ...scenario.output, criteria: scenario.output.criteria },
-                      metadata: {
-                        ...scenario.metadata,
-                        test_index: MANAGED_STREAM_SEARCH_PATTERN,
+                    examples: collectedExamples.flatMap(({ scenario }) => [
+                      {
+                        id: scenario.input.scenario_id,
+                        input: { ...scenario.input, snapshot_source: scenario.snapshot_source },
+                        output: { ...scenario.output, criteria: scenario.output.criteria },
+                        metadata: {
+                          ...scenario.metadata,
+                          test_index: MANAGED_STREAM_SEARCH_PATTERN,
+                        },
                       },
-                    })),
+                      {
+                        id: `${scenario.input.scenario_id}__no-topology`,
+                        input: {
+                          ...scenario.input,
+                          snapshot_source: scenario.snapshot_source,
+                          without_topology: true,
+                        },
+                        output: { ...scenario.output, criteria: [] },
+                        metadata: {
+                          ...scenario.metadata,
+                          test_index: MANAGED_STREAM_SEARCH_PATTERN,
+                          without_topology: true,
+                        },
+                      },
+                    ]),
                   },
                 ],
                 concurrency: 1,
                 trustUpstreamDataset: TRUST_UPSTREAM,
-                task: async ({ input }: { input: DiscoveryScenario['input'] }) => {
+                task: async ({
+                  input,
+                }: {
+                  input: DiscoveryScenario['input'] & { without_topology?: boolean };
+                }) => {
                   const data = detectionsByScenario.get(input.scenario_id);
                   if (!data) {
                     throw new Error(`No pre-collected data for scenario "${input.scenario_id}"`);
@@ -219,7 +242,10 @@ evaluate.describe(
                     throw new Error(`No snapshot source found for scenario "${input.scenario_id}"`);
                   }
 
-                  if (snapshotKey !== lastReplayedSnapshotKey) {
+                  const replayKey = `${snapshotKey}:${
+                    input.without_topology ? 'queries-only' : 'all'
+                  }`;
+                  if (replayKey !== lastReplayKey) {
                     await cleanSignificantEventsDataStreams(esClient, log);
                     for (const name of SIGEVENTS_WIRED_ROOTS) {
                       await esClient.indices.deleteDataStream({ name }).catch(() => {});
@@ -240,7 +266,7 @@ evaluate.describe(
                       );
                     }
                     await esClient.indices.refresh({ index: MANAGED_STREAM_SEARCH_PATTERN });
-                    lastReplayedSnapshotKey = snapshotKey;
+                    lastReplayKey = replayKey;
                   }
 
                   // Replay captured KIs into the live KI stream so search_knowledge_indicators
@@ -251,6 +277,13 @@ evaluate.describe(
                     snapshotSource.snapshotName,
                     snapshotSource.gcs
                   );
+                  if (input.without_topology) {
+                    await esClient.deleteByQuery({
+                      index: KNOWLEDGE_INDICATORS_DATA_STREAM,
+                      query: { term: { type: 'feature' } },
+                      refresh: true,
+                    });
+                  }
 
                   // Same message shape as the production batch.
                   const agentInput = buildDiscoveryInput({ detections });
@@ -290,12 +323,19 @@ evaluate.describe(
           {
             title: 'continuation - open significant event with same rules',
             description: 'same detection rule re-fires during an open significant event',
-            includesPath: (path: string) => path === 'rule-uuid',
+            includesPath: (path: string) =>
+              path === 'rule-uuid' || path === 'rule-uuid-no-topology',
           },
           {
             title: 'continuation - open significant events with related rules',
             description: 'semantically related and cascading rules join an open significant event',
-            includesPath: (path: string) => !path.startsWith('rule-uuid'),
+            includesPath: (path: string) =>
+              !path.startsWith('rule-uuid') && path !== 'unconfirmed-rule',
+          },
+          {
+            title: 'continuation - unconfirmed rule on open significant event',
+            description: 'an unconfirmed candidate rule does not establish continuation',
+            includesPath: (path: string) => path === 'unconfirmed-rule',
           },
           {
             title: 'continuation - open significant event outside 7 day lookup window',
@@ -326,9 +366,18 @@ evaluate.describe(
               const runs = collectedExamples.flatMap(({ scenario, detections, snapshotKey }) => {
                 if (detections.length === 0) return [];
                 const byRuleName = new Map(detections.map((d) => [d.rule_name, d]));
+                const confirmedAnchor = byRuleName.get(
+                  'Frontend → Ledger Writer Payment Submission Error'
+                );
+                const unrelatedDetection = byRuleName.get('Successful User Login');
 
                 const allPlans: ContinuationPlan[] = [
                   { path: 'rule-uuid', sequence: [detections[0], detections[0]] },
+                  {
+                    path: 'rule-uuid-no-topology',
+                    sequence: [detections[0], detections[0]],
+                    stripSeedTopology: true,
+                  },
 
                   {
                     path: 'rule-uuid-outside-window',
@@ -342,12 +391,31 @@ evaluate.describe(
                     expectReuse: false,
                     seedStatus: 'closed',
                   },
+                  ...(confirmedAnchor && unrelatedDetection
+                    ? [
+                        {
+                          path: 'unconfirmed-rule',
+                          sequence: [confirmedAnchor, unrelatedDetection],
+                          expectReuse: false,
+                          seedUnconfirmedDetection: unrelatedDetection,
+                        },
+                      ]
+                    : []),
                   ...Object.entries(scenario.continuationChains ?? {}).map(
                     ([path, ruleNames]): ContinuationPlan => ({
                       path,
                       sequence: ruleNames
                         .map((name) => byRuleName.get(name))
                         .filter((d): d is Detection => Boolean(d)),
+                    })
+                  ),
+                  ...Object.entries(scenario.continuationChains ?? {}).map(
+                    ([path, ruleNames]): ContinuationPlan => ({
+                      path: `${path}-no-topology`,
+                      sequence: ruleNames
+                        .map((name) => byRuleName.get(name))
+                        .filter((d): d is Detection => Boolean(d)),
+                      stripSeedTopology: true,
                     })
                   ),
                 ];
@@ -363,6 +431,8 @@ evaluate.describe(
                   expectReuse: plan.expectReuse,
                   seedAgeMs: plan.seedAgeMs,
                   seedStatus: plan.seedStatus,
+                  stripSeedTopology: plan.stripSeedTopology,
+                  seedUnconfirmedDetection: plan.seedUnconfirmedDetection,
                 }));
               });
 
@@ -395,6 +465,8 @@ evaluate.describe(
                           continuation_expect_reuse: run.expectReuse ?? true,
                           continuation_seed_age_ms: run.seedAgeMs,
                           continuation_seed_status: run.seedStatus,
+                          continuation_without_topology: run.stripSeedTopology,
+                          continuation_unconfirmed_rule: run.seedUnconfirmedDetection?.rule_uuid,
                         },
                       })),
                     },
@@ -543,6 +615,34 @@ evaluate.describe(
                               : undefined;
                           const event = {
                             ...canonicalEvent,
+                            ...(i === 0 && run.seedUnconfirmedDetection
+                              ? {
+                                  signals: [
+                                    ...(canonicalEvent.signals ?? []).map((signal) => ({
+                                      ...signal,
+                                      confirmed: true as const,
+                                    })),
+                                    {
+                                      type: 'detection' as const,
+                                      stream_name: run.seedUnconfirmedDetection.stream_name,
+                                      confirmed: false,
+                                      description:
+                                        'The judge found no evidence that this signal supports the event.',
+                                      metadata: {
+                                        detection_id: run.seedUnconfirmedDetection.detection_id,
+                                        rule_name: run.seedUnconfirmedDetection.rule_name,
+                                        rule_uuid: run.seedUnconfirmedDetection.rule_uuid,
+                                        change_point_type:
+                                          run.seedUnconfirmedDetection.change_point_type,
+                                        p_value: run.seedUnconfirmedDetection.p_value,
+                                      },
+                                    },
+                                  ],
+                                }
+                              : {}),
+                            ...(run.stripSeedTopology
+                              ? { causal_features: [], blast_radius: [] }
+                              : {}),
                             ...(seededAt ? { '@timestamp': seededAt } : {}),
                             ...(i === 0 && run.seedStatus ? { status: run.seedStatus } : {}),
                           };

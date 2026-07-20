@@ -41,6 +41,8 @@ describe('event_search tool', () => {
     (assertSignificantEventsAccess as jest.Mock).mockResolvedValue(undefined);
     (searchEventsToolHandler as jest.Mock).mockResolvedValue({
       events: [{ event_uuid: 'e1' }],
+      view: 'compact',
+      page: 1,
       total: 1,
     });
 
@@ -77,6 +79,8 @@ describe('event_search tool', () => {
       has_query: false,
       has_stream_filter: true,
       status_filter: 'open',
+      view: 'compact',
+      page: 1,
     });
     expect(searchEventsToolHandler).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -89,6 +93,8 @@ describe('event_search tool', () => {
     (assertSignificantEventsAccess as jest.Mock).mockResolvedValue(undefined);
     (searchEventsToolHandler as jest.Mock).mockResolvedValue({
       events: [{ event_uuid: 'e2' }],
+      view: 'compact',
+      page: 1,
       total: 1,
     });
 

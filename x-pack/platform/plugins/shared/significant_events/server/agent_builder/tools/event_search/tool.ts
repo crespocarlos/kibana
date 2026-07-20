@@ -22,7 +22,11 @@ import {
   DEFAULT_EVENTS_SEARCH_TO,
 } from '../../../lib/significant_events/events';
 import { createSignificantEventsAvailability } from '../significant_events_availability';
-import { searchEventsToolHandler } from './handler';
+import {
+  EVENT_SEARCH_DEFAULT_PER_PAGE,
+  EVENT_SEARCH_MAX_PER_PAGE,
+  searchEventsToolHandler,
+} from './handler';
 
 export const SIGNIFICANT_EVENTS_SEARCH_EVENTS_TOOL_ID = platformSignificantEventsTools.searchEvent;
 
@@ -54,20 +58,50 @@ const searchEventsSchema = significantEventSchema
       .describe(
         i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.ruleUuids', {
           defaultMessage:
-            'Optional rule UUIDs for continuation candidates. With stream names, events matching either filter are returned.',
+            'Optional rule UUIDs to match against event signals. With stream names, events matching either filter are returned and exact rule matches rank first.',
         })
       ),
-    page: z.number().int().min(1).optional().default(1),
+    event_ids: z
+      .array(z.string())
+      .max(100)
+      .optional()
+      .describe(
+        i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.eventIds', {
+          defaultMessage: 'Optional stable event IDs to retrieve.',
+        })
+      ),
+    view: z
+      .enum(['compact', 'full'])
+      .optional()
+      .default('compact')
+      .describe(
+        i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.view', {
+          defaultMessage:
+            'Response detail. compact returns identity, correlation, topology, and signal summaries and is the default. full returns complete stored events and is capped at 10 events per page.',
+        })
+      ),
+    page: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .default(1)
+      .describe(
+        i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.page', {
+          defaultMessage: 'Current page. Defaults to 1.',
+        })
+      ),
     per_page: z
       .number()
       .int()
       .min(1)
-      .max(100)
+      .max(EVENT_SEARCH_MAX_PER_PAGE)
       .optional()
-      .default(100)
+      .default(EVENT_SEARCH_DEFAULT_PER_PAGE)
       .describe(
         i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.perPage', {
-          defaultMessage: 'Number of events to return. Defaults to 100.',
+          defaultMessage:
+            'Number of events to return per page. Defaults to 20; full responses are capped at 10.',
         })
       ),
     from: z
@@ -113,7 +147,8 @@ export function createSearchEventsTool({
       })}
 
       ${i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.description.line2', {
-        defaultMessage: 'Omit `status` to return all events.',
+        defaultMessage:
+          'Use compact for broad searches and continuation matching. Use full only when complete evidence and assessment details are required. Follow next_page while has_more is true. Omit status to return all states.',
       })}
     `,
     schema: searchEventsSchema,
@@ -137,6 +172,8 @@ export function createSearchEventsTool({
           has_query: toolParams.query !== undefined,
           has_stream_filter: (toolParams.stream_names?.length ?? 0) > 0,
           status_filter: toolParams.status,
+          view: data.view,
+          page: data.page,
         });
 
         return {
@@ -157,6 +194,8 @@ export function createSearchEventsTool({
           has_query: toolParams.query !== undefined,
           has_stream_filter: (toolParams.stream_names?.length ?? 0) > 0,
           status_filter: toolParams.status,
+          view: toolParams.view,
+          page: toolParams.page,
           error_message: message,
         });
 

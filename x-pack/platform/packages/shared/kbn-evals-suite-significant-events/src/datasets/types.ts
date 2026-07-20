@@ -124,6 +124,8 @@ export interface DiscoveryJudgeScenario {
     criteria: SamplingCriterion[];
     /** Human-readable summary of expected outcome for each discovery, e.g. `slug=promoted (reason); slug=demoted (reason)`. Used by the status-correctness evaluator. */
     expected_ground_truth: string;
+    /** Expected judge-confirmed rule UUIDs keyed by event ID. */
+    expected_confirmed_rule_uuids?: Record<string, string[]>;
     expect_assessment_note?: boolean;
   };
   metadata: Record<string, unknown> & ScenarioMetadata;

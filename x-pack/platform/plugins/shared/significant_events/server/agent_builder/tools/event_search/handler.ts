@@ -12,6 +12,12 @@ import {
   type EventClient,
 } from '../../../lib/significant_events/events';
 
+export const EVENT_SEARCH_DEFAULT_PER_PAGE = 20;
+export const EVENT_SEARCH_MAX_PER_PAGE = 20;
+export const EVENT_SEARCH_FULL_MAX_PER_PAGE = 10;
+
+export type EventSearchView = 'compact' | 'full';
+
 export interface EventSearchInput {
   query?: string;
   page?: number;
@@ -19,43 +25,110 @@ export interface EventSearchInput {
   stream_names?: string[];
   status?: SignificantEventStatus;
   rule_uuids?: string[];
+  event_ids?: string[];
   from?: string;
   to?: string;
+  view?: EventSearchView;
 }
+
+export interface CompactEventSignal {
+  stream_name: string;
+  rule_uuid?: string;
+  rule_name?: string;
+  confirmed?: boolean;
+  description?: string;
+  collected_at?: string;
+}
+
+export interface CompactEventSearchItem
+  extends Omit<SignificantEvent, 'assessment_note' | 'investigations' | 'signals'> {
+  signals: CompactEventSignal[];
+}
+
+interface EventSearchEnvelope {
+  page: number;
+  per_page: number;
+  returned: number;
+  total: number;
+  has_more: boolean;
+  next_page: number | null;
+}
+
+export type EventSearchResponse =
+  | (EventSearchEnvelope & {
+      view: 'compact';
+      events: CompactEventSearchItem[];
+    })
+  | (EventSearchEnvelope & {
+      view: 'full';
+      events: SignificantEvent[];
+    });
+
+const toCompactEvent = (event: SignificantEvent): CompactEventSearchItem => ({
+  event_id: event.event_id,
+  event_uuid: event.event_uuid,
+  '@timestamp': event['@timestamp'],
+  title: event.title,
+  symptom_hypothesis: event.symptom_hypothesis,
+  summary: event.summary,
+  status: event.status,
+  severity: event.severity,
+  confidence: event.confidence,
+  stream_names: event.stream_names,
+  signals: (event.signals ?? []).map((signal) => ({
+    stream_name: signal.stream_name,
+    rule_uuid: signal.metadata.rule_uuid,
+    rule_name: signal.metadata.rule_name,
+    confirmed: signal.confirmed,
+    description: signal.description,
+    collected_at: signal.collected_at,
+  })),
+  causal_features: event.causal_features,
+  blast_radius: event.blast_radius,
+});
+
 export async function searchEventsToolHandler({
   eventClient,
   params,
 }: {
   eventClient: EventClient;
   params: EventSearchInput;
-}): Promise<{
-  events: SignificantEvent[];
-  page: number;
-  per_page: number;
-  total: number;
-}> {
+}): Promise<EventSearchResponse> {
+  const view = params.view ?? 'compact';
+  const requestedPerPage = params.per_page ?? EVENT_SEARCH_DEFAULT_PER_PAGE;
+  const maxPerPage = view === 'full' ? EVENT_SEARCH_FULL_MAX_PER_PAGE : EVENT_SEARCH_MAX_PER_PAGE;
   const sharedParams = {
     page: params.page ?? 1,
-    perPage: params.per_page ?? 100,
+    perPage: Math.min(requestedPerPage, maxPerPage),
     search: params.query,
     stream: params.stream_names,
     from: params.from ?? DEFAULT_EVENTS_SEARCH_FROM,
     to: params.to ?? DEFAULT_EVENTS_SEARCH_TO,
   };
 
+  const hasRuleFilter = (params.rule_uuids?.length ?? 0) > 0;
+  const hasEventIdFilter = (params.event_ids?.length ?? 0) > 0;
   const response =
-    params.status !== undefined
+    params.status !== undefined || hasRuleFilter || hasEventIdFilter
       ? await eventClient.findLatestByCurrentStatePaginated({
           ...sharedParams,
           status: params.status ? [params.status] : undefined,
           ruleUuids: params.rule_uuids,
+          eventIds: params.event_ids,
+          preferRuleMatches: hasRuleFilter && (params.stream_names?.length ?? 0) > 0,
         })
       : await eventClient.findLatestPaginated(sharedParams);
 
-  return {
-    events: response.hits,
+  const envelope = {
     page: response.page,
     per_page: response.perPage,
+    returned: response.hits.length,
     total: response.total,
+    has_more: response.page * response.perPage < response.total,
+    next_page: response.page * response.perPage < response.total ? response.page + 1 : null,
   };
+
+  return view === 'full'
+    ? { ...envelope, view, events: response.hits }
+    : { ...envelope, view, events: response.hits.map(toCompactEvent) };
 }

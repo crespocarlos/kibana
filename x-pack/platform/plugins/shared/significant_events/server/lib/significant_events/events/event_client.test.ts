@@ -120,55 +120,23 @@ describe('EventClient', () => {
   });
 
   describe('findLatestByCurrentStatePaginated', () => {
-    it('matches any requested stream and rule UUID against multivalued fields', async () => {
-      const { client, query } = createSearchClient({
-        hits: [createEvent()],
-        total: 1,
-      });
-
-      await client.findLatestByCurrentStatePaginated({
-        status: ['open'],
-        stream: ['logs.checkout', 'logs.payments'],
-        ruleUuids: ['rule-uuid-1', 'rule-uuid-2'],
-        from: 'now-7d',
-        to: 'now',
-      });
-
-      const dataQuery = query.mock.calls
-        .map((call) => (call[0] as { query: string }).query)
-        .find((q) => !q.includes('STATS total'));
-      expect(dataQuery).toContain(
-        'MV_INTERSECTS(stream_names, ["logs.checkout", "logs.payments"])'
-      );
-      expect(dataQuery).toContain(
-        'MV_INTERSECTS(`signals.metadata.rule_uuid`, ["rule-uuid-1", "rule-uuid-2"])'
-      );
-      expect(dataQuery).toContain('CASE(MV_INTERSECTS(stream_names');
-      expect(dataQuery).toContain('@timestamp >= TO_DATETIME(?fromIso)');
-      expect(dataQuery).toContain('@timestamp <= TO_DATETIME(?toIso)');
-      expect(dataQuery).not.toContain('stream_names IN');
-      expect(dataQuery!.indexOf('INLINE STATS latest_ts')).toBeLessThan(
-        dataQuery!.indexOf('MV_INTERSECTS(`signals.metadata.rule_uuid`')
-      );
-      expect(dataQuery!.indexOf('INLINE STATS latest_ts')).toBeLessThan(
-        dataQuery!.indexOf('MV_INTERSECTS(stream_names')
-      );
-      const serializedRequests = JSON.stringify(query.mock.calls.map(([request]) => request));
-      expect(serializedRequests).not.toContain('now-7d');
-      expect(serializedRequests).toMatch(/"fromIso":"\d{4}-\d{2}-\d{2}T/);
-      expect(serializedRequests).toMatch(/"toIso":"\d{4}-\d{2}-\d{2}T/);
-    });
-
-    it('does not apply a default time range when the caller omits it', async () => {
+    it('filters stable event IDs after latest-state reduction', async () => {
       const { client, query } = createSearchClient({
         hits: [],
         total: 0,
       });
 
-      await client.findLatestByCurrentStatePaginated({ status: ['open'] });
+      await client.findLatestByCurrentStatePaginated({
+        eventIds: ['checkout-failure', 'payment-failure'],
+      });
 
-      const serializedRequests = JSON.stringify(query.mock.calls.map(([request]) => request));
-      expect(serializedRequests).not.toContain('TO_DATETIME');
+      const dataQuery = query.mock.calls
+        .map((call) => (call[0] as { query: string }).query)
+        .find((q) => !q.includes('STATS total'));
+      expect(dataQuery).toContain('event_id IN ("checkout-failure", "payment-failure")');
+      expect(dataQuery!.indexOf('INLINE STATS latest_ts')).toBeLessThan(
+        dataQuery!.indexOf('event_id IN')
+      );
     });
 
     it('filters open state after latest-per-slug reduction', async () => {

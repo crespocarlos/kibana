@@ -27,27 +27,27 @@ Stop at the lowest mechanism the evidence supports. "The service is failing" is 
 
 - **Early exit**: if `## Detection batch` is absent or empty → make no tool calls and stop.
 
-- **`## Detection batch`** — unprocessed change-point detections, one row per rule. Each row carries `detection_id`, `rule_uuid`, `rule_name`, `stream_name`, `change_point_type`, and `p_value`. You decide investigate-vs-resolve yourself by reading each row's `change_point_type` **and its direction** — see `<change_type_semantics>`.
+- **`## Detection batch`** — unprocessed change-point detections, one row per rule. Each row carries `detection_id`, `rule_uuid`, `rule_name`, `stream_name`, `change_point_type`, and `p_value`. Use `change_point_type` to frame the investigation hypothesis; verification evidence decides active failure versus possible recovery — see `<change_type_semantics>`.
 
 **Open events** — the latest open event documents eligible for continuation matching. Fetch them once per batch before grouping. Routing a current group to one of these events is a **continuation** (reuse its `event_id`); a group matching no candidate opens a new event.
 
 An **episode** is the full open→closed lifecycle of one `event_id`; "event"/`event_id` refers to the identity key, "episode" to its lifecycle state — used interchangeably below.
 
-Significant event fields available for matching: `event_id`, `symptom_hypothesis`, `summary`, `causal_features[]`, `blast_radius[]`, `stream_names[]`, signals[].metadata.rule_uuid.
+Significant event fields available for matching: `event_id`, `symptom_hypothesis`, `summary`, `causal_features[]`, `blast_radius[]`, `stream_names[]`, `signals[].rule_uuid`.
 
--  signals[].metadata.rule_uuid is the list of rules that contributed to this episode — use for overlap checks.
+- `signals[].rule_uuid` is the list of rules that contributed to this episode — use for overlap checks.
 - `symptom_hypothesis`, `summary`, `blast_radius[]`, and `causal_features[]` are context for continuation matching only.
 - They do not replace KI search or confirmation queries.
-- Never emit `blast_radius` or `causal_features` from event data without fresh KI search this cycle — **except** `causal_features`, which may be inherited from a matched event when fresh KI search this cycle produced none (continuation inheritance, finalized at routing). `blast_radius` entries are never inherited.
+- Never emit `blast_radius` or `causal_features` from event data without fresh KI search this cycle — **except** `causal_features`, which may be inherited from a matched event when fresh KI search this cycle produced none (continuation inheritance, finalized during matching). `blast_radius` entries are never inherited.
 - Output only current-batch `signals[]`; never re-list an event's prior signals.
 
 </inputs>
 
 <change_type_semantics>
 
-Classify each detection as **escalation** or **recovering** from its `change_point_type` + direction. The type dictionary — what each type means and which direction is escalation vs recovery — is the `change_point_type` field description in the `platform_sig_events_discovery_write` tool metadata; read it there, do not re-derive it here.
+Use each detection's `change_point_type` as an investigation hint, not a lifecycle verdict. The type dictionary is the `change_point_type` field description in the `platform_sig_events_discovery_write` tool metadata; read it there, do not re-derive it here.
 
-- **Direction is not in the batch.** `spike` (up) and `dip` (drop to silence = service DOWN) are intrinsically **escalation**. For `step_change`/`trend_change`/`distribution_change`, whether volume rose or fell is not given — determine it from the confirmation query (recent vs baseline). When direction is unresolved, default to **escalation** (investigate).
+- **Direction is not in the batch.** No change-point type, including `spike` or `dip`, proves lifecycle state. When direction is unresolved, use failure-lens verification: confirmed failure evidence means active; no failure rows are a recovery hypothesis that downstream liveness checks must distinguish from missing telemetry.
 - Direction sets the query **lens** (failure vs recovery), never the symptom class or severity.
 - **Escalation** → investigate as a new or continuing incident; run the full failure-lens investigation.
 - **Recovering** (downward/settle) → treat as a recovery *hypothesis*, not a verdict: run the rule's confirmation query with a recovery lens. `result: empty` (no active failure rows) confirms recovery; rows still showing active failures mean the settle was premature → treat the rule as active. Never conclude recovery from the change point alone — the query confirms the state; the final resolution verdict is made downstream from the detections and this evidence.
@@ -74,14 +74,15 @@ Example: platform_sig_events_event_search. Populate `stream_names` and `rule_uui
 ```json
 {
   "status": "open",
+  "view": "compact",
   "from": "now-7d",
   "to": "now",
-  "per_page": 100,
+  "per_page": 20,
   "stream_names": ["logs.otel"],
   "rule_uuids": ["rule-uuid-1"]
 }
 ```
-Response: `{ "events": [{ "event_id": "...", "discovery_id": "...", "causal_features": [...], "blast_radius": [...] }] }` or `{ "events": [] }`
+Response: `{ "view": "compact", "page": 1, "per_page": 20, "returned": 1, "total": 3, "has_more": true, "next_page": 2, "events": [{ "event_id": "...", "title": "...", "symptom_hypothesis": "...", "status": "open", "severity": "60-high", "confidence": 0.7, "stream_names": ["logs.otel"], "causal_features": [...], "blast_radius": [...], "signals": [{ "rule_uuid": "...", "rule_name": "...", "confirmed": true, "stream_name": "logs.otel", "description": "...", "collected_at": "..." }] }] }` or `{ ..., "returned": 0, "events": [] }`
 
 Example: platform_sig_events_discovery_write
 ```json
@@ -130,13 +131,13 @@ Example: platform_sig_events_discovery_write
    - Skipping it leaves `causal_features` empty and `signals` without KI-backed queries.
    - A discovery with any **escalation** detection and `signals: []` is invalid — return to KI search.
 2. **Exact-match KI queries always run for escalation detections — `stationary` does not skip them.** The dependency/infra gate controls `blast_radius` population only. "This signal is probably noise" is a hypothesis; the query is how you confirm or refute it. Recovering (downward/settle) detections also run their exact-match query — with a recovery lens — to confirm the failure has actually stopped rather than to hunt for it.
-3. **A `dip` is especially important** — it often means a service went DOWN and stopped producing alerts. A `dip` is an **escalation**, not a recovery.
+3. **A `dip` is ambiguous** — it may reflect recovery, lower traffic, a disabled rule, or missing telemetry. Never infer recovery from the shape alone; run failure-lens verification and preserve the result for downstream liveness checks.
 4. **Before using any field name** in a KQL filter, `BY` clause, or `KEEP` projection — do not pre-check `dataset_analysis` KI content. Proceed with the field name. On `Unknown column`: skip the query (no retry). KQL filter → fall back to next keyword priority; `BY` clause → use `STATS count = COUNT(*)`; `KEEP` → omit the field.
 5. **Input gate — escalation detection:**
    - Investigate as a new or continuing incident. Run `platform_core_execute_esql` with a **failure lens** — you are asking whether the failure is still active.
    - Form `summary`, and `signals` from failure-confirming rows. Apply full `severity` / `confidence` calibration.
 6. **Input gate — recovering (downward/settle) detection:**
-   - **Run `platform_core_execute_esql` with a recovery lens** to confirm the alert truly stopped/went quiet. Run the rule's exact-match KI query; `result: "empty"` (no active failure rows) confirms recovery. Rows still showing active failures mean the settle was premature → treat the rule as active and investigate.
+   - **Run `platform_core_execute_esql` with a recovery lens** to confirm the alert truly stopped/went quiet. Run the ES|QL from the rule's exact-match query KI; `result: "empty"` (no active failure rows) confirms recovery. Rows still showing active failures mean the settle was premature → treat the rule as active and investigate.
    - Record the `signals[]` entry with the actual query and result (never a null/no-query placeholder): `result`, `esql_query`, a `description` stating the recovery check and its outcome, `collected_at`.
    - Copy recovering rules into output `signals[]` with their `change_point_type`; do not declare recovery from the `change_point_type` alone — the query is the confirmation.
    - Reopen the episode as active only when the recovery-lens query still finds active failures.
@@ -152,162 +153,99 @@ Example: platform_sig_events_discovery_write
 
 </critical_rules>
 
-<correlation_rules>
+<incident_comparison>
 
-Multiple rules may arrive in one invocation. They may represent independent failures or a cascading failure with a shared root cause. **Default to separate when in doubt** — over-merging hides severity and is harder to undo than under-merging. Exception: when a Dependency-type KI establishes a direct service dependency and onsets coincide, default to grouped (Path 1) — treating a confirmed dependency cascade as separate incidents overstates severity and generates redundant on-call noise.
+Use this comparison for matching current detections or groups to an existing event and for grouping unmatched detections.
 
-When multiple rules fire within the same onset window, investigate each independently first. Group only when one of the paths below finds positive, evidence-backed proof of a shared cause — a batch sharing only a stream, a time window, or the absence of a reason to split is not sufficient on its own.
+For each current detection, identify:
+- **Rule** — its `rule_uuid`.
+- **Domain** — the bounded system area or flow from the matched query KI description and linked features, narrowed by confirmation rows.
+- **Current evidence** — literal failure point, incident class, symptom class, mechanism, and verdict from confirmation rows only.
+- **KI context** — the exact query's authored description and resolved features. Query KI `evidence[]` contains historical examples and only corroborates.
 
-1. **Investigate each rule independently first** — form hypotheses, check KIs for its `stream_name`.
-2. **Anchor onset times from the earliest matching log row** returned by that rule's `platform_core_execute_esql` call (`SORT @timestamp ASC | LIMIT 1`), falling back to the detection's `@timestamp`; discovery cycles and batch boundaries are not incident boundaries. Rules whose onset coincides are candidates for the same discovery.
-3. **Then decide whether rules belong in the same discovery.** Three grouping paths, evaluated in order:
+For each candidate event or group, identify:
+- **Rules** — `signals[].rule_uuid` from event-aligned signals (all, not only `confirmed: true`; rely on confirmed status only to weight matching strength).
+- **Incident context** — domain, failure point, incident class, symptom class, and mechanism from confirmed signal descriptions, then `symptom_hypothesis`, then `summary`.
+- **Topology** — `causal_features` names and `blast_radius` dependency edges.
 
-   **Path 1 — KI-proven cascade (strongest).** Flag a pair when ALL hold:
-   - rules are both active (an escalation change point, or any rule with confirmed failure evidence — including a `stationary` rule whose signature/KI query found errors)
-   - a Dependency-type KI connects their services (`source → target`) — this applies whether the rules are in the same stream or different streams; services may share a stream and still have a dependency edge
-   - onset windows coincide
-   Group immediately — skip Path 2 and same-service requirements.
-   **Cascade exception:** upstream and downstream rules may have different symptom classes (e.g., SQL-connection errors upstream vs cache errors or write failures downstream) — symptom-class divergence is expected in dependency cascades and does not block grouping.
+Incident matching and current confirmation are separate decisions. Current rows determine `confirmed`; compatible KI context may support a match when rows are sparse, but never proves current activity or severity.
 
-   **Path 2 — Signal-convergent grouping (cross-service, no explicit dependency KI required).** Apply when Path 1 did not fire and rules are in different streams with coincident onsets. Group when ANY ONE of the following holds — each is independently sufficient:
-   - **Shared upstream topology**: the `blast_radius` of one rule names the other rule's service as `source` or `target`, OR both rules' `blast_radius` point to the same upstream node (same `target` value). This covers cases where Agent Builder indexed the individual service→upstream edges but not the inter-service edge.
-   - **Shared infrastructure cause**: `causal_features` of both rules share at least one entity name. Same infrastructure entity implicated in both rules' evidence = same root cause.
-   - **Convergent error evidence**: `signals[].description` for both rules independently confirms the same upstream error — same error type, same error source service, or same failure keyword appearing in both rules' found rows. Requires `result: found` for both; empty-result rules do not qualify for this path alone.
-   - **Convergent authored rule intent**: both rules' matched query KI `description` (from the pre-flight mapping) independently name the same upstream target, mechanism, or component as the cause — this is the rule author's own stated scope, not inferred from a found row.
+**Incident class** is the broad problem category implied by the predicate and evidence, such as availability, performance, data exposure, security, or integrity — not the affected service or domain. Classes are incompatible when either condition can be remediated or resolved without resolving the other. Recovery is a state of the original class, not a separate class.
 
-   **Authored-description split backstop (checked before grouping on any path except Path 1):** when either rule's matched query KI `description` explicitly scopes itself away from the other — naming a different mechanism, a different affected component, or an explicit exclusion (e.g. "distinct from DNS failures", "monitored separately from X") — split, even if a Path 2/3 condition above would otherwise fire. Authored intent overrides inferred convergence. Superficial vocabulary overlap between the two descriptions (e.g. both mentioning the same downstream component in passing) is not itself a match — the descriptions must name the *same* mechanism/target as their cause, not merely share a word.
+Compare in this order:
+1. **Independent matching** — evaluate each current detection against the proposed event or group on its own evidence. A match established by one detection never carries other batch detections with it.
+2. **Incident-class gate** — group or continue only when incident classes match. Shared service, domain, topology, timing, or root cause never overrides an incident-class mismatch. A healthy row does not acquire a failure class from a neighboring detection.
+3. **Rule continuity** — a current rule present in a candidate's confirmed rules strongly supports continuation, but never overrides a contradiction.
+4. **Symptom compatibility** — require the same literal failure point and compatible mechanism, or current evidence or an exact KI dependency path that links complementary symptoms into one causal sequence within the incident class. A dependency edge qualifies only when current rows or the matched query KI identify how one node's condition causes or directly produces the other's. A shared flow or call relationship between independent conditions does not qualify.
+5. **Sparse structural evidence** — for empty or non-contradictory inconclusive rows, every detection must map through its matched query KI description and resolved features to the same specific target/mechanism or one connected dependency chain. A dependency edge supports only detections whose matched query KI resolves to a node on that chain. Broad or multi-target KIs require current evidence or uniquely scoped KI context to select one target. Refuting rows cannot establish a cross-rule match.
+6. **Contradiction gate** — reject an otherwise supported match when current rows name another active target or mechanism, or incompatible domain or symptom class remains unexplained within the incident class. A success row contradicts complete outage, is neutral to partial degradation, and never establishes grouping without rate or scope evidence. Explicit exclusions or differently scoped causes in query KI descriptions block sparse matching.
+7. **Timing** — use the earliest matching row as onset, falling back to the detection timestamp. Coincident onset corroborates; materially separate onset argues against a match unless one continuing cascade explains it.
 
-   Do not apply Path 2 when onset windows are hours apart, when the rules' symptom classes are categorically unrelated (e.g., "credential exposure" and "throughput drop" are unlikely to share a root cause even with coincident timing), or when the rules fall in different Step 1 failure domains.
+Weak or empty evidence is neutral. Shared domains, operations, entities, features, protocol/error wording, historical KI examples, stream, or timing only corroborate. Missing context never establishes a match. Group or continue only when match evidence converges; otherwise keep incidents separate.
 
-   **Path 3 — Same-service grouping.** Rules in the same stream: group when ALL hold: same Step 1 failure domain, symptom class match, same onset window, shared root cause articulable from evidence.
-   - **Symptom class** — derive from `symptom_hypothesis`. Symptom class comes from *what the errors are*.
-   - **Shared symptom hypothesis** — one mechanism explains all rules. Same `causal_features` is necessary but not sufficient; articulate the causal chain.
-
-4. **Split when:** no path's conditions are affirmatively and fully met — the default — OR symptom classes are categorically unrelated, OR the rules fall in different Step 1 failure domains without a Path 1 cascade, OR a matched query KI `description` explicitly scopes one rule away from the other, OR after evidence review no convergence is found.
-5. **Output shape:**
-   - One grouping path matched → **one** discovery; list all affected rules in `signals[]`.
-   - No path matched → **separate** discoveries, one per rule or per same-service group.
-
-</correlation_rules>
+</incident_comparison>
 
 <procedure>
 
 First call `load_skill` with `significant-events-ki-grounding` — `platform_sig_events_ki_search` and `platform_core_execute_esql` are not available until that skill is loaded. Then follow the KI search protocol from the loaded skill context.
 
-**Investigation approach**: start with what's already known about the affected services (knowledge base + topology) before running any queries. Form a specific hypothesis for each signal, then confirm or rule it out with targeted queries. Only look at raw logs when queries don't provide enough signal. When multiple signals arrive, investigate each independently first, then decide if they share an evidence-backed symptom hypothesis or causal chain.
+**Investigation approach:** Use KI and topology to form one hypothesis per detection, then test it with targeted confirmation queries. Investigate detections independently before deciding whether they match the same symptom or causal chain.
 
 ### Step 1: Look Up Service Knowledge (MANDATORY FIRST STEP)
 
-**Partition rules into failure domains.** Assign each rule a 2–4 word label from `rule_name` + `change_point_type` (e.g., `"database connection errors"`, `"sensitive data in logs"`). Rules with matching labels share a domain; a single rule always forms its own domain. This label is a prior for `<correlation_rules>`: a domain mismatch alone is sufficient to block Path 2/3 grouping between two rules (Path 1's dependency-edge cascade is exempt — cascades legitimately span different domains).
-
-**Follow the KI search protocol from the loaded `significant-events-ki-grounding` skill** — one call for the entire batch, result dedup, `dataset_analysis` discard, and all follow-up rules.
+1. Follow the loaded skill's KI search protocol: one call for the batch, result dedup, `dataset_analysis` discard, and all follow-up rules.
+2. Call `platform_sig_events_event_search` with `status: "open"`, `view: "compact"`, `per_page: 20`, and the batch's distinct streams and rule UUIDs. Inspect every returned event before deciding whether to paginate.
+3. If `has_more` is true and any detection still lacks a clear continuation decision, follow `next_page` with the same filters. Stop when all detections have a clear decision, `has_more` is false, or five pages (100 events) have been inspected. Never request `view: "full"` or repeat a page. Save all inspected events as the eligible continuation candidate set.
 
 ### Step 2: Form Hypotheses
 
-**Apply change type semantics first.** Read `change_point_type` **and its direction** and consult `<change_type_semantics>`. Classify each row as escalation or recovering (Critical Rules 6–7) — this sets the query *lens*, not the symptom class or the severity. `change_point_type` describes the rate's *dynamics* (rising / falling / steady); it never classifies the symptom or scores the incident. A `stationary` rule can represent a sustained failure that still requires confirmation, not ambient noise to skip.
-
-**Anchor onset times from the earliest matching log row (`SORT @timestamp ASC | LIMIT 1`), not before querying:** onset is reconstructed from query results once the confirmation queries return. Before querying, use the detection's `@timestamp` as a provisional onset for grouping.
-- When did each rule START firing abnormally? Read it from the earliest matching row once queries return.
-- Rules whose onset coincides are candidates for the same discovery; detection arrival time and batch boundaries are not incident boundaries.
-- Which rule changed first within a group? → likely the symptom hypothesis; others are downstream effects.
-- Do not merge groups with different onset times unless you find an explicit causal chain.
-
-Read ALL returned KIs and form ranked hypotheses per rule: claim (specific mechanism), supporting KIs, confidence (from `severity_score`), and the ES|QL query that would confirm or refute it.
-
-At this stage, hypotheses are pre-query claims to test. Do not run 5 Whys until the confirmation rows are available.
-
-**Scan for Dependency-type KIs first.** Identify `kind: "feature"`, `feature.type: "dependency"` results — these map the causal topology. Keep this map available through routing.
-
-**Cascade scan.** For each active rule (an escalation change point, or any rule with confirmed failure evidence), check whether a Dependency-type KI connects its service to another active rule's service. Record any such pair as a cascade candidate (upstream rule, downstream rule, KI name).
-
-**Build `blast_radius` and `causal_features`.** Use the same `platform_sig_events_ki_search` results — no second search call. Always emit these arrays when KI search returned relevant KIs — topology context is valuable regardless of `change_point_type` or query results. `[]` only when no relevant KIs were found.
-
-Include only KIs involving the failing service. Apply KI type definitions from the loaded `significant-events-ki-grounding` context for inclusion rules and exposure logic. Investigator-specific:
-- **Dependency KI**: emit `type: "dependency"` blast_radius entry with `source`, `target`, `protocol` (omit if absent), `feature_id`. No `workloads` field. Scan `evidence[]` for error log signatures — error messages, exception types, and failure patterns are the strongest hypothesis seeds before running ES|QL.
-- **Infrastructure KI**: emit `type: "infrastructure"` blast_radius entry with `title` from `feature.title` (omit if absent), `feature_id`; extract service names from `description`/`evidence` for `workloads`.
-- **Secondary signals**: apply array field format guidelines from the loaded `significant-events-ki-grounding` context.
-
-**Derive `causal_features`.** Apply the causal_features derivation protocol from the loaded `significant-events-ki-grounding` context.
-**Enrich `symptom_hypothesis` from feature KI content** when `platform_core_execute_esql` returned ≥1 row — apply KI type definitions from the loaded `significant-events-ki-grounding` context.
+1. Apply `<change_type_semantics>`; treat `change_point_type` as a hypothesis cue, not a lifecycle, symptom, or severity verdict.
+2. Read all returned KIs and form ranked hypotheses per rule: mechanism, supporting KIs, `severity_score` confidence, and a confirming or refuting ES|QL query. These are pre-query claims; defer 5 Whys until confirmation rows return.
+3. Scan dependency feature KIs (`kind: "feature"`, `feature.type: "dependency"`) first and retain the topology through matching and grouping.
+4. Build `blast_radius` from the same KI search using the loaded skill's inclusion, exposure, and array rules. Include only KIs involving the failing service; use dependency feature KI `evidence[]` error signatures as the strongest hypothesis seeds.
+5. Derive `causal_features` with the loaded skill's protocol. Always emit both arrays; use `[]` only when no relevant KIs were found.
 
 ### Step 3: Run and Record Confirmation Queries
 
-Follow the confirmation query protocol from the loaded `significant-events-ki-grounding` context for modifications, deduplication, cap, ordering, and `description` format. Deferred entity KI follow-up per the KI search protocol in the same context.
+1. Run the confirmation-query protocol from the loaded `significant-events-ki-grounding` context, including its modification, deduplication, budget, ordering, description, and deferred-follow-up rules. Use a recovery lens for recovering (downward/settle) rules. There is no raw-log fallback.
+2. After all calls return, create exactly one `signals[]` entry per detection using its decisive query: `metadata.rule_name`, `metadata.rule_uuid`, `stream_name`, `evidence.result`, `evidence.esql_query` (the exact post-modification query string), `description`, and `collected_at`. Summarize supplemental results in that entry; never create another signal for the same rule.
+3. Classify each detection once:
+   - **Actionable**: its own rows confirm its rule's failure or risk hypothesis.
+   - **Refuted**: its rows show the healthy/opposite condition; set `confirmed: false`.
+   - **Unresolved**: empty, errored, or inconclusive; omit `confirmed`.
+   Confirmation state does not decide whether detections match the same incident; use `<incident_comparison>`.
+4. **5 Whys.** Iteratively form a symptom hypothesis, one evidence-backed step at a time. Stop at the lowest actionable symptom hypothesis: "the service is failing" is only a symptom. Never go deeper than the evidence supports. KI context may scope the failure domain; only current rows establish an active mechanism.
+5. **Cross-detection sequence.** Order actionable detections by their earliest matching row. Use the sequence only to test an evidenced cascade; timing alone never groups rules or proves causality.
+6. **Cascade scan.** After confirmation, retain only candidates in the same incident class that pass symptom compatibility and sparse structural evidence. Record their upstream, downstream, and feature ID.
 
-**Record each call as a `signals[]` entry:** `metadata.rule_name`, `metadata.rule_uuid`, `stream_name`, `evidence.result` (found/empty/error), `evidence.esql_query` (exact post-modification string), `description`, `collected_at`.
+### Step 4: Match Detections to Open Events
 
-**5 Whys.** iteratively form a symptom hypothesis, one evidence-backed step at a time. Stop at the **lowest actionable symptom hypothesis**. "The service is failing" is a symptom. Never go deeper than the evidence supports (fabrication).
+Use the saved `platform_sig_events_event_search` results as the complete set of events that can be continued this cycle. Do not call the tool again.
 
-**Attribution:** every signal entry must carry the `rule_uuid` of the detection rule it covers. Supplemental KI results (no exact `rule.id` match) are incorporated into the description and evidence of the matched rule's signal — do not emit a separate signal entry without a `rule_uuid`.
+1. Compare every detection independently with every candidate using `<incident_comparison>`.
+2. Select at most one candidate; prefer greatest rule coverage, then current-evidence similarity, then a KI-supported match.
+3. Form a continuation group only from detections that independently selected the same candidate. Never attach neighboring batch detections because one rule matched.
 
-**Trajectory (required):** read `@timestamp` from last row to first (oldest→newest). Assess whether the pattern or mechanism shifted and update the candidate `symptom_hypothesis` accordingly; if consistent, note "consistent through [most recent @timestamp]".
+All-recovering detections emit only when their checks find no active failure and they match an open candidate. The judge resolves recovery versus missing telemetry.
 
-**No-logs dispositions (apply per rule once all `platform_core_execute_esql` results are in — there is no raw-log fallback):**
+### Step 5: Group Unmatched Detections
 
-**Recovery-lens queries for recovering rules:** recovering (downward/settle) rules run their exact-match query with a recovery lens to confirm the failure stopped; record the real result — `empty` confirms recovery, active failure rows mean a premature settle (treat as active).
-
-### Step 4: Group
-
-Before grouping, fetch the continuation candidate set using the `platform_sig_events_event_search` call defined in `<tool_examples>`. Treat the returned `events` array as the complete candidate set for this cycle; do not call the tool again during per-group routing.
-
-**Recovering pre-pass (before correlation grouping).** Recovering (downward/settle) rules do not participate in onset-based correlation grouping. Process their recovery-lens query results separately first:
-
-1. For each recovering rule, find every continuation candidate whose `signals[].metadata.rule_uuid` includes that rule's `rule_uuid`.
-2. Group recovering rules by their matched candidate — recovering rules that match the same candidate form one group.
-3. For each recovering group: if ALL of its rules are recovering AND the continuation candidate matched → mark this group as a **recovering episodes**; document the confirmed recovery on the matched `event_id` so it can be resolved downstream
-4. Recovering rules that match no continuation candidate → apply Critical Rule 9 (no emit)
-5. Remove recovering rules from the detection pool before the correlation-rule grouping below.
-
-**Group escalation rules.** Apply `<correlation_rules>` to partition the remaining escalation rules into groups. Each group becomes one discovery. Rules without a shared symptom hypothesis and onset window form separate groups.
-
-Each escalation group, plus each recovering episode from the pre-pass, is routed independently in the routing step.
-
-### Step 5: Route Each Group to an Event
-
-This step is mandatory and runs for every group. Each cycle writes one discovery document per group; documents sharing an `event_id` belong to the same event. Grouping decided *what is together now*; this step decides *which event each group belongs to*. The same incident must reuse the same `event_id` across cycles — even when the prior event was already assessed. `event_id` proliferation is a defect.
-
-**Continuation**: a group that matches an open event candidate reuses its `event_id`; a group that matches none opens a new event (new `event_id`).
-
-Routing is **per group** and **fans out**: evaluate each group independently — some continue an existing event (reuse the `event_id`), some open a new event (new `event_id`), and all-recovering groups document the confirmed recovery on the matched `event_id`. One invocation can produce continuations of several different events plus brand-new ones in the same output.
-
-**For each group, run the continuation check.**
-
-Is this group part of an open event from `platform_sig_events_event_search` `events`? Run in order; stop at first match:
-
-Derive current failure context from `signals[].description` found-row content first, then `symptom_hypothesis`, then `summary`; use rule names last.
-
-- **Evidence-grounded match (strongest)** — a current `evidence.result: "found"` row confirms the same literal failure point and compatible mechanism as the candidate's `symptom_hypothesis` (or `summary` for a legacy candidate). Multiple candidates qualify → prefer the closest hypothesis match, then `causal_features` overlap.
-
-- **KI-supported continuation** — the current and candidate hypotheses are compatible, and their `causal_features` share the evidenced failure-point entity or their dependency entries share the same source/target. Topology alone is insufficient when targets or mechanisms conflict.
-
-- **Semantic match** — same affected service or flow, same failure point, same symptom class, and compatible mechanism according to the current and candidate `symptom_hypothesis`. Wording and current symptoms may differ; a target or `causal_features` mismatch argues against continuation.
-
-- **Cascade continuation** — different services occupy evidence-supported positions in the same dependency chain. Symptoms may differ, but the hypotheses must explain the same chain. Do not apply to unrelated mechanisms.
-
-- **Rule-name overlap** (last resort) — use only when neither side has a hypothesis or found-row evidence, and the overlapping rules monitor the same failure domain. Rule names confirm but never lead.
-
-**Continuation applies (reuse the `event_id`):**
-- Set this group's `event_id` to the matched candidate's `event_id` verbatim.
-- Copy the candidate's title verbatim; current symptoms may update the hypothesis and summary, not the stable event label.
-- Output **current-cycle content only** — the signals in this batch plus the `causal_features` / `blast_radius` you derived fresh this cycle.
-- Do **not** re-list the candidate's prior signals or merge prior-cycle topology into this document. The one exception is `causal_features`, which may be inherited via the causal_features continuation-inheritance source (Source B) when fresh KI search produced none.
-- The event's full blast radius and investigation trail are reconstructed at read time by collapsing all documents that share the `event_id` — not assembled in this one document.
-
-**Continuation does not apply:** omit `event_id` — `platform_sig_events_discovery_write` auto-generates it from stream and rule names.
-
-**Receding event** (the candidate lists rule names absent from the current group — those rules went quiet): continue the `event_id` when any matcher above fired, even though the active services or rules are a subset. Only create a new `event_id` when the active rules represent a categorically different failure mode with no topological link to the candidate.
-
-Discoveries are re-evaluated every cycle — apply this check even when the candidate was already assessed.
-
-**All-recovering episodes:** recovering episodes are identified in the recovering pre-pass above. Document the recovery for each (Critical Rules 8–9) on the matched candidate's `event_id`. A mixed batch — some recovering, some escalating — produces both recovery discoveries (for recovering groups) and active-incident discoveries (for escalation groups) in the same invocation.
+1. Add an unmatched detection to a continuation group only when it independently passes `<incident_comparison>`.
+2. Partition remaining detections with `<incident_comparison>`; confirmation state alone neither groups nor splits them.
+3. Keep detections standalone when match evidence does not converge.
+4. Continuations reuse their candidate's exact `event_id`; new groups omit `event_id`.
 
 ### Step 6: Emit Output
 
-**Pre-emit gate — verify for EVERY group before calling the output tool:**
-1. KI search ran and `signals` covers every `metadata.rule_uuid`.
-2. Every non-null `metadata.rule_name` in `signals` matches a detection rule in the group; else set `metadata.rule_name: null`.
-3. `blast_radius` dependency entries: scan query KI `evidence` for `"Dependency: <source> → <target>"` strings. Never populate from continuation-candidate data alone.
-4. `causal_features` ceiling: apply the ceiling from the `confidence` field description in the tool schema.
+**Pre-write matching gate:** Finalize every group before the first write. For each multi-rule group, verify one incident class and identify one shared target or causal chain and how every detection reaches it under `<incident_comparison>`; 
+  split the group if any detection has a different incident class or lacks a mapping. A healthy or positive row cannot assign its detection the incident class of neighboring failures or establish grouping; keep it only when independent rate/scope evidence confirms compatible degradation or it is explicit recovery evidence for the same incident. 
+  A continuation `event_id` must exist in the saved event-search result and may belong to only one finalized group. Never reuse an `event_id` returned by a write in this invocation.
+
+**Output integrity:**
+1. `signals` contains exactly one entry for every detection assigned to the group.
+2. Copy each signal’s detection metadata exactly from the input; omit optional fields that were absent.
+3. Set `confirmed: true` for **Actionable**, `false` for **Refuted** or confirmed recovery, and omit it for **Unresolved**. Evidence supporting another incident requires splitting the group.
+4. Build `blast_radius` and `causal_features` per the loaded skill and tool schema. Never inherit `blast_radius`; inherit `causal_features` only through the defined continuation exception.
 
 For each discovery group:
 1. Call `platform_sig_events_discovery_write` with the full discovery document. One call per group.
@@ -320,17 +258,18 @@ Apply field rules from `<field_rules>`.
 
 Field content rules for `platform_sig_events_discovery_write`. Follow the tool schema field descriptions — constraints below override those defaults. Write field names as words without underscores ("Blast radius", not `blast_radius`).
 
-- `title`: derive both halves from one **anchor rule** (in a cascade, the downstream/user-facing rule — never the upstream cause). `<Affected flow or service>` = anchor rule's "Failing service name" per the loaded `significant-events-ki-grounding` context — never `causal_features` (that holds the cause). `<failure domain>` = anchor rule's matched query KI `title` (strip leading service-name prefix if duplicated), fallback to its Step 1 failure-domain label. In a multi-rule group, never merge or pick among other member rules' KIs/labels. Follow the `title` field description for the exclusion list and continuation-stability rule.
+- `title`: derive both halves from one **anchor rule** (in a cascade, the downstream/user-facing rule — never the upstream cause). Apply the tool's affected-scope hierarchy to current evidence, then the anchor rule's matched query KI description and resolved features; never use `causal_features` as the affected scope. `<observed condition>` = the anchor rule's matched query KI `title` (strip a duplicated scope prefix), falling back to its literal signal signature. In a multi-rule group, never merge or pick among other member rules' KIs. Follow the tool field description for exclusions and continuation stability.
   - Must discriminate from other events on the same service — if two different incidents could share this title, it is too generic; fall back to the query KI title (already rule-specific) rather than a generic label.
 - `symptom_hypothesis`: required provisional explanation of the grouped evidence. Apply bounded 5 Whys and name the affected flow/entity and evidence-supported mechanism in one sentence. Always provide the best-supported hypothesis; use confidence and signal verdicts for uncertainty.
-  - Sources in priority order: (1) confirming `platform_core_execute_esql` found-rows; (2) aligned entity KI content when the row confirms the same operation/path; (3) tech KI content for an evidence-supported `causal_features` entity; (4) change semantics plus dependency topology when no confirming row exists; (5) onset order alone.
-  - KI metadata may refine an evidenced hypothesis but cannot establish a live failure by itself. When rows contain no error signature, state the observed volume driver and that no mechanism was confirmed. Scope the hypothesis to this group's rules only.
+  - Sources in priority order: (1) confirming rows; (2) aligned KI correlation context; (3) change semantics and topology; (4) onset order.
+  - KI context may establish scope or support a match, not a live failure. When rows do not confirm a mechanism, state that explicitly. Scope the hypothesis to this group's rules only.
   - Apply the sensitive-value rule from the field description.
-- `summary`: per the `summary` field description in the tool metadata. Never lead with detection mechanics.
+- `summary`: per the tool field description. Lead with the problem: affected operation, observed condition, and whether user impact is confirmed, possible, or not established. Use sparse KI context only to qualify the conclusion. Never narrate detections, queries, or analysis steps.
 - `severity`: make a preliminary user-impact classification per the `severity` field description in the `platform_sig_events_discovery_write` tool metadata — the judge makes the final decision. Use `"20-low"` for confirmed recovery, minor impact, noise, false-alarm candidates, or non-issues; use confidence to distinguish a corroborated low-impact finding from evidence too thin to trust.
 - `signals`: the unified detection+evidence array.
   - One entry per detection rule. Combine detection metadata and query result in each entry.
   - Dedup by `metadata.rule_uuid` — each must appear exactly once.
+  - Include only detections assigned to this group. Use tri-state `confirmed` per the pre-write output-integrity rule.
 - `blast_radius`, `causal_features`: apply array field format guidelines from the loaded `significant-events-ki-grounding` context.
 - `confidence`: start from p_value of the detection with the strongest signal.
   - Base from p_value: ≤0.01 → 0.55–0.65; 0.01–0.05 → 0.40–0.55; 0.05–0.1 → 0.25–0.40; >0.1 → below 0.25.

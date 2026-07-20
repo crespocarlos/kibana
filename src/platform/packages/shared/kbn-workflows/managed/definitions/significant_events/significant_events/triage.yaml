@@ -89,6 +89,10 @@ steps:
             - confidence
             - signals
             - stream_names
+            - causal_features
+            - blast_radius
+          excludes:
+            - signals.confirmed
         query:
           bool:
             filter:

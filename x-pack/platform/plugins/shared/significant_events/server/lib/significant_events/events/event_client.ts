@@ -90,11 +90,13 @@ export interface EventsFilterOptions {
   severity?: Severity[];
   stream?: string[];
   search?: string;
-
+  eventIds?: string[];
   ruleUuids?: string[];
 }
 
-export interface EventsPaginatedSearchOptions extends PaginatedSearchOptions, EventsFilterOptions {}
+export interface EventsPaginatedSearchOptions extends PaginatedSearchOptions, EventsFilterOptions {
+  preferRuleMatches?: boolean;
+}
 
 export class EventClient {
   constructor(
@@ -180,6 +182,16 @@ export class EventClient {
       streamNames: options.stream,
       ruleUuids: options.ruleUuids,
     });
+    const ruleMatchWhere = multiValueContainsAnyFilter({
+      where: undefined,
+      field: 'signals.metadata.rule_uuid',
+      values: options.ruleUuids,
+    });
+    const eventIdWhere = inFilter({
+      where: undefined,
+      field: FIELD_EVENT_ID,
+      values: options.eventIds,
+    });
 
     const buildBaseQuery = (): ComposerQuery => {
       const query = applyTimeRange({
@@ -212,15 +224,24 @@ export class EventClient {
       if (candidateWhere) {
         query.where`${candidateWhere}`;
       }
+      if (eventIdWhere) {
+        query.where`${eventIdWhere}`;
+      }
 
       return query;
     };
 
     // ComposerQuery is mutable and has no clone API, so each branch needs a fresh base query.
-    const dataQuery = buildBaseQuery()
-      .sort(['@timestamp', 'DESC'])
-      .limit(page * perPage)
-      .keep('_source');
+    let dataQuery = buildBaseQuery();
+    if (options.preferRuleMatches && ruleMatchWhere) {
+      dataQuery = dataQuery.pipe`EVAL _rule_match = CASE(${ruleMatchWhere}, 1, 0)`.sort(
+        ['_rule_match', 'DESC'],
+        ['@timestamp', 'DESC']
+      );
+    } else {
+      dataQuery = dataQuery.sort(['@timestamp', 'DESC']);
+    }
+    dataQuery = dataQuery.limit(page * perPage).keep('_source');
     const countQuery = buildBaseQuery().pipe`STATS total = COUNT(*)`.keep('total');
 
     const [total, hits] = await Promise.all([

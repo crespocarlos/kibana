@@ -63,6 +63,11 @@ describe('groupingCorrectnessEvaluator', () => {
     expect(result.score).toBe(1);
   });
 
+  it('scores 0 when independent rules were merged', async () => {
+    const result = await evaluate([buildDiscovery('a', 'b')], [['a'], ['b']]);
+    expect(result.score).toBe(0);
+  });
+
   it('scores 0 when rules that should be grouped were split', async () => {
     const result = await evaluate([buildDiscovery('a'), buildDiscovery('b')], [['a', 'b']]);
     expect(result.score).toBe(0);
