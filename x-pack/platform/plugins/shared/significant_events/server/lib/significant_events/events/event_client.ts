@@ -79,7 +79,7 @@ const continuationCandidateFilter = ({
   });
 
   if (streamFilter && ruleFilter) {
-    return esql.exp`CASE(${streamFilter}, true, ${ruleFilter})`;
+    return andWhere(streamFilter, ruleFilter);
   }
 
   return streamFilter ?? ruleFilter;

@@ -155,31 +155,30 @@ Example: platform_sig_events_discovery_write
 
 <incident_comparison>
 
-Use this comparison for matching current detections or groups to an existing event and for grouping unmatched detections.
+Use this comparison for grouping unmatched detections (Step 5) and for no-rule-match continuation checks (Step 4).
 
 For each current detection, identify:
 - **Rule** — its `rule_uuid`.
 - **Domain** — the bounded system area or flow from the matched query KI description and linked features, narrowed by confirmation rows.
-- **Current evidence** — literal failure point, incident class, symptom class, mechanism, and verdict from confirmation rows only.
+- **Incident class** — derived from the rule's predicate and matched KI description; set before confirmation runs and never reassigned by row content. A confirmation row that matches a different failure pattern means the detection's own hypothesis is **Unresolved or Refuted** — it does not change the detection's incident class.
+- **Current evidence** — literal failure point, symptom class, mechanism, and verdict from confirmation rows. Rows narrow the hypothesis; they do not override the class established above.
 - **KI context** — the exact query's authored description and resolved features. Query KI `evidence[]` contains historical examples and only corroborates.
 
 For each candidate event or group, identify:
-- **Rules** — `signals[].rule_uuid` from event-aligned signals (all, not only `confirmed: true`; rely on confirmed status only to weight matching strength).
 - **Incident context** — domain, failure point, incident class, symptom class, and mechanism from confirmed signal descriptions, then `symptom_hypothesis`, then `summary`.
 - **Topology** — `causal_features` names and `blast_radius` dependency edges.
 
 Incident matching and current confirmation are separate decisions. Current rows determine `confirmed`; compatible KI context may support a match when rows are sparse, but never proves current activity or severity.
 
-**Incident class** is the broad problem category implied by the predicate and evidence, such as availability, performance, data exposure, security, or integrity — not the affected service or domain. Classes are incompatible when either condition can be remediated or resolved without resolving the other. Recovery is a state of the original class, not a separate class.
+**Incident class** categories: availability, performance, data exposure, security, integrity — not the affected service or domain. Classes are incompatible when either condition can be remediated without resolving the other. Recovery is a state of the original class, not a separate class.
 
 Compare in this order:
 1. **Independent matching** — evaluate each current detection against the proposed event or group on its own evidence. A match established by one detection never carries other batch detections with it.
 2. **Incident-class gate** — group or continue only when incident classes match. Shared service, domain, topology, timing, or root cause never overrides an incident-class mismatch. A healthy row does not acquire a failure class from a neighboring detection.
-3. **Rule continuity** — a current rule present in a candidate's confirmed rules strongly supports continuation, but never overrides a contradiction.
-4. **Symptom compatibility** — require the same literal failure point and compatible mechanism, or current evidence or an exact KI dependency path that links complementary symptoms into one causal sequence within the incident class. A dependency edge qualifies only when current rows or the matched query KI identify how one node's condition causes or directly produces the other's. A shared flow or call relationship between independent conditions does not qualify.
-5. **Sparse structural evidence** — for empty or non-contradictory inconclusive rows, every detection must map through its matched query KI description and resolved features to the same specific target/mechanism or one connected dependency chain. A dependency edge supports only detections whose matched query KI resolves to a node on that chain. Broad or multi-target KIs require current evidence or uniquely scoped KI context to select one target. Refuting rows cannot establish a cross-rule match.
-6. **Contradiction gate** — reject an otherwise supported match when current rows name another active target or mechanism, or incompatible domain or symptom class remains unexplained within the incident class. A success row contradicts complete outage, is neutral to partial degradation, and never establishes grouping without rate or scope evidence. Explicit exclusions or differently scoped causes in query KI descriptions block sparse matching.
-7. **Timing** — use the earliest matching row as onset, falling back to the detection timestamp. Coincident onset corroborates; materially separate onset argues against a match unless one continuing cascade explains it.
+3. **Symptom compatibility** — require the same literal failure point and compatible mechanism, or current evidence or an exact KI dependency path that links complementary symptoms into one causal sequence within the incident class. A dependency edge qualifies only when current rows or the matched query KI identify how one node's condition causes or directly produces the other's. A shared flow or call relationship between independent conditions does not qualify.
+4. **Sparse structural evidence** — for empty or non-contradictory inconclusive rows, every detection must map through its matched query KI description and resolved features to the same specific target/mechanism or one connected dependency chain. A dependency edge supports only detections whose matched query KI resolves to a node on that chain. Broad or multi-target KIs require current evidence or uniquely scoped KI context to select one target. Refuting rows cannot establish a cross-rule match.
+5. **Contradiction gate** — reject an otherwise supported match when current rows name another active target or mechanism, or incompatible domain or symptom class remains unexplained within the incident class. A success row contradicts complete outage, is neutral to partial degradation, and never establishes grouping without rate or scope evidence. Explicit exclusions or differently scoped causes in query KI descriptions block sparse matching.
+6. **Timing** — use the earliest matching row as onset, falling back to the detection timestamp. Coincident onset corroborates; materially separate onset argues against a match unless one continuing cascade explains it.
 
 Weak or empty evidence is neutral. Shared domains, operations, entities, features, protocol/error wording, historical KI examples, stream, or timing only corroborate. Missing context never establishes a match. Group or continue only when match evidence converges; otherwise keep incidents separate.
 
@@ -213,18 +212,21 @@ First call `load_skill` with `significant-events-ki-grounding` — `platform_sig
    - **Actionable**: its own rows confirm its rule's failure or risk hypothesis.
    - **Refuted**: its rows show the healthy/opposite condition; set `confirmed: false`.
    - **Unresolved**: empty, errored, or inconclusive; omit `confirmed`.
-   Confirmation state does not decide whether detections match the same incident; use `<incident_comparison>`.
+   Confirmation state does not decide whether detections match the same incident; matching is based on incident class, symptom, topology, and contradiction — not on `confirmed` values.
 4. **5 Whys.** Iteratively form a symptom hypothesis, one evidence-backed step at a time. Stop at the lowest actionable symptom hypothesis: "the service is failing" is only a symptom. Never go deeper than the evidence supports. KI context may scope the failure domain; only current rows establish an active mechanism.
-5. **Cross-detection sequence.** Order actionable detections by their earliest matching row. Use the sequence only to test an evidenced cascade; timing alone never groups rules or proves causality.
-6. **Cascade scan.** After confirmation, retain only candidates in the same incident class that pass symptom compatibility and sparse structural evidence. Record their upstream, downstream, and feature ID.
+5. **Onset record.** Record the earliest matching row per detection for onset analysis. This sequence informs `blast_radius` and onset context; do not use it to form detection groups — grouping happens in Steps 4 and 5.
+6. **Cascade scan.** Identify potential cascade relationships for `blast_radius` population: after confirmation, note candidates in the same incident class that pass symptom compatibility and sparse structural evidence, and their upstream, downstream, and feature ID. This is diagnostic metadata only — do not form detection groups at this stage.
 
 ### Step 4: Match Detections to Open Events
 
 Use the saved `platform_sig_events_event_search` results as the complete set of events that can be continued this cycle. Do not call the tool again.
 
-1. Compare every detection independently with every candidate using `<incident_comparison>`.
-2. Select at most one candidate; prefer greatest rule coverage, then current-evidence similarity, then a KI-supported match.
-3. Form a continuation group only from detections that independently selected the same candidate. Never attach neighboring batch detections because one rule matched.
+For each detection independently:
+1. **Rule UUID match** — if the detection's `rule_uuid` appears in an open event's `signals[].rule_uuid`: presumptive continuation. Verify only that the incident classes are compatible and no contradiction exists; assign to that candidate immediately. Do not re-evaluate against other open events unless rejected.
+2. **No rule match** — apply `<incident_comparison>` against the candidate event. This covers cascade continuations (new rule, different failure point, but topology and symptom connect them to the same causal chain) as well as evidence-grounded and KI-supported matches.
+3. **Select one candidate** — prefer greatest rule coverage, then current-evidence similarity. One detection's match never carries neighboring detections to the same candidate.
+
+Form a continuation group only from detections that independently selected the same candidate.
 
 All-recovering detections emit only when their checks find no active failure and they match an open candidate. The judge resolves recovery versus missing telemetry.
 
