@@ -224,8 +224,10 @@ export class EventClient {
       return query;
     };
 
-    const dataQuery = buildBaseQuery().sort(['@timestamp', 'DESC']);
-    dataQuery = dataQuery.limit(page * perPage).keep('_source');
+    const dataQuery = buildBaseQuery()
+      .sort(['@timestamp', 'DESC'])
+      .limit(page * perPage)
+      .keep('_source');
     const countQuery = buildBaseQuery().pipe`STATS total = COUNT(*)`.keep('total');
 
     const [total, hits] = await Promise.all([
