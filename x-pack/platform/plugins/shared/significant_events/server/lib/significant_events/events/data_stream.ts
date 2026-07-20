@@ -33,6 +33,8 @@ export const eventsMappings = {
             rule_uuid: mappings.keyword(),
           },
         }),
+      },
+    }),
     // Mapped so triage can gate re-investigation with a server-side `exists` filter.
     // `exists` on this object matches only when at least one sub-field has a value, so an
     // empty investigations array does not count as "investigated".
