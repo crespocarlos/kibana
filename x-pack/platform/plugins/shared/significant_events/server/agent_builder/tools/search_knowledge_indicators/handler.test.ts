@@ -142,13 +142,47 @@ describe('searchKnowledgeIndicatorsToolHandler', () => {
       streamsClient,
       kiClient,
       logger,
-      params: { search_text: 'payment' },
+      params: {
+        kind: ['query'],
+        search_text: 'payment',
+        query_types: ['match'],
+        rule_ids: ['rule-1'],
+        rule_backed: true,
+      },
     });
 
     expect(kiClient.findQueries).toHaveBeenCalledWith(['logs.test'], 'payment', {
-      ruleUnbacked: 'include',
+      ruleUnbacked: 'exclude',
+      queryTypes: ['match'],
+      queryIds: undefined,
+      ruleIds: ['rule-1'],
     });
     expect(kiClient.getQueryLinks).not.toHaveBeenCalled();
+  });
+
+  it('passes feature filters to semantic search', async () => {
+    streamsClient.listStreams = jest
+      .fn()
+      .mockResolvedValue([{ name: 'logs.test' } as Streams.all.Definition]);
+    kiClient.findFeatures = jest.fn().mockResolvedValue({ hits: [] });
+
+    await searchKnowledgeIndicatorsToolHandler({
+      streamsClient,
+      kiClient,
+      logger,
+      params: {
+        kind: ['feature'],
+        search_text: 'payment',
+        feature_types: ['dependency'],
+        feature_ids: ['payments-api'],
+      },
+    });
+
+    expect(kiClient.findFeatures).toHaveBeenCalledWith('logs.test', 'payment', {
+      featureTypes: ['dependency'],
+      featureIds: ['payments-api'],
+    });
+    expect(kiClient.getFeatures).not.toHaveBeenCalled();
   });
 
   it('filters requested streamNames against accessible streams', async () => {
@@ -168,9 +202,46 @@ describe('searchKnowledgeIndicatorsToolHandler', () => {
 
     expect(kiClient.getFeatures).toHaveBeenCalledTimes(1);
     expect(kiClient.getFeatures).toHaveBeenCalledWith('logs.allowed', expect.any(Object));
-    expect(kiClient.getQueryLinks).toHaveBeenCalledWith(['logs.allowed'], {
-      ruleUnbacked: 'include',
+    expect(kiClient.getQueryLinks).toHaveBeenCalledWith(
+      ['logs.allowed'],
+      expect.objectContaining({ ruleUnbacked: 'include' })
+    );
+  });
+
+  it('passes feature and rule-backed query filters to the client', async () => {
+    streamsClient.listStreams = jest
+      .fn()
+      .mockResolvedValue([{ name: 'logs.test' } as Streams.all.Definition]);
+    kiClient.getFeatures = jest.fn().mockResolvedValue({ hits: [], total: 0 });
+    kiClient.getQueryLinks = jest.fn().mockResolvedValue([]);
+
+    const result = await searchKnowledgeIndicatorsToolHandler({
+      streamsClient,
+      kiClient,
+      logger,
+      params: {
+        feature_types: ['dependency', 'entity'],
+        feature_ids: ['service-a'],
+        query_types: ['match'],
+        query_ids: ['query-1'],
+        rule_ids: ['rule-1'],
+        rule_backed: true,
+        page: 2,
+        per_page: 25,
+      },
     });
+
+    expect(kiClient.getFeatures).toHaveBeenCalledWith('logs.test', {
+      type: ['dependency', 'entity'],
+      featureIds: ['service-a'],
+    });
+    expect(kiClient.getQueryLinks).toHaveBeenCalledWith(['logs.test'], {
+      ruleUnbacked: 'exclude',
+      queryTypes: ['match'],
+      queryIds: ['query-1'],
+      ruleIds: ['rule-1'],
+    });
+    expect(result).toMatchObject({ page: 2, per_page: 25, total: 0 });
   });
 
   it('logs a debug message when feature retrieval fails for a stream', async () => {

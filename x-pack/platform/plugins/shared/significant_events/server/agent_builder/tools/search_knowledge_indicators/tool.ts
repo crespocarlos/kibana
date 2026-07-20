@@ -6,7 +6,14 @@
  */
 
 import { z } from '@kbn/zod/v4';
-import { MAX_ID_LENGTH, MAX_TEXT_LENGTH } from '@kbn/significant-events-schema';
+import {
+  COMPUTED_FEATURE_TYPES,
+  INFERRED_FEATURE_TYPES,
+  MAX_ID_LENGTH,
+  MAX_TEXT_LENGTH,
+  QUERY_TYPE_MATCH,
+  QUERY_TYPE_STATS,
+} from '@kbn/significant-events-schema';
 import { platformSignificantEventsTools, ToolType } from '@kbn/agent-builder-common';
 import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type {
@@ -17,12 +24,19 @@ import type {
 import type { Logger } from '@kbn/core/server';
 import dedent from 'dedent';
 import type { StreamsServer } from '@kbn/streams-plugin/server/types';
+import { DEFAULT_SEARCH_KNOWLEDGE_INDICATORS_PER_PAGE } from '@kbn/streams-ai';
 import type { GetScopedClients } from '../../../routes/types';
 import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
 import { searchKnowledgeIndicatorsToolHandler } from './handler';
 
 export const SIGNIFICANT_EVENTS_KNOWLEDGE_INDICATORS_SEARCH_TOOL_ID =
   platformSignificantEventsTools.searchKnowledgeIndicators;
+
+const MAX_SEARCH_KNOWLEDGE_INDICATORS_PER_PAGE = 100;
+const KNOWLEDGE_INDICATOR_FEATURE_TYPES = [
+  ...COMPUTED_FEATURE_TYPES,
+  ...INFERRED_FEATURE_TYPES,
+] as const;
 
 const searchKnowledgeIndicatorsSchema = z.object({
   stream_names: z
@@ -46,12 +60,52 @@ const searchKnowledgeIndicatorsSchema = z.object({
       - ['feature']: feature-based KIs only
       - default (empty array or omitted): both features and queries`
     ),
-  limit: z
-    .number()
-    .min(1)
+  feature_types: z
+    .array(z.enum(KNOWLEDGE_INDICATOR_FEATURE_TYPES))
     .optional()
-    .default(50)
-    .describe('Optional safety cap for returned items.'),
+    .describe(
+      'Return only feature KIs whose feature.type matches one of these values. Use only when `kind: ["feature"]` is specified.'
+    ),
+  feature_ids: z
+    .array(z.string().max(MAX_ID_LENGTH))
+    .optional()
+    .describe(
+      'Return only feature KIs whose feature.id matches one of these values. Use only when `kind: ["feature"]` is specified.'
+    ),
+  query_types: z
+    .array(z.enum([QUERY_TYPE_MATCH, QUERY_TYPE_STATS]))
+    .optional()
+    .describe(
+      'Return only query KIs whose query.type matches one of these values. Use only when `kind: ["query"]` is specified.'
+    ),
+  query_ids: z
+    .array(z.string().max(MAX_ID_LENGTH))
+    .optional()
+    .describe(
+      'Return only query KIs whose query.id matches one of these values. Use only when `kind: ["query"]` is specified.'
+    ),
+  rule_ids: z
+    .array(z.string().max(MAX_ID_LENGTH))
+    .optional()
+    .describe(
+      'Return only query KIs linked to one of these exact rule IDs. Use only when `kind: ["query"]` is specified.'
+    ),
+  rule_backed: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe(
+      'Return only query KIs with the requested rule-backing state (`true` = rule-backed only, `false` = unbacked only). Use only when `kind: ["query"]` is specified. Omit to include all.'
+    ),
+  page: z.number().int().min(1).optional().default(1).describe('Current page. Defaults to 1.'),
+  per_page: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_SEARCH_KNOWLEDGE_INDICATORS_PER_PAGE)
+    .optional()
+    .default(DEFAULT_SEARCH_KNOWLEDGE_INDICATORS_PER_PAGE)
+    .describe(`Number of Knowledge Indicators to return per page.`),
 });
 
 export function createSearchKnowledgeIndicatorsTool({
@@ -76,7 +130,8 @@ export function createSearchKnowledgeIndicatorsTool({
 
       Use this tool to:
       - Gather domain context for a specific stream or group of streams
-      - Narrow results by \`stream_names\`, \`kind\`, and \`limit\`
+      - Narrow results by stream, kind, feature/query type, IDs, or rule backing
+      - Traverse large filtered result sets with \`page\` and \`per_page\`
       - Find relevant KIs via semantic text using \`search_text\`
       - Retrieve queries-only KIs with \`kind: ['query']\`
     `,

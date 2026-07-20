@@ -12,7 +12,10 @@ import type {
 } from '@kbn/streams-ai';
 import type { Logger } from '@kbn/core/server';
 import type { StreamsClient } from '@kbn/streams-plugin/server';
-import type { KnowledgeIndicatorClient } from '../../../lib/knowledge_indicators';
+import type {
+  KnowledgeIndicatorClient,
+  RuleUnbackedFilter,
+} from '../../../lib/knowledge_indicators';
 
 export async function searchKnowledgeIndicatorsToolHandler({
   streamsClient,
@@ -38,21 +41,26 @@ export async function searchKnowledgeIndicatorsToolHandler({
       const streams = await streamsClient.listStreams();
       return streams.map((stream) => stream.name);
     },
-    getFeatures: async (streamName, { searchText, limit }) => {
+    getFeatures: async (streamName, { searchText, featureTypes, featureIds }) => {
       const result = searchText
-        ? await kiClient.findFeatures(streamName, searchText, { limit })
-        : await kiClient.getFeatures(streamName, { limit });
+        ? await kiClient.findFeatures(streamName, searchText, { featureTypes, featureIds })
+        : await kiClient.getFeatures(streamName, { type: featureTypes, featureIds });
       return result.hits;
     },
-    getQueries: async (streamNames, search_text) => {
-      // Include all queries regardless of rule-backing status so the agent
-      // sees freshly generated and STATS queries that haven't been promoted.
-      const filters = { ruleUnbacked: 'include' as const };
+    getQueries: async (streamNames, { searchText, queryTypes, queryIds, ruleIds, ruleBacked }) => {
+      const ruleUnbacked: RuleUnbackedFilter =
+        ruleBacked === undefined ? 'include' : ruleBacked ? 'exclude' : 'only';
+      const filters = {
+        ruleUnbacked,
+        queryTypes,
+        queryIds,
+        ruleIds,
+      };
 
       // findQueries uses the default search mode (hybrid with silent keyword
       // fallback), giving the agent the best-available ranking.
-      const links = search_text
-        ? await kiClient.findQueries(streamNames, search_text, filters)
+      const links = searchText
+        ? await kiClient.findQueries(streamNames, searchText, filters)
         : await kiClient.getQueryLinks(streamNames, filters);
 
       return links;
