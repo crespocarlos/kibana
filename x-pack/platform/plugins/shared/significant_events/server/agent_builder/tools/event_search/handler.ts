@@ -115,7 +115,6 @@ export async function searchEventsToolHandler({
           status: params.status ? [params.status] : undefined,
           ruleUuids: params.rule_uuids,
           eventIds: params.event_ids,
-          preferRuleMatches: hasRuleFilter && (params.stream_names?.length ?? 0) > 0,
         })
       : await eventClient.findLatestPaginated(sharedParams);
 

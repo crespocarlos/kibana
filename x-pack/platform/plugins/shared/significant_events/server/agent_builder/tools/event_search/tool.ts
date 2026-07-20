@@ -58,7 +58,7 @@ const searchEventsSchema = significantEventSchema
       .describe(
         i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.ruleUuids', {
           defaultMessage:
-            'Optional rule UUIDs to match against event signals. With stream names, events matching either filter are returned and exact rule matches rank first.',
+            'Optional rule UUIDs to match against event signals. When combined with stream names, only events matching both filters are returned.',
         })
       ),
     event_ids: z

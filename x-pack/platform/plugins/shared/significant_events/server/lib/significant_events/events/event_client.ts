@@ -79,7 +79,7 @@ const continuationCandidateFilter = ({
   });
 
   if (streamFilter && ruleFilter) {
-    return andWhere(streamFilter, ruleFilter);
+    return esql.exp`CASE(${streamFilter}, true, ${ruleFilter})`;
   }
 
   return streamFilter ?? ruleFilter;
@@ -94,9 +94,7 @@ export interface EventsFilterOptions {
   ruleUuids?: string[];
 }
 
-export interface EventsPaginatedSearchOptions extends PaginatedSearchOptions, EventsFilterOptions {
-  preferRuleMatches?: boolean;
-}
+export type EventsPaginatedSearchOptions = PaginatedSearchOptions & EventsFilterOptions;
 
 export class EventClient {
   constructor(
@@ -182,11 +180,6 @@ export class EventClient {
       streamNames: options.stream,
       ruleUuids: options.ruleUuids,
     });
-    const ruleMatchWhere = multiValueContainsAnyFilter({
-      where: undefined,
-      field: 'signals.metadata.rule_uuid',
-      values: options.ruleUuids,
-    });
     const eventIdWhere = inFilter({
       where: undefined,
       field: FIELD_EVENT_ID,
@@ -231,16 +224,7 @@ export class EventClient {
       return query;
     };
 
-    // ComposerQuery is mutable and has no clone API, so each branch needs a fresh base query.
-    let dataQuery = buildBaseQuery();
-    if (options.preferRuleMatches && ruleMatchWhere) {
-      dataQuery = dataQuery.pipe`EVAL _rule_match = CASE(${ruleMatchWhere}, 1, 0)`.sort(
-        ['_rule_match', 'DESC'],
-        ['@timestamp', 'DESC']
-      );
-    } else {
-      dataQuery = dataQuery.sort(['@timestamp', 'DESC']);
-    }
+    const dataQuery = buildBaseQuery().sort(['@timestamp', 'DESC']);
     dataQuery = dataQuery.limit(page * perPage).keep('_source');
     const countQuery = buildBaseQuery().pipe`STATS total = COUNT(*)`.keep('total');
 
