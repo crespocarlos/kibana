@@ -168,7 +168,7 @@ export interface ContinuationStabilityOutput {
 
 export type ContinuationEvaluator = Evaluator<Example, ContinuationStabilityOutput>;
 
-/** CODE evaluator: scores whether each re-arriving detection makes the expected reuse decision. */
+/** CODE evaluator: scores whether re-arriving detections reuse one stable event ID. */
 export const continuationStabilityEvaluator: ContinuationEvaluator = {
   name: 'continuation_stability',
   kind: 'CODE',

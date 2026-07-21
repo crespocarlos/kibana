@@ -87,8 +87,8 @@ describe('scoreToolUsageContinuation', () => {
   it('averages per-cycle scores rather than treating one bad cycle as a total failure', () => {
     const missingEventSearch = allExpectedTools.filter((s) => s.tool_id !== TOOL_ID_EVENT_SEARCH);
     const result = scoreToolUsageContinuation([
-      { producedEventIds: ['event-1'], steps: allExpectedTools },
-      { producedEventIds: ['event-1'], steps: missingEventSearch }, // missing 1 of 3 → 2/3
+      { producedEventIds: ['svc__a-1111'], steps: allExpectedTools },
+      { producedEventIds: ['svc__a-1111'], steps: missingEventSearch }, // missing 1 of 3 → 2/3
     ]);
     expect(result.score).toBeCloseTo((1 + 2 / 3) / 2);
     expect(result.label).toBe('partial');

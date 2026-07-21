@@ -56,8 +56,8 @@ Use each detection's `change_point_type` as an investigation hint, not a lifecyc
 
 <tools>
 
-- `platform_sig_events_event_search` — fetch the continuation candidate set exactly once per batch before grouping detection rules. See `<tool_examples>` for the required call.
-- `platform_sig_events_discovery_write` — final output step; call once per group, then stop. For new episodes, omit `event_id` (auto-generated). For a continuation (including a recovering episode), pass the candidate's `event_id` verbatim.
+- `platform_sig_events_event_search` — fetch the continuation candidate set exactly once per batch in the same parallel tool-call group as the KI searches. See `<tool_examples>` for the required call.
+- `platform_sig_events_discovery_write` — final output step; emit one call per group in the same assistant response, then stop. For new episodes, omit `event_id` (auto-generated). For a continuation (including a recovering episode), pass the candidate's `event_id` verbatim.
 - `platform_sig_events_ki_search` and `platform_core_execute_esql` — provided and documented by the loaded `significant-events-ki-grounding` skill.
 
 </tools>
@@ -122,12 +122,14 @@ Example: platform_sig_events_discovery_write
 
 - Use only the tools listed in `<tools>`. Tool results are delivered inline — never call `read_file` or `list_files` for any reason, including locating skill files or reading tool results.
 - **`load_skill` must run alone, in its own tool call batch.** Do not dispatch any other tool in the same step. Wait for the response before proceeding. If `load_skill` returns an error, retry with the correct skill ID — do not explore the filesystem to find the skill.
+- Follow this tool sequence exactly: `load_skill` → the loaded skill's KI searches plus one event search in the same parallel tool-call group → parallel ES|QL wave(s) → grouping/routing → all discovery writes in one parallel tool-call group.
+- Never call event search more than once in a run.
 
 </tool_discipline>
 
 <critical_rules>
 
-1. **KI search is mandatory first** — call `platform_sig_events_ki_search` before any `platform_core_execute_esql`, even when continuation candidates are present.
+1. **KI grounding is mandatory first** — follow the loaded `significant-events-ki-grounding` protocol before any `platform_core_execute_esql`, even when continuation candidates are present.
    - Skipping it leaves `causal_features` empty and `signals` without KI-backed queries.
    - A discovery with any **escalation** detection and `signals: []` is invalid — return to KI search.
 2. **Exact-match KI queries always run for escalation detections — `stationary` does not skip them.** The dependency/infra gate controls `blast_radius` population only. "This signal is probably noise" is a hypothesis; the query is how you confirm or refute it. Recovering (downward/settle) detections also run their exact-match query — with a recovery lens — to confirm the failure has actually stopped rather than to hunt for it.
@@ -249,8 +251,7 @@ All-recovering detections emit only when their checks find no active failure and
 3. Set `confirmed: true` for **Actionable**, `false` for **Refuted** or confirmed recovery, and omit it for **Unresolved**. Evidence supporting another incident requires splitting the group.
 4. Build `blast_radius` and `causal_features` per the loaded skill and tool schema. Never inherit `blast_radius`; inherit `causal_features` only through the defined continuation exception.
 
-For each discovery group:
-1. Call `platform_sig_events_discovery_write` with the full discovery document. One call per group.
+Call `platform_sig_events_discovery_write` once per discovery simultaneously in the same tool-call group.
 
 Apply field rules from `<field_rules>`.
 

@@ -374,9 +374,21 @@ evaluate.describe(
                 const allPlans: ContinuationPlan[] = [
                   { path: 'rule-uuid', sequence: [detections[0], detections[0]] },
                   {
-                    path: 'rule-uuid-no-topology',
-                    sequence: [detections[0], detections[0]],
-                    stripSeedTopology: true,
+                    name: `sigevents: Discovery agent continuation (${dataset.id})`,
+                    description: `[${dataset.id}] discovery agent folds a re-arriving incident into one event ID across rule-UUID re-detection and the declared semantic/cascade chains`,
+                    examples: runs.map((run) => ({
+                      id: run.id,
+                      input: {
+                        ...run.scenario.input,
+                        snapshot_source: run.scenario.snapshot_source,
+                        continuation_run: run.id,
+                      },
+                      output: {},
+                      metadata: {
+                        ...run.scenario.metadata,
+                        test_index: MANAGED_STREAM_SEARCH_PATTERN,
+                      },
+                    })),
                   },
 
                   {
