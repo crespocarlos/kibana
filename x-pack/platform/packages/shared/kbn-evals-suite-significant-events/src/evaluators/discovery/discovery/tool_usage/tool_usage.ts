@@ -7,7 +7,11 @@
 
 import type { ConverseStep } from '@kbn/evals';
 import { platformCoreTools, platformSignificantEventsTools } from '@kbn/agent-builder-common';
-import { extractOrderedToolCalls, extractToolCallIds } from '../../utils/tool_usage';
+import {
+  extractOrderedToolCalls,
+  extractToolCallIds,
+  summarizePersistenceCalls,
+} from '../../utils/tool_usage';
 import type { DiscoveryEvaluator } from '../../types';
 import type {
   ContinuationCycle,
@@ -54,6 +58,15 @@ export const scoreToolUsage = ({
     };
   }
 
+  const persistenceCalls = summarizePersistenceCalls(steps, TOOL_ID_DISCOVERY_WRITE);
+  if (!persistenceCalls.valid) {
+    return {
+      score: 0.75,
+      label: 'multiple-discovery-write-calls',
+      explanation: `${TOOL_ID_DISCOVERY_WRITE} was called ${persistenceCalls.count} times without one justified partial-failure retry`,
+    };
+  }
+
   const orderedCalls = extractOrderedToolCalls(steps);
   const hasQueryKiSearch = orderedCalls.some(
     ({ toolId, params }) =>
@@ -82,11 +95,18 @@ export const scoreToolUsage = ({
   const expected = [TOOL_ID_EVENT_SEARCH, TOOL_ID_KI_SEARCH, TOOL_ID_EXECUTE_ESQL];
   const missing = expected.filter((t) => !calledTools.has(t));
   const score = (expected.length - missing.length) / expected.length;
+  // Graded score (0 / 1/3 / 2/3 / 1) keeps the per-tool signal for prompt tuning; a distinct label
+  // per failure mode makes the miss attributable/aggregatable across an eval run (free-text
+  // explanation is not). The label enumerates exactly which expected tools were skipped.
   return {
     score,
     label: missing.length === 0 ? 'correct' : `missing-${missing.join('-')}`,
     explanation:
-      score === 1 ? 'Correctly called all tools' : `Missing tools: ${missing.join(', ')}`,
+      score === 1
+        ? persistenceCalls.retriedPartialFailure
+          ? 'Correctly called all tools and retried only failed discovery items'
+          : 'Correctly called all tools'
+        : `Missing tools: ${missing.join(', ')}`,
   };
 };
 

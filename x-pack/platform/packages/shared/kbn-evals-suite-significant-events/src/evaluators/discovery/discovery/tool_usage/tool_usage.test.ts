@@ -28,6 +28,16 @@ const toolCall = (
   results,
 });
 
+const retryCall = (toolId: string): ConverseStep => ({
+  ...toolCall(toolId),
+  params: { items: [{ event_id: 'failed-event' }] },
+});
+
+const retryableWriteCall = (): ConverseStep => ({
+  ...toolCall(TOOL_ID_DISCOVERY_WRITE),
+  results: [{ data: { results: [{ index: 0, written: false, reason: 'bulk_error' }] } }],
+});
+
 const allExpectedTools: ConverseStep[] = [
   toolCall(TOOL_ID_EVENT_SEARCH, { exclude_unconfirmed_signals: true }),
   toolCall(TOOL_ID_KI_SEARCH, { kind: ['query'] }),
@@ -92,6 +102,25 @@ describe('scoreToolUsage', () => {
     ];
 
     expect(scoreToolUsage({ steps, detectionCount: 1 }).label).toBe('missing-query-ki-search');
+  });
+
+  it('penalizes multiple discovery writes without a partial-failure retry', () => {
+    const result = scoreToolUsage({
+      steps: [...allExpectedTools, toolCall(TOOL_ID_DISCOVERY_WRITE)],
+      detectionCount: 1,
+    });
+    expect(result).toMatchObject({ score: 0.75, label: 'multiple-discovery-write-calls' });
+  });
+
+  it('allows one retry after a discovery bulk item fails', () => {
+    const steps = allExpectedTools.map((step) =>
+      step.tool_id === TOOL_ID_DISCOVERY_WRITE ? retryableWriteCall() : step
+    );
+    const result = scoreToolUsage({
+      steps: [...steps, retryCall(TOOL_ID_DISCOVERY_WRITE)],
+      detectionCount: 1,
+    });
+    expect(result).toMatchObject({ score: 1, label: 'correct' });
   });
 });
 

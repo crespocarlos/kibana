@@ -46,7 +46,7 @@ Use each detection's `change_point_type` as an investigation hint. The type dict
 <tools>
 
 - `platform_sig_events_event_search` — retrieves existing significant events
-- `platform_sig_events_discovery_write` — writes discovery documents
+- `platform_sig_events_discovery_write` — final output step; submit every group in one `items` array.
 
 </tools>
 
@@ -110,35 +110,26 @@ Response:
 Example: platform_sig_events_discovery_write
 ```json
 {
-  "kind": "discovery",
-  "title": "Payment gRPC — checkout connectivity failure",
-  "symptom_hypothesis": "Checkout is blocked because the payment gRPC endpoint refuses connections.",
-  "summary": "...",
-  "severity": "60-high",
-  "confidence": 0.68,
-  "stream_names": ["logs.otel"],
-  "signals": [
+  "items": [
     {
-      "type": "detection",
-      "stream_name": "logs.otel",
-      "description": "Testing: connection refused errors. Expected if true: ECONNREFUSED messages. Found: 1 row — payment gRPC endpoint refused the connection. Why: checkout cannot reach payment because its endpoint refuses connections. Verdict: confirms — checkout is blocked.",
-      "confirmed": true,
-      "collected_at": "2026-07-07T09:00:00Z",
-      "evidence": { "esql_query": "...", "result": "found" },
-      "metadata": {
-        "detection_id": "...",
-        "rule_name": "...", "rule_uuid": "...", "change_point_type": "stationary", "p_value": 0.04
-      }
+      "kind": "discovery",
+      "title": "Payment gRPC — checkout connectivity failure",
+      "symptom_hypothesis": "Checkout is blocked because the payment gRPC endpoint refuses connections.",
+      "summary": "...",
+      "severity": "60-high",
+      "confidence": 0.68,
+      "stream_names": ["logs.otel"],
+      "signals": [{ "type": "detection", "stream_name": "logs.otel", "description": "...", "confirmed": true, "evidence": { "esql_query": "...", "result": "found" }, "metadata": { "detection_id": "...", "rule_name": "...", "rule_uuid": "...", "change_point_type": "stationary", "p_value": 0.04 } }],
+      "blast_radius": [
+        { "type": "dependency", "feature_id": "service-a-service-b", "source": "...", "target": "...", "protocol": "gRPC", "stream_name": "logs.otel" },
+        { "type": "infrastructure", "feature_id": "kubernetes", "title": "...", "workloads": ["..."], "stream_name": "logs.otel" }
+      ],
+      "causal_features": [{ "feature_id": "service-c", "name": "...", "stream_name": "logs.otel" }]
     }
-  ],
-  "blast_radius": [
-    { "type": "dependency", "feature_id": "service-a-service-b", "source": "...", "target": "...", "protocol": "gRPC", "stream_name": "logs.otel" },
-    { "type": "infrastructure", "feature_id": "kubernetes", "title": "...", "workloads": ["..."], "stream_name": "logs.otel" }
-  ],
-  "causal_features": [{ "feature_id": "service-c", "name": "...", "stream_name": "logs.otel" }]
+  ]
 }
 ```
-Response: `{ "written": true, "discovery_id": "...", "event_id": "...", "kind": "discovery" }`. A response with `{ "written": false, "skipped": true, "reason": "duplicate_within_window", ... }` means the existing discovery was reused successfully; do not retry the write.
+Response: `{ "results": [{ "index": 0, "discovery_id": "...", "event_id": "...", "kind": "discovery", "written": true }] }`. An existing duplicate returns `written: false, skipped: true, reason: "duplicate_within_window"`; an ES item failure returns `written: false, reason: "bulk_error"`.
 
 </tool_examples>
 
@@ -264,7 +255,9 @@ For detections whose `rule_uuid` is not in `matched_rule_uuids`:
 3. Set `confirmed: true` when the lens outcome supports the hypothesis, `false` when it contradicts it, and omit when verification was inconclusive or did not run. Evidence supporting another incident requires splitting the group.
 4. Build `blast_radius` and `causal_features` per the loaded skill and tool schema. Apply its cause decision before writing; do not omit an evidence-supported entity resolved from the exact-query KI merely because its upstream dependency is unknown. Submit current candidates only; `platform_sig_events_discovery_write` carries prior episode topology forward automatically.
 
-Call `platform_sig_events_discovery_write` once per discovery simultaneously in the same tool-call group.
+Build the complete `items` array, consolidating any duplicate explicit `event_id` or new-discovery fingerprint, then call `platform_sig_events_discovery_write` exactly once. Inspect the aligned `results` array. If and only if individual results have `reason: "bulk_error"`, retry those input items once in a second call; never retry a top-level `outcome_unknown` error automatically.
+
+Set `written_rule_uuids` from the final results only: include rules belonging to `written: true` items and confirmed `duplicate_within_window` items. Exclude unresolved `bulk_error` items so their detections remain in the workflow queue.
 
 Apply field rules from `<field_rules>`.
 
