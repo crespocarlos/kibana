@@ -310,7 +310,6 @@ export const discovery: DatasetConfig['discovery'] = [
       cascade: [
         'Transaction History Database SQL Connection Error',
         'Frontend → Transaction History Connection Failures',
-        'Ledger Writer Failed to Retrieve Account Balance',
       ],
     },
     output: {

@@ -13,10 +13,15 @@ import {
 } from '../../../lib/significant_events/events';
 
 export const EVENT_SEARCH_DEFAULT_PER_PAGE = 20;
-export const EVENT_SEARCH_MAX_PER_PAGE = 20;
+export const EVENT_SEARCH_MAX_PER_PAGE = 50;
 export const EVENT_SEARCH_FULL_MAX_PER_PAGE = 10;
 
 export type EventSearchView = 'compact' | 'full';
+
+export const normalizeEventSearchQuery = (query: string | undefined): string | undefined => {
+  const normalizedQuery = query?.trim();
+  return normalizedQuery === '' ? undefined : normalizedQuery;
+};
 
 export interface EventSearchInput {
   query?: string;
@@ -26,6 +31,8 @@ export interface EventSearchInput {
   status?: SignificantEventStatus;
   rule_uuids?: string[];
   event_ids?: string[];
+  topology_feature_ids?: string[];
+  exclude_unconfirmed_signals?: boolean;
   from?: string;
   to?: string;
   view?: EventSearchView;
@@ -100,7 +107,7 @@ export async function searchEventsToolHandler({
   const sharedParams = {
     page: params.page ?? 1,
     perPage: Math.min(requestedPerPage, maxPerPage),
-    search: params.query,
+    search: normalizeEventSearchQuery(params.query),
     stream: params.stream_names,
     from: params.from ?? DEFAULT_EVENTS_SEARCH_FROM,
     to: params.to ?? DEFAULT_EVENTS_SEARCH_TO,
@@ -108,13 +115,15 @@ export async function searchEventsToolHandler({
 
   const hasRuleFilter = (params.rule_uuids?.length ?? 0) > 0;
   const hasEventIdFilter = (params.event_ids?.length ?? 0) > 0;
+  const hasTopologyFilter = (params.topology_feature_ids?.length ?? 0) > 0;
   const response =
-    params.status !== undefined || hasRuleFilter || hasEventIdFilter
+    params.status !== undefined || hasRuleFilter || hasEventIdFilter || hasTopologyFilter
       ? await eventClient.findLatestByCurrentStatePaginated({
           ...sharedParams,
           status: params.status ? [params.status] : undefined,
           ruleUuids: params.rule_uuids,
           eventIds: params.event_ids,
+          topologyFeatureIds: params.topology_feature_ids,
         })
       : await eventClient.findLatestPaginated(sharedParams);
 
@@ -126,8 +135,14 @@ export async function searchEventsToolHandler({
     has_more: response.page * response.perPage < response.total,
     next_page: response.page * response.perPage < response.total ? response.page + 1 : null,
   };
+  const events = params.exclude_unconfirmed_signals
+    ? response.hits.map((event) => ({
+        ...event,
+        signals: (event.signals ?? []).filter((signal) => signal.confirmed !== false),
+      }))
+    : response.hits;
 
   return view === 'full'
-    ? { ...envelope, view, events: response.hits }
-    : { ...envelope, view, events: response.hits.map(toCompactEvent) };
+    ? { ...envelope, view, events }
+    : { ...envelope, view, events: events.map(toCompactEvent) };
 }

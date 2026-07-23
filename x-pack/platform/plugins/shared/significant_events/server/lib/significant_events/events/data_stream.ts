@@ -26,6 +26,17 @@ export const eventsMappings = {
     severity: mappings.keyword(),
     title: mappings.text(),
     summary: mappings.text(),
+    symptom_hypothesis: mappings.text(),
+    causal_features: mappings.object({
+      properties: {
+        feature_id: mappings.keyword(),
+      },
+    }),
+    blast_radius: mappings.object({
+      properties: {
+        feature_id: mappings.keyword(),
+      },
+    }),
     signals: mappings.object({
       properties: {
         metadata: mappings.object({
@@ -64,7 +75,7 @@ export const storedEventSchema = significantEventSchema.transform((doc) => ({
 
 export const eventsDataStream: DataStreamDefinition<typeof eventsMappings, StoredEvent> = {
   name: EVENTS_DATA_STREAM,
-  version: 9,
+  version: 10,
   hidden: true,
   template: {
     priority: 500,

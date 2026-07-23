@@ -18,6 +18,7 @@ jest.mock('../../../routes/utils/assert_significant_events_access', () => ({
 }));
 
 jest.mock('./handler', () => ({
+  ...jest.requireActual('./handler'),
   searchEventsToolHandler: jest.fn(),
 }));
 
@@ -35,6 +36,30 @@ describe('event_search tool', () => {
     });
 
     expect(tool.id).toBe(SIGNIFICANT_EVENTS_SEARCH_EVENTS_TOOL_ID);
+  });
+
+  it('validates bounded filters and normalizes query', () => {
+    const tool = createSearchEventsTool({
+      getScopedClients: jest.fn() as unknown as GetScopedClients,
+      server: {} as StreamsServer,
+      logger: loggingSystemMock.createLogger(),
+      telemetry: createMockTelemetry() as never,
+    });
+    if (!('schema' in tool)) {
+      throw new Error('Expected a schema-backed tool registration');
+    }
+
+    expect(tool.schema.safeParse({ topology_feature_ids: ['checkout-payment'] }).success).toBe(
+      true
+    );
+    expect(
+      tool.schema.safeParse({ topology_feature_ids: Array.from({ length: 101 }, (_, i) => `${i}`) })
+        .success
+    ).toBe(false);
+    expect(tool.schema.safeParse({ per_page: 50 }).success).toBe(true);
+    expect(tool.schema.safeParse({ per_page: 51 }).success).toBe(false);
+    expect(tool.schema.parse({ query: '' }).query).toBeUndefined();
+    expect(tool.schema.parse({ query: '  latency  ' }).query).toBe('latency');
   });
 
   it('returns events on success and tracks telemetry', async () => {
@@ -63,8 +88,10 @@ describe('event_search tool', () => {
     const result = await invokeHandler(
       tool as never,
       {
+        query: '   ',
         stream_names: ['logs.checkout'],
         rule_uuids: ['rule-uuid-1'],
+        exclude_unconfirmed_signals: true,
         status: 'open',
       },
       createMockToolContext()
@@ -84,7 +111,11 @@ describe('event_search tool', () => {
     });
     expect(searchEventsToolHandler).toHaveBeenCalledWith(
       expect.objectContaining({
-        params: expect.objectContaining({ rule_uuids: ['rule-uuid-1'] }),
+        params: expect.objectContaining({
+          query: undefined,
+          rule_uuids: ['rule-uuid-1'],
+          exclude_unconfirmed_signals: true,
+        }),
       })
     );
   });

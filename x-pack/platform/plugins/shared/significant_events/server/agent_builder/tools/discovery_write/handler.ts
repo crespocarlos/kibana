@@ -8,7 +8,12 @@
 import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import dateMath from '@kbn/datemath';
-import { type Discovery, type SignalEntry } from '@kbn/significant-events-schema';
+import {
+  type BlastRadiusEntry,
+  type CausalFeature,
+  type Discovery,
+  type SignalEntry,
+} from '@kbn/significant-events-schema';
 import type { DiscoveryClient } from '../../../lib/significant_events/discoveries';
 
 export type DiscoveryWriteInput = Pick<
@@ -29,7 +34,7 @@ export type DiscoveryWriteInput = Pick<
 > & {
   /** Omit for new events — auto-generated (stream + rule UUIDs + random suffix; dedup uses `makeFingerprint`, not this id). Pass verbatim for continuation. */
   event_id?: Discovery['event_id'];
-  /** Deduplication window (ES date math, e.g. `"now-1h"`). Not stored in the document. */
+  /** Deduplication window (ES date math, e.g. `"now-24h"`). Not stored in the document. */
   dedup_window?: string;
 };
 
@@ -54,6 +59,32 @@ const extractRuleUuids = (signals: SignalEntry[] | undefined): string[] => {
     )
     .map((signal) => signal.metadata.rule_uuid as string);
   return [...new Set(uuids)];
+};
+
+/**
+ * Returns true when any submitted detection signal has a different `change_point_type` than
+ * the candidate discovery's signal for the same rule UUID. A changed change-point type means
+ * the alerting engine observed a new pattern (e.g. spike → dip) and the write represents a
+ * different operational state — it must not be suppressed as a duplicate.
+ */
+const hasChangedChangePointType = (
+  submitted: SignalEntry[] | undefined,
+  candidate: Discovery
+): boolean => {
+  const submittedDetections = (submitted ?? []).filter(
+    (s): s is Extract<SignalEntry, { type: 'detection' }> => s.type === 'detection'
+  );
+  const candidateByRule = new Map(
+    (candidate.signals ?? [])
+      .filter((s): s is Extract<SignalEntry, { type: 'detection' }> => s.type === 'detection')
+      .map((s) => [s.metadata.rule_uuid, s])
+  );
+
+  return submittedDetections.some((s) => {
+    const existing = candidateByRule.get(s.metadata.rule_uuid);
+    if (!existing) return false;
+    return s.metadata.change_point_type !== existing.metadata.change_point_type;
+  });
 };
 
 /**
@@ -98,29 +129,92 @@ const parseDateMathToMs = (expr: string): number | undefined => {
  * latest per `metadata.rule_uuid` for detection-type signals. Prior-only rules are carried
  * forward; submitted rules win on equal-timestamp ties.
  */
+const mergeLatestByKey = <T>(
+  batches: Array<{ timestamp: string; values: T[] }>,
+  getKey: (value: T) => string | undefined
+): T[] => {
+  const latest = new Map<string, { timestamp: string; value: T }>();
+
+  for (const { timestamp, values } of batches) {
+    for (const value of values) {
+      const key = getKey(value);
+      if (key === undefined) continue;
+      const existing = latest.get(key);
+      if (existing === undefined || timestamp >= existing.timestamp) {
+        latest.set(key, { timestamp, value });
+      }
+    }
+  }
+
+  return [...latest.values()].map(({ value }) => value);
+};
+
 export const mergeSignalsLatestPerRule = (
   priorDocs: Array<Pick<Discovery, '@timestamp' | 'signals'>>,
   submitted: SignalEntry[],
   submittedTimestamp: string
-): SignalEntry[] => {
-  const latest = new Map<string, { timestamp: string; signal: SignalEntry }>();
+): SignalEntry[] =>
+  mergeLatestByKey(
+    [
+      ...priorDocs.map((doc) => ({
+        timestamp: doc['@timestamp'],
+        values: doc.signals ?? [],
+      })),
+      { timestamp: submittedTimestamp, values: submitted },
+    ],
+    (signal) => (signal.type === 'detection' ? signal.metadata?.rule_uuid ?? undefined : undefined)
+  );
 
-  const consider = (timestamp: string, signals: SignalEntry[] = []) => {
-    for (const signal of signals) {
-      if (signal.type !== 'detection') continue;
-      const ruleId = signal.metadata?.rule_uuid;
-      if (!ruleId) continue;
-      const existing = latest.get(ruleId);
-      if (existing === undefined || timestamp >= existing.timestamp) {
-        latest.set(ruleId, { timestamp, signal });
-      }
+type EpisodeContextSource = Pick<Discovery, '@timestamp'> &
+  Partial<Pick<Discovery, 'stream_names' | 'causal_features' | 'blast_radius'>>;
+
+/**
+ * Accumulates topology observed during an episode. The latest entry for a feature wins.
+ * When the same feature_id appears in both arrays in any document, causal wins.
+ */
+export const mergeEpisodeContext = (
+  priorDocs: EpisodeContextSource[],
+  submitted: Omit<EpisodeContextSource, '@timestamp'> & {
+    stream_names: Discovery['stream_names'];
+  },
+  submittedTimestamp: string
+): { streamNames: string[]; causalFeatures: CausalFeature[]; blastRadius: BlastRadiusEntry[] } => {
+  const contexts: EpisodeContextSource[] = [
+    ...priorDocs,
+    { ...submitted, '@timestamp': submittedTimestamp },
+  ];
+
+  const streamNames = new Set(contexts.flatMap((ctx) => ctx.stream_names ?? []));
+  const causal = new Map<string, { timestamp: string; entry: CausalFeature }>();
+  const blast = new Map<string, { timestamp: string; entry: BlastRadiusEntry }>();
+
+  for (const ctx of contexts) {
+    const ts = ctx['@timestamp'];
+    for (const entry of ctx.blast_radius ?? []) {
+      const existing = blast.get(entry.feature_id);
+      if (!existing || ts >= existing.timestamp)
+        blast.set(entry.feature_id, { timestamp: ts, entry });
     }
+    for (const entry of ctx.causal_features ?? []) {
+      blast.delete(entry.feature_id);
+      const existing = causal.get(entry.feature_id);
+      if (!existing || ts >= existing.timestamp)
+        causal.set(entry.feature_id, { timestamp: ts, entry });
+    }
+  }
+
+  for (const id of causal.keys()) blast.delete(id);
+
+  const byFeatureId = (
+    a: { entry: { feature_id: string } },
+    b: { entry: { feature_id: string } }
+  ) => a.entry.feature_id.localeCompare(b.entry.feature_id);
+
+  return {
+    streamNames: [...streamNames].sort(),
+    causalFeatures: [...causal.values()].sort(byFeatureId).map(({ entry }) => entry),
+    blastRadius: [...blast.values()].sort(byFeatureId).map(({ entry }) => entry),
   };
-
-  priorDocs.forEach((doc) => consider(doc['@timestamp'], doc.signals ?? []));
-  consider(submittedTimestamp, submitted);
-
-  return [...latest.values()].map((entry) => entry.signal);
 };
 
 const findDuplicateDiscovery = async ({
@@ -151,14 +245,18 @@ const findDuplicateDiscovery = async ({
   // Uses findLatest (grouped by event_id, excludes handled) so only the latest doc per incident
   // is considered — prevents stale resolved incidents from blocking new ones.
   const { hits } = await discoveryClient.findLatest({ from: cutoffIso });
-  return hits.find(
+  const candidate = hits.find(
     (h) =>
       h.kind === 'discovery' &&
       makeFingerprint(h.stream_names ?? [], extractRuleUuids(h.signals)) === fingerprint
   );
+
+  if (!candidate) return undefined;
+  if (hasChangedChangePointType(signals, candidate)) return undefined;
+  return candidate;
 };
 
-const prepareSnapshotSignals = async ({
+const prepareSnapshot = async ({
   discoveryClient,
   input,
   isExplicitEventId,
@@ -168,16 +266,29 @@ const prepareSnapshotSignals = async ({
   input: DiscoveryWriteInput & { event_id: string };
   isExplicitEventId: boolean;
   timestamp: string;
-}): Promise<SignalEntry[]> => {
+}): Promise<{
+  signals: SignalEntry[];
+  streamNames: string[];
+  causalFeatures: CausalFeature[];
+  blastRadius: BlastRadiusEntry[];
+}> => {
   if (!isExplicitEventId || input.kind === 'handled') {
-    return input.signals ?? [];
+    return {
+      signals: input.signals ?? [],
+      streamNames: input.stream_names,
+      causalFeatures: input.causal_features ?? [],
+      blastRadius: input.blast_radius ?? [],
+    };
   }
 
   const { hits: priorDocs } = await discoveryClient.findByEventId(input.event_id);
   // Exclude handled stamps — the old findStateBySlug path filtered these out so processed
   // cycles do not carry their detection signals into a fresh continuation write.
   const stateDocs = priorDocs.filter((doc) => doc.kind !== 'handled');
-  return mergeSignalsLatestPerRule(stateDocs, input.signals ?? [], timestamp);
+  return {
+    signals: mergeSignalsLatestPerRule(stateDocs, input.signals ?? [], timestamp),
+    ...mergeEpisodeContext(stateDocs, input, timestamp),
+  };
 };
 
 export async function discoveryWriteHandler({
@@ -222,7 +333,7 @@ export async function discoveryWriteHandler({
   const discoveryId = uuidv4();
 
   const timestamp = new Date().toISOString();
-  const signals = await prepareSnapshotSignals({
+  const snapshot = await prepareSnapshot({
     discoveryClient,
     input: { ...discoveryInput, event_id: resolvedEventId },
     isExplicitEventId,
@@ -235,7 +346,10 @@ export async function discoveryWriteHandler({
         ...discoveryInput,
         '@timestamp': timestamp,
         discovered_at: discoveryInput.kind === 'discovery' ? timestamp : undefined,
-        signals,
+        signals: snapshot.signals,
+        stream_names: snapshot.streamNames,
+        causal_features: snapshot.causalFeatures,
+        blast_radius: snapshot.blastRadius,
         discovery_id: discoveryId,
         severity: discoveryInput.severity,
       },

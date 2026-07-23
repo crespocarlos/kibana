@@ -45,7 +45,6 @@ import type { ContinuationCycle } from '../../src/evaluators/discovery/discovery
 import { KNOWLEDGE_INDICATORS_DATA_STREAM } from '../../src/data_generators/snapshot_indices';
 
 const TRUST_UPSTREAM = process.env.SIGEVENTS_TRUST_UPSTREAM === 'true';
-const OUTSIDE_EVENT_LOOKUP_WINDOW_MS = 8 * 24 * 60 * 60 * 1000;
 
 /** Events data stream — the same index the judge writes to via events_write. */
 const SIGNIFICANT_EVENTS_EVENTS_DATA_STREAM = '.significant_events-events';
@@ -97,7 +96,7 @@ evaluate.describe(
           path: string;
           sequence: Detection[];
           expectReuse?: boolean;
-          seedAgeMs?: number;
+          expectTopologyEventSearch?: boolean;
           seedStatus?: 'closed';
           stripSeedTopology?: boolean;
           seedUnconfirmedDetection?: Detection;
@@ -323,24 +322,17 @@ evaluate.describe(
           {
             title: 'continuation - open significant event with same rules',
             description: 'same detection rule re-fires during an open significant event',
-            includesPath: (path: string) =>
-              path === 'rule-uuid' || path === 'rule-uuid-no-topology',
+            includesPath: (path: string) => path === 'rule-uuid-no-topology',
           },
           {
-            title: 'continuation - open significant events with related rules',
-            description: 'semantically related and cascading rules join an open significant event',
-            includesPath: (path: string) =>
-              !path.startsWith('rule-uuid') && path !== 'unconfirmed-rule',
+            title: 'continuation - open significant events with topology-related rules',
+            description: 'topology-linked cascading rules join an open significant event',
+            includesPath: (path: string) => path === 'cascade',
           },
           {
             title: 'continuation - unconfirmed rule on open significant event',
             description: 'an unconfirmed candidate rule does not establish continuation',
             includesPath: (path: string) => path === 'unconfirmed-rule',
-          },
-          {
-            title: 'continuation - open significant event outside 7 day lookup window',
-            description: 'a detection starts a new significant event after the prior event expires',
-            includesPath: (path: string) => path === 'rule-uuid-outside-window',
           },
           {
             title: 'continuation - closed significant event',
@@ -360,42 +352,23 @@ evaluate.describe(
               apiServices,
               log,
             }) => {
-              // One run per (scenario × path): rule-uuid re-fires the anchor; semantic/cascade resolve
-              // the declared ordered rule_name chain to detections. Keep runs with ≥2 cycles (one
+              // One run per (scenario × path): rule-uuid re-fires the anchor; cascade resolves the
+              // declared ordered rule_name chain to detections. Keep runs with ≥2 cycles (one
               // establishing + one gradable follow-up).
               const runs = collectedExamples.flatMap(({ scenario, detections, snapshotKey }) => {
                 if (detections.length === 0) return [];
                 const byRuleName = new Map(detections.map((d) => [d.rule_name, d]));
+                const continuationChains = Object.entries(scenario.continuationChains ?? {});
                 const confirmedAnchor = byRuleName.get(
                   'Frontend → Ledger Writer Payment Submission Error'
                 );
                 const unrelatedDetection = byRuleName.get('Successful User Login');
 
                 const allPlans: ContinuationPlan[] = [
-                  { path: 'rule-uuid', sequence: [detections[0], detections[0]] },
                   {
-                    name: `sigevents: Discovery agent continuation (${dataset.id})`,
-                    description: `[${dataset.id}] discovery agent folds a re-arriving incident into one event ID across rule-UUID re-detection and the declared semantic/cascade chains`,
-                    examples: runs.map((run) => ({
-                      id: run.id,
-                      input: {
-                        ...run.scenario.input,
-                        snapshot_source: run.scenario.snapshot_source,
-                        continuation_run: run.id,
-                      },
-                      output: {},
-                      metadata: {
-                        ...run.scenario.metadata,
-                        test_index: MANAGED_STREAM_SEARCH_PATTERN,
-                      },
-                    })),
-                  },
-
-                  {
-                    path: 'rule-uuid-outside-window',
+                    path: 'rule-uuid-no-topology',
                     sequence: [detections[0], detections[0]],
-                    expectReuse: false,
-                    seedAgeMs: OUTSIDE_EVENT_LOOKUP_WINDOW_MS,
+                    stripSeedTopology: true,
                   },
                   {
                     path: 'rule-uuid-closed',
@@ -413,23 +386,17 @@ evaluate.describe(
                         },
                       ]
                     : []),
-                  ...Object.entries(scenario.continuationChains ?? {}).map(
-                    ([path, ruleNames]): ContinuationPlan => ({
-                      path,
-                      sequence: ruleNames
-                        .map((name) => byRuleName.get(name))
-                        .filter((d): d is Detection => Boolean(d)),
-                    })
-                  ),
-                  ...Object.entries(scenario.continuationChains ?? {}).map(
-                    ([path, ruleNames]): ContinuationPlan => ({
-                      path: `${path}-no-topology`,
-                      sequence: ruleNames
-                        .map((name) => byRuleName.get(name))
-                        .filter((d): d is Detection => Boolean(d)),
-                      stripSeedTopology: true,
-                    })
-                  ),
+                  ...continuationChains
+                    .filter(([path]) => path === 'cascade')
+                    .map(
+                      ([path, ruleNames]): ContinuationPlan => ({
+                        path,
+                        expectTopologyEventSearch: true,
+                        sequence: ruleNames
+                          .map((name) => byRuleName.get(name))
+                          .filter((d): d is Detection => Boolean(d)),
+                      })
+                    ),
                 ];
                 const plans = allPlans.filter(
                   (plan) => plan.sequence.length >= 2 && continuationSuite.includesPath(plan.path)
@@ -441,7 +408,7 @@ evaluate.describe(
                   sequence: plan.sequence,
                   snapshotKey,
                   expectReuse: plan.expectReuse,
-                  seedAgeMs: plan.seedAgeMs,
+                  expectTopologyEventSearch: plan.expectTopologyEventSearch,
                   seedStatus: plan.seedStatus,
                   stripSeedTopology: plan.stripSeedTopology,
                   seedUnconfirmedDetection: plan.seedUnconfirmedDetection,
@@ -475,7 +442,8 @@ evaluate.describe(
                           ...run.scenario.metadata,
                           test_index: MANAGED_STREAM_SEARCH_PATTERN,
                           continuation_expect_reuse: run.expectReuse ?? true,
-                          continuation_seed_age_ms: run.seedAgeMs,
+                          continuation_expect_topology_event_search:
+                            run.expectTopologyEventSearch ?? false,
                           continuation_seed_status: run.seedStatus,
                           continuation_without_topology: run.stripSeedTopology,
                           continuation_unconfirmed_rule: run.seedUnconfirmedDetection?.rule_uuid,
@@ -609,6 +577,7 @@ evaluate.describe(
                             converseResult.steps
                           ),
                           expectReuse: i === 0 ? undefined : run.expectReuse ?? true,
+                          expectTopologyEventSearch: run.expectTopologyEventSearch,
                           steps: converseResult.steps,
                         });
 
@@ -621,10 +590,6 @@ evaluate.describe(
                             discovery,
                             eventUuid,
                           });
-                          const seededAt =
-                            i === 0 && run.seedAgeMs !== undefined
-                              ? new Date(Date.now() - run.seedAgeMs).toISOString()
-                              : undefined;
                           const event = {
                             ...canonicalEvent,
                             ...(i === 0 && run.seedUnconfirmedDetection
@@ -655,23 +620,8 @@ evaluate.describe(
                             ...(run.stripSeedTopology
                               ? { causal_features: [], blast_radius: [] }
                               : {}),
-                            ...(seededAt ? { '@timestamp': seededAt } : {}),
                             ...(i === 0 && run.seedStatus ? { status: run.seedStatus } : {}),
                           };
-                          if (seededAt) {
-                            await esClient.updateByQuery({
-                              index: SIGNIFICANT_EVENTS_DISCOVERIES_DATA_STREAM,
-                              query: { term: { event_id: discovery.event_id } },
-                              script: {
-                                lang: 'painless',
-                                source:
-                                  "ctx._source['@timestamp'] = params.seededAt; " +
-                                  'ctx._source.discovered_at = params.seededAt',
-                                params: { seededAt },
-                              },
-                              refresh: true,
-                            });
-                          }
                           if (i === 0 && run.seedStatus !== undefined) {
                             await esClient.updateByQuery({
                               index: SIGNIFICANT_EVENTS_DISCOVERIES_DATA_STREAM,

@@ -32,16 +32,19 @@ export const confirmationAlignmentEvaluator: DiscoveryJudgeEvaluator = {
         continue;
       }
       const expectedRuleSet = asSet(expectedRuleUuids);
-      const actualRuleUuids = asSet(
-        (event.signals ?? []).flatMap((signal) =>
-          signal.confirmed === true && signal.metadata?.rule_uuid ? [signal.metadata.rule_uuid] : []
-        )
-      );
-      const nonMembersWithoutRejection = (event.signals ?? []).flatMap((signal) =>
-        !expectedRuleSet.has(signal.metadata?.rule_uuid) && signal.confirmed !== false
-          ? [signal.metadata?.rule_uuid]
+      // Only detection signals carry a rule identity; other signal types (manual ES|QL
+      // evidence, KI grounding) are outside the expected-membership contract.
+      const ruleSignals = (event.signals ?? []).flatMap((signal) =>
+        signal.type === 'detection' && signal.metadata?.rule_uuid
+          ? [{ ruleUuid: signal.metadata.rule_uuid, confirmed: signal.confirmed }]
           : []
       );
+      const actualRuleUuids = asSet(
+        ruleSignals.filter((signal) => signal.confirmed === true).map((signal) => signal.ruleUuid)
+      );
+      const nonMembersWithoutRejection = ruleSignals
+        .filter((signal) => !expectedRuleSet.has(signal.ruleUuid) && signal.confirmed !== false)
+        .map((signal) => signal.ruleUuid);
       const isExactMatch =
         actualRuleUuids.size === expectedRuleSet.size &&
         [...actualRuleUuids].every((ruleUuid) => expectedRuleSet.has(ruleUuid)) &&

@@ -85,6 +85,16 @@ const continuationCandidateFilter = ({
   return streamFilter ?? ruleFilter;
 };
 
+const topologyFeatureFilter = (
+  topologyFeatureIds: string[] | undefined
+): ESQLAstExpression | undefined => {
+  if (!topologyFeatureIds?.length) return undefined;
+  const values = topologyFeatureIds.map((value) => esql.str(value));
+  return esql.exp`(MV_INTERSECTS(${esql.col(
+    'causal_features.feature_id'
+  )}, [${values}]) OR MV_INTERSECTS(${esql.col('blast_radius.feature_id')}, [${values}]))`;
+};
+
 export interface EventsFilterOptions {
   status?: SignificantEventStatus[];
   severity?: Severity[];
@@ -92,6 +102,7 @@ export interface EventsFilterOptions {
   search?: string;
   eventIds?: string[];
   ruleUuids?: string[];
+  topologyFeatureIds?: string[];
 }
 
 export type EventsPaginatedSearchOptions = PaginatedSearchOptions & EventsFilterOptions;
@@ -120,7 +131,7 @@ export class EventClient {
         where,
         esql.exp`(TO_LOWER(${esql.col('title')}) LIKE ${pattern} OR TO_LOWER(${esql.col(
           'summary'
-        )}) LIKE ${pattern})`
+        )}) LIKE ${pattern} OR TO_LOWER(${esql.col('symptom_hypothesis')}) LIKE ${pattern})`
       );
     }
 
@@ -185,6 +196,7 @@ export class EventClient {
       field: FIELD_EVENT_ID,
       values: options.eventIds,
     });
+    const topologyWhere = topologyFeatureFilter(options.topologyFeatureIds);
 
     const buildBaseQuery = (): ComposerQuery => {
       const query = applyTimeRange({
@@ -219,6 +231,9 @@ export class EventClient {
       }
       if (eventIdWhere) {
         query.where`${eventIdWhere}`;
+      }
+      if (topologyWhere) {
+        query.where`${topologyWhere}`;
       }
 
       return query;

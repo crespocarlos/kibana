@@ -16,7 +16,7 @@ export const significantEventStatusSchema = z.enum(SIGNIFICANT_EVENT_STATUS_OPTI
   .describe(dedent`
     "open" = a current failure, material degradation, or sensitive-data exposure is confirmed or remains plausibly unverified;
     "closed" = a failure condition is confirmed recovered;
-    "dismissed" = the proposed incident is a false alarm, benign/positive change, unrelated finding, or is not confirmed by evidence, with no plausible failure, degradation, or exposure left unverified. Confidence need not be low.
+    "dismissed" = the proposed incident is a false alarm, benign/positive change, unrelated finding, or is not confirmed by evidence, with no plausible failure, degradation, or exposure left unverified.
   `);
 
 export type SignificantEventStatus = z.infer<typeof significantEventStatusSchema>;

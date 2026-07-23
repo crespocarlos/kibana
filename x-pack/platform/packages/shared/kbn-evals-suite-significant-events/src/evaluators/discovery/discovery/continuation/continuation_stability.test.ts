@@ -167,4 +167,26 @@ describe('scoreContinuationRouting', () => {
     expect(result.score).toBe(0);
     expect(result.reusedCycles).toBe(0);
   });
+
+  it('excludes cycles whose routing was not captured instead of scoring them as failures', () => {
+    const result = scoreContinuationRouting([
+      { producedEventIds: ['event-1'] },
+      { producedEventIds: ['event-1'] }, // requestedEventIds undefined — instrumentation gap
+    ]);
+
+    expect(result.score).toBeNull();
+    expect(result.emptyCycles).toBe(1);
+  });
+
+  it('still grades captured cycles after an uncaptured one', () => {
+    const result = scoreContinuationRouting([
+      { producedEventIds: ['event-1'] },
+      { producedEventIds: ['event-1'] }, // uncaptured — excluded
+      { producedEventIds: ['event-1'], requestedEventIds: ['event-1'] },
+    ]);
+
+    expect(result.score).toBe(1);
+    expect(result.comparableCycles).toBe(1);
+    expect(result.emptyCycles).toBe(1);
+  });
 });

@@ -23,7 +23,9 @@ Response shape:
     },
     {
       "kind": "query",
-      "query": { "id": "...", "rule": { "id": "<rule_uuid>", "backed": true }, "esql": "FROM ..." }
+      "query": { "id": "...", "esql": { "query": "FROM ..." } },
+      "rule": { "id": "<rule_uuid>", "backed": true },
+      "stream_name": "logs.otel"
     }
   ]
 }
@@ -63,7 +65,8 @@ First apply any explicit KI-search skip gate from the calling agent. When the ga
 
 Use only `kind` + `stream_names`; omit `search_text` and `limit`. Never issue a mixed-kind call or a follow-up KI search. Merge and reuse both results for the remainder of the run.
 
-**Dedup results** by `feature.uuid` / `query.id`. Keep all dependency and infrastructure feature KIs regardless of score. **Discard `dataset_analysis` KIs immediately** — schema field-distribution metadata with no diagnostic value.
+**Dedup results** by (`feature.id`, `feature.stream_name`) for feature KIs and (`query.id`, `stream_name`) for query KIs. Copy `feature.id` into every `feature_id` and `topology_feature_ids` value — never `feature.uuid`, which is only an internal storage key.
+Keep all dependency and infrastructure feature KIs regardless of score.
 
 ---
 
@@ -86,7 +89,7 @@ Before dispatching any `platform_core_execute_esql`, write one line per signal:
 
 `"<rule_uuid> → <query.id> — <query.description>"` (match) or `"<rule_uuid> → NO MATCH"`
 
-Match criteria: `query.rule.id` equals `rule_uuid` **exactly** AND `query.rule.backed` is `true`. Scan the **entire** query KI list before writing NO MATCH.
+Match criteria: `rule.id` equals `rule_uuid` **exactly** AND `rule.backed` is `true`. Scan the **entire** query KI list before writing NO MATCH.
 
 For each match, retain a **correlation context**: `query.description`, `query.features[]`, `query.evidence[]`, referenced feature KIs (`id`, `type`, `description`, `properties`, `meta`, `filter`), and their dependency edges.
 
@@ -109,7 +112,7 @@ Dispatch primary checks in **mandatory parallel waves of up to 10 calls**. In on
    - `ASC` returns the earliest matching log — onset evidence for root-cause hypothesis.
 3. Time scoping: insert `| WHERE @timestamp >= "<detection @timestamp>" AND @timestamp <= NOW()` immediately after `FROM`. The lower bound MUST be an absolute ISO-8601 string copied directly from the detection doc (e.g. `"2026-06-11T15:03:00Z"`). Source: the `@timestamp` from the detection whose `rule_uuid` matches the KI's `rule.id`; fall back to the earliest `@timestamp` in the batch. **Never use any relative time expression** — `"now-15m"`, `NOW() - 15 minutes`, or any other form. Skip for `ROW`/`SHOW`/`METRICS` queries.
 4. **Never** modify `WHERE` clauses, field names, or `FROM`. This can lead to unnecessary errors. Skip the query on execution failure.
-5. If the KI's `esql.query` starts with `FROM $.<name>`, the `$.` is a required, literal part of the Streams-backed view reference — copy it verbatim, never strip or "correct" it.
+5. If the KI's `query.esql.query` starts with `FROM $.<name>`, the `$.` is a required, literal part of the Streams-backed view reference — copy it verbatim, never strip or "correct" it.
 
 ```
 Before: FROM logs.* | WHERE body.text : "ECONNREFUSED" | LIMIT 1
@@ -158,43 +161,52 @@ Every array documented here is mandatory in every `platform_sig_events_discovery
 
 ---
 
+**Per-detection topology derivation** — derive both arrays together from one scoped topology:
+- `causal_features` identifies the evidence-supported active mechanism.
+- `blast_radius` identifies entities, infrastructure, or dependency relationships affected by that mechanism or its evidenced propagation path. It is not general context surrounding the cause.
+
+1. Start with the detection's exact-match query KI and resolve its `features[]`.
+2. Add only dependency or infrastructure feature KIs explicitly linked to those resolved features. Other feature KIs returned for the stream are not candidates.
+3. Select the cause first. Every `blast_radius` entry must then map through an explicit relationship to that cause or its evidenced propagation path and be shown by current evidence to be affected.
+
+**`causal_features`** — from `kind:"feature"` KIs; always emit; `[]` when no path produces candidates.
+
+**Cause decision (resolve this first, before populating either array):** does current evidence, interpreted through the exact-query KI, identify a specific service (`entity` KI) as the mechanism, or the infrastructure component itself (e.g. a node, cluster, or shared host affecting several services)?
+- **Entity is the cause (default)** — emit the `entity` KI here. `evidence[]` and `meta`: read holistically; use to seed hypotheses when ES|QL confirms ≥1 active error row. `properties`: stable structural facts (language, runtime, database type). Include its infrastructure KI in `blast_radius` only when current evidence shows that the infrastructure or its workloads are affected.
+- **Infrastructure is the cause (exception)** — emit the `infrastructure` KI here instead, and move each affected `entity` KI to `blast_radius` as a `type: "entity"` entry (see above) — they are victims, not the mechanism.
+- Version / image tag / build identifier in `meta` → include in `summary` as a possible deployment trigger for `step_change` or `spike`, only when ES|QL confirms active errors.
+
+**Query KI chain**: for each exact-match query KI, traverse its `features[]` → the entity or infrastructure KI selected by the cause decision above. Fallback: scan `evidence[]` for `"Entity:"` entries. Topology filter: remove candidates appearing ONLY as `source` in `blast_radius` dependency entries when the failure is a connectivity error — it's a caller, not a cause.
+
+Each entry: `feature_id` (from `feature.id`), `name` (from `feature.title`), `stream_name` (from `feature.stream_name`). Never add a `confirmed` field.
+
+---
+
 **`blast_radius`** — from feature KIs; always emit; `[]` when none found.
+
+Derive candidates separately for each detection. Include only features that its current evidence, interpreted through the exact-query KI, identifies as affected by the active condition. A returned feature KI, shared stream, or adjacent topology alone is insufficient.
 
 Three entry types, all go in the same `blast_radius` array:
 
 **Dependency entries** (`type: "dependency"`) — from dependency feature KIs (`kind: "feature"`, `feature.type: "dependency"`):
-- Include when `source` or `target` equals the failing service.
+- Include only when the edge connects the selected cause to an evidenced affected feature or propagation path, and current evidence shows that the active condition affects this relationship.
 - `evidence[]` and `meta` are strong hypothesis seeds — read before querying.
-- Secondary signals when no dependency KI covers an edge: `meta.downstream_services` on entity KIs, `"Dependency: <source> → <target>"` in query KI `evidence`, `properties` keys referencing services.
+- `meta.downstream_services`, query KI `evidence`, and service-reference properties may explain a relationship, but cannot create a `blast_radius` dependency entry without a qualifying dependency feature KI and current evidence of impact.
 
 Each entry: `type: "dependency"`, `feature_id` (from `feature.id`), `source`, `target`, `protocol` (omit if absent), `stream_name` (from `feature.stream_name`).
 
 **Infrastructure entries** (`type: "infrastructure"`) — from `kind:"feature"`, `feature.type:"infrastructure"` KIs:
-- Include when the failing service appears in `description` or `evidence`.
+- Include only when current evidence, interpreted through the exact-query KI, shows that the active condition affects the infrastructure component or its workloads. Hosting the failing service alone is insufficient.
 
-Each entry: `type: "infrastructure"`, `feature_id` (from `feature.id`), `title` (omit if absent), `workloads`, `stream_name` (from `feature.stream_name`).
+Each entry: `type: "infrastructure"`, `feature_id` (from `feature.id`), `title` (from `feature.title`), `workloads`, `stream_name` (from `feature.stream_name`).
 
-**Entity entries** (`type: "entity"`) — from `kind:"feature"`, `feature.type:"entity"` KIs that lost the cause decision below (see `causal_features`) — affected by, but not the cause of, the failure:
+**Entity entries** (`type: "entity"`) — from `kind:"feature"`, `feature.type:"entity"` KIs that lost the cause decision above (see `causal_features`) — affected by, but not the cause of, the failure:
+- Include only when current evidence, interpreted through the exact-query KI, shows that the active condition affects the entity.
 - Never duplicate an entity across both arrays in the same discovery — it is either the cause (`causal_features`) or the affected party (`blast_radius` entity entry), never both.
 
-Each entry: `type: "entity"`, `feature_id` (from `feature.id`), `name` (from `feature.id`), `stream_name` (from `feature.stream_name`).
+Each entry: `type: "entity"`, `feature_id` (from `feature.id`), `name` (from `feature.title`), `stream_name` (from `feature.stream_name`).
 
 A feature that's in `causal_features` must not be included in `blast_radius`
-
----
-
-**`causal_features`** — from `kind:"feature"` KIs; always emit; `[]` when no path produces candidates.
-
-**Cause decision (resolve this first, before populating either array):** does the evidence / `symptom_hypothesis` name a specific service (`entity` KI) as the mechanism, or the infrastructure component itself (e.g. a node, cluster, or shared host affecting several services)?
-- **Entity is the cause (default)** — emit the `entity` KI here. `evidence[]` and `meta`: read holistically; use to seed hypotheses when ES|QL confirms ≥1 active error row. `properties`: stable structural facts (language, runtime, database type). That entity's `infrastructure` KI (host/cluster) still goes to `blast_radius` as an infrastructure entry, as usual.
-- **Infrastructure is the cause (exception)** — emit the `infrastructure` KI here instead, and move each affected `entity` KI to `blast_radius` as a `type: "entity"` entry (see above) — they are victims, not the mechanism.
-- Version / image tag / build identifier in `meta` → include in `summary` as a possible deployment trigger for `step_change` or `spike`, only when ES|QL confirms active errors.
-
-Derivation paths (in order):
-1. **Query KI chain**: for each exact-match query KI, traverse its `features[]` → the entity or infrastructure KI selected by the cause decision above. Fallback: scan `evidence[]` for `"Entity:"` entries. Topology filter: remove candidates appearing ONLY as `source` in `blast_radius` dependency entries when the failure is a connectivity error — it's a caller, not a cause.
-2. **Continuation inheritance**: if Path 1 produced nothing and this is a continuation event, inherit from the matched open event's `causal_features`.
-
-Each entry: `feature_id` (from `feature.id`), `name` (from `feature.id`), `stream_name` (from `feature.stream_name`). Never add a `confirmed` field.
 
 ---
 

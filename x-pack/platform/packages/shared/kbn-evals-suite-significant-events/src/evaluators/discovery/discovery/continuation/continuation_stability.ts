@@ -13,8 +13,11 @@ export interface ContinuationCycle {
   ruleName?: string;
   /** event_id(s) the agent emitted this cycle (one per produced discovery). */
   producedEventIds: string[];
+
   /** Whether this cycle should reuse an established event ID. Defaults to true. */
   expectReuse?: boolean;
+  /** Whether this cycle must perform a topology-filtered event search. */
+  expectTopologyEventSearch?: boolean;
   /** Event IDs explicitly supplied by the agent to discovery_write, before handler deduplication. */
   requestedEventIds?: string[];
 
@@ -30,7 +33,7 @@ export interface ContinuationStabilityResult {
   reusedCycles: number;
   /** Cycles after the establishing cycle that were gradable (produced at least one event ID). */
   comparableCycles: number;
-  /** Post-establishing cycles that produced no discovery at all — excluded from scoring. */
+  /** Post-establishing cycles excluded from scoring (no discovery produced, or not gradable by this scorer). */
   emptyCycles: number;
   /** Distinct event IDs across the whole run — ideal is 1 for a single cascade. */
   distinctEventIds: number;
@@ -50,6 +53,8 @@ interface ContinuationScoreState {
 interface ContinuationScoreOptions {
   readonly cycles: ContinuationCycle[];
   readonly isReuse: (cycle: ContinuationCycle, seenEventIds: ReadonlySet<string>) => boolean;
+  /** When provided, cycles failing this predicate are excluded from scoring but still feed seen event IDs. */
+  readonly isGradable?: (cycle: ContinuationCycle) => boolean;
   readonly noComparableExplanation: string;
   readonly resultExplanation: (state: ContinuationScoreState) => string;
 }
@@ -67,6 +72,7 @@ const initialScoreState: ContinuationScoreState = {
 const scoreContinuation = ({
   cycles,
   isReuse,
+  isGradable,
   noComparableExplanation,
   resultExplanation,
 }: ContinuationScoreOptions): ContinuationStabilityResult => {
@@ -85,6 +91,14 @@ const scoreContinuation = ({
     if (producedEventIds.length === 0) {
       return { ...current, emptyCycles: current.emptyCycles + 1 };
     }
+    if (isGradable && !isGradable(cycle)) {
+      return {
+        ...current,
+        seenEventIds: new Set([...current.seenEventIds, ...producedEventIds]),
+        allEventIds: new Set([...current.allEventIds, ...producedEventIds]),
+        emptyCycles: current.emptyCycles + 1,
+      };
+    }
 
     const reused = isReuse(cycle, current.seenEventIds);
     return {
@@ -98,9 +112,7 @@ const scoreContinuation = ({
   }, initialScoreState);
 
   const emptyNote =
-    state.emptyCycles > 0
-      ? `; ${state.emptyCycles} cycle(s) produced no discovery and were excluded`
-      : '';
+    state.emptyCycles > 0 ? `; ${state.emptyCycles} cycle(s) were excluded from scoring` : '';
   if (state.comparableCycles === 0) {
     return {
       score: null,
@@ -154,6 +166,9 @@ export const scoreContinuationRouting = (
     cycles,
     isReuse: (cycle, seenEventIds) =>
       (cycle.requestedEventIds ?? []).some((eventId) => seenEventIds.has(eventId)),
+    // `undefined` means routing was not captured (instrumentation gap) — ungradable; `[]` is a
+    // genuine agent omission and stays gradable.
+    isGradable: (cycle) => cycle.requestedEventIds !== undefined,
     noComparableExplanation:
       'Fewer than two gradable cycles — no follow-up routing decision to score',
     resultExplanation: (state) =>

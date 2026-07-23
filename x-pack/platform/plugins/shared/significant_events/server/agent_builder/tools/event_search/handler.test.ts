@@ -60,6 +60,7 @@ describe('searchEventsToolHandler', () => {
       perPage: 20,
       eventIds: undefined,
       ruleUuids: ['rule-uuid-1'],
+      topologyFeatureIds: undefined,
       search: 'timeout',
       stream: ['logs.checkout'],
       status: ['open'],
@@ -104,6 +105,51 @@ describe('searchEventsToolHandler', () => {
     });
   });
 
+  it('excludes confirmed false signals when requested', async () => {
+    const eventClient = makeClient([
+      {
+        ...event,
+        signals: [
+          ...event.signals,
+          {
+            ...event.signals[0],
+            confirmed: false,
+            metadata: { rule_uuid: 'rule-uuid-rejected', rule_name: 'Rejected rule' },
+          },
+        ],
+      },
+    ]);
+
+    const result = await searchEventsToolHandler({
+      eventClient: eventClient as never,
+      params: {
+        rule_uuids: ['rule-uuid-1', 'rule-uuid-rejected'],
+        exclude_unconfirmed_signals: true,
+        view: 'compact',
+      },
+    });
+
+    expect(result.events[0].signals).toEqual([
+      expect.objectContaining({
+        rule_uuid: 'rule-uuid-1',
+        confirmed: true,
+      }),
+    ]);
+  });
+
+  it('omits a whitespace-only query', async () => {
+    const eventClient = makeClient();
+
+    await searchEventsToolHandler({
+      eventClient: eventClient as never,
+      params: { query: '   ' },
+    });
+
+    expect(eventClient.findLatestPaginated).toHaveBeenCalledWith(
+      expect.objectContaining({ search: undefined })
+    );
+  });
+
   it('supports cross-stream state search when stream_names is omitted', async () => {
     const eventClient = makeClient();
 
@@ -117,6 +163,7 @@ describe('searchEventsToolHandler', () => {
       perPage: 20,
       eventIds: undefined,
       ruleUuids: undefined,
+      topologyFeatureIds: undefined,
       search: undefined,
       stream: undefined,
       status: ['closed'],
@@ -166,6 +213,24 @@ describe('searchEventsToolHandler', () => {
     expect(eventClient.findLatestPaginated).not.toHaveBeenCalled();
   });
 
+  it('applies topology feature filters even when status is omitted', async () => {
+    const eventClient = makeClient();
+
+    await searchEventsToolHandler({
+      eventClient: eventClient as never,
+      params: {
+        topology_feature_ids: ['checkout-payment', 'payments-database'],
+      },
+    });
+
+    expect(eventClient.findLatestByCurrentStatePaginated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topologyFeatureIds: ['checkout-payment', 'payments-database'],
+      })
+    );
+    expect(eventClient.findLatestPaginated).not.toHaveBeenCalled();
+  });
+
   it('preserves null topology fields in compact results', async () => {
     const eventClient = makeClient([{ ...event, causal_features: null, blast_radius: null }]);
 
@@ -209,5 +274,32 @@ describe('searchEventsToolHandler', () => {
       has_more: true,
       next_page: 3,
     });
+  });
+
+  it('returns compact pagination metadata for later pages', async () => {
+    const eventClient = makeClient([event], 25);
+    eventClient.findLatestPaginated.mockResolvedValue({
+      hits: [event],
+      page: 2,
+      perPage: 20,
+      total: 25,
+    });
+
+    const result = await searchEventsToolHandler({
+      eventClient: eventClient as never,
+      params: { view: 'compact', per_page: 20, page: 2 },
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        view: 'compact',
+        page: 2,
+        per_page: 20,
+        returned: 1,
+        total: 25,
+        has_more: false,
+        next_page: null,
+      })
+    );
   });
 });

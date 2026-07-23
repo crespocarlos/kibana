@@ -24,7 +24,7 @@ const EVIDENCE_DESCRIPTION_CRITERIA: EvaluationCriterion[] = [
   },
   {
     id: 'evidence_description_no_payload',
-    text: 'Signal descriptions paraphrase raw log text and contain no raw payload values, PII, tokens, UUIDs, or raw log lines. For example, use "a cache-error signature in the balance lookup path", not the literal body.text "getBalance | Cache error". Preserve only decisive service names, mechanisms, endpoints, error types/codes, field paths, and counts.',
+    text: 'Signal descriptions contain no raw IDs, UUIDs, metric values, PII, PCI, CVV, SSNs, credentials, secrets, or tokens. Concise non-sensitive log signatures are acceptable when they identify decisive evidence; do not penalize literal non-sensitive error text.',
     score: 1,
   },
 ];

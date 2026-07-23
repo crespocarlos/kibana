@@ -149,6 +149,16 @@ export const fromIndexForSpace = ({
   )} IS NULL`;
 };
 
+/**
+ * Resolve a time bound to ISO. Only date-math expressions (`now-7d`, `2026-07-01||/d`) go through
+ * `dateMath.parse` — plain ISO/date strings pass through verbatim so Elasticsearch parses them as
+ * UTC; routing them through moment would reinterpret date-only values in server-local time.
+ */
+export const resolveTimeBound = (expr: string, { roundUp = false } = {}): string =>
+  expr.includes('now') || expr.includes('||')
+    ? dateMath.parse(expr, { roundUp })?.toISOString() ?? expr
+    : expr;
+
 export const applyTimeRange = ({
   query,
   from,
@@ -160,11 +170,11 @@ export const applyTimeRange = ({
 }): ComposerQuery => {
   let timeRangeQuery = query;
   if (from !== undefined) {
-    const fromIso = dateMath.parse(from)?.toISOString() ?? from;
+    const fromIso = resolveTimeBound(from);
     timeRangeQuery = timeRangeQuery.where`@timestamp >= TO_DATETIME(${{ fromIso }})`;
   }
   if (to !== undefined) {
-    const toIso = dateMath.parse(to, { roundUp: true })?.toISOString() ?? to;
+    const toIso = resolveTimeBound(to, { roundUp: true });
     timeRangeQuery = timeRangeQuery.where`@timestamp <= TO_DATETIME(${{ toIso }})`;
   }
   return timeRangeQuery;

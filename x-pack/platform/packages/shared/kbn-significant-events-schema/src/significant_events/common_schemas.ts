@@ -22,7 +22,7 @@ const blastRadiusDependencySchema = z.object({
   feature_id: z
     .string()
     .max(MAX_ID_LENGTH)
-    .describe('Identifier of the Knowledge Indicator feature this dependency entry is based on.'),
+    .describe('The feature.id value of the Knowledge Indicator this dependency entry is based on.'),
   source: z
     .string()
     .max(MAX_TITLE_LENGTH)
@@ -52,7 +52,7 @@ const blastRadiusInfrastructureSchema = z.object({
     .string()
     .max(MAX_ID_LENGTH)
     .describe(
-      'Identifier of the Knowledge Indicator feature this infrastructure entry is based on.'
+      'The feature.id value of the Knowledge Indicator this infrastructure entry is based on.'
     ),
   title: z
     .string()
@@ -77,7 +77,7 @@ const blastRadiusEntitySchema = z.object({
   feature_id: z
     .string()
     .max(MAX_ID_LENGTH)
-    .describe('Identifier of the Knowledge Indicator feature this entity entry is based on.'),
+    .describe('The feature.id value of the Knowledge Indicator this entity entry is based on.'),
   name: z.string().max(MAX_TITLE_LENGTH).describe('Human-readable name of the affected entity.'),
   stream_name: z.string().max(MAX_ID_LENGTH).describe('Data stream associated with this entity.'),
 });
@@ -94,7 +94,9 @@ export const causalFeatureSchema = z.object({
   feature_id: z
     .string()
     .max(MAX_ID_LENGTH)
-    .describe('Identifier of the Knowledge Indicator feature identified as a symptom hypothesis.'),
+    .describe(
+      'The feature.id value of the Knowledge Indicator identified as a symptom hypothesis.'
+    ),
   name: z
     .string()
     .max(MAX_TITLE_LENGTH)
@@ -180,7 +182,7 @@ export const severitySchema = z.enum(SEVERITY_OPTIONS).describe(dedent`
     "80-critical" = the most severe. Any ONE qualifies independently:
       - a site-wide/global outage affecting all or most customers;
       - a confirmed failure that fully blocks a customer-facing operation for everyone who reaches it (no successful completions on the affected path);
-      - or confirmed active exposure of credentials, secrets, or highly sensitive customer data.
+      - or confirmed active exposure of PII, PCI, CVV, SSN, credentials, secrets, tokens.
       A single mandatory service, dependency, or endpoint can establish this when its failure blocks the operation end-to-end; unrelated services do not also need to fail.
     "60-high" = confirmed and severe but not global: the operation still completes for some users while broadly degraded, intermittent, or partially failing, or the confirmed impact reaches a significant customer subset.
     "40-medium" = meaningful but bounded: minor confirmed degradation with limited reach, or plausible customer impact that is not yet confirmed (incomplete evidence, telemetry gap, unverified).

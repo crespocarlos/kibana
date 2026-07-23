@@ -25,6 +25,7 @@ import { createSignificantEventsAvailability } from '../significant_events_avail
 import {
   EVENT_SEARCH_DEFAULT_PER_PAGE,
   EVENT_SEARCH_MAX_PER_PAGE,
+  normalizeEventSearchQuery,
   searchEventsToolHandler,
 } from './handler';
 
@@ -42,12 +43,13 @@ const searchEventsSchema = significantEventSchema
   .extend({
     query: z
       .string()
+      .transform(normalizeEventSearchQuery)
       .optional()
       .describe(
         i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.query', {
           defaultMessage:
-            'Optional substring search over the event title and summary fields. ' +
-            'Use it to narrow results to a known incident phrase or service name. ' +
+            'Optional substring search over the event title, summary, and symptom hypothesis fields. ' +
+            'Use it to narrow results to a known incident. ' +
             'Matching is case-insensitive and not semantic — omit it when you want all events for a stream or state.',
         })
       ),
@@ -61,6 +63,19 @@ const searchEventsSchema = significantEventSchema
             'Optional rule UUIDs to match against event signals. When combined with stream names, only events matching both filters are returned.',
         })
       ),
+    exclude_unconfirmed_signals: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe(
+        i18n.translate(
+          'xpack.significantEvents.agentBuilder.tools.eventSearch.schema.excludeUnconfirmedSignals',
+          {
+            defaultMessage:
+              'When true, omit signals whose confirmed value is false from returned events. Signals with confirmed true or omitted remain.',
+          }
+        )
+      ),
     event_ids: z
       .array(z.string())
       .max(100)
@@ -69,6 +84,19 @@ const searchEventsSchema = significantEventSchema
         i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.eventIds', {
           defaultMessage: 'Optional stable event IDs to retrieve.',
         })
+      ),
+    topology_feature_ids: z
+      .array(z.string())
+      .max(100)
+      .optional()
+      .describe(
+        i18n.translate(
+          'xpack.significantEvents.agentBuilder.tools.eventSearch.schema.topologyFeatureIds',
+          {
+            defaultMessage:
+              'Optional Knowledge Indicator feature.id values to match against causal_features.feature_id or blast_radius.feature_id. An event matches when either topology field contains any requested ID.',
+          }
+        )
       ),
     view: z
       .enum(['compact', 'full'])
@@ -101,7 +129,7 @@ const searchEventsSchema = significantEventSchema
       .describe(
         i18n.translate('xpack.significantEvents.agentBuilder.tools.eventSearch.schema.perPage', {
           defaultMessage:
-            'Number of events to return per page. Defaults to 20; full responses are capped at 10.',
+            'Number of events to return per page. Defaults to 20; compact responses are capped at 50 and full responses at 10.',
         })
       ),
     from: z
@@ -156,6 +184,7 @@ export function createSearchEventsTool({
     availability: createSignificantEventsAvailability({ server, logger }),
     handler: async (toolParams, context) => {
       const { request } = context;
+      const query = normalizeEventSearchQuery(toolParams.query);
 
       try {
         const { getEventClient, licensing } = await getScopedClients({ request });
@@ -163,13 +192,13 @@ export function createSearchEventsTool({
 
         const data = await searchEventsToolHandler({
           eventClient: getEventClient(),
-          params: toolParams,
+          params: { ...toolParams, query },
         });
 
         telemetry.trackAgentToolEventSearch({
           success: true,
           result_count: data.total,
-          has_query: toolParams.query !== undefined,
+          has_query: query !== undefined,
           has_stream_filter: (toolParams.stream_names?.length ?? 0) > 0,
           status_filter: toolParams.status,
           view: data.view,
@@ -191,7 +220,7 @@ export function createSearchEventsTool({
         telemetry.trackAgentToolEventSearch({
           success: false,
           result_count: 0,
-          has_query: toolParams.query !== undefined,
+          has_query: query !== undefined,
           has_stream_filter: (toolParams.stream_names?.length ?? 0) > 0,
           status_filter: toolParams.status,
           view: toolParams.view,
