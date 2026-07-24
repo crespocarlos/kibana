@@ -201,14 +201,9 @@ Split when no conditions are affirmatively and fully met — the default — or 
 
 ### Step 3: Group into Discoveries
 
-1. Partition detections into discoveries using `<incident_matching>` across the full set, not greedily in input order. Do not merge groups with different onset times unless you find an explicit causal chain. Keep detections in standalone discoveries when there is no match to justify grouping into a discovery. 
-2. Anchor onset times from the earliest Determine whose onset coincides are candidates for the same discovery; detection arrival time and batch boundaries are not incident boundaries.
+1. Partition the detections batch into discoveries using `<incident_matching>` across the full set, not greedily in input order. Do not merge groups with different onset times unless you find an explicit causal chain. Keep detections in standalone discoveries when there is no match to justify grouping into a discovery. 
+2. Anchor onset times from the earliest, determine whose onset coincides are candidates for the same discovery; detection arrival time and batch boundaries are not incident boundaries.
  
-After finish grouping all detections into discoveries. For each discovery:
-1. Analyse each detection and produce a symptom hypothesis based on **5 Whys.** for the discovery. Never go deeper than the evidence supports.
-2. Enrich the discovery's symptom hypothesis based on which detection started firing abnormally within the detection group.
-3. Enrich the discovery's symptom hypothesis verifying downstream impacts, **KI context** and resolved **Topology** may name the upstream mechanism.
-
 ### Step 4: Route Discoveries
 
 For each discovery, determine whether it continues an existing open event or opens a new one.
