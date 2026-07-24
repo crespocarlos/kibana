@@ -312,7 +312,7 @@ evaluate.describe(
         ] as const;
 
         for (const continuationSuite of continuationSuites) {
-          evaluate.skip(
+          evaluate(
             `Discovery agent — ${continuationSuite.title}`,
             async ({
               executorClient,
