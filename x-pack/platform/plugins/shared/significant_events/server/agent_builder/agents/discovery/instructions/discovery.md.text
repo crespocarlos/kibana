@@ -236,17 +236,21 @@ This search runs on its own topology inputs; a zero-event or zero-match 4.1 resu
 4. Accept an event when its stored topology intersects the detection's topology ID set, **Alert symptom** is not positive/health, and **Current evidence** does not explicitly name a different active target or mechanism. Add accepted rules to `matched_rule_uuids`.
 5. When `has_more` is true and some discoveries remain unmatched, request `next_page`.
 
-Discoveries matched in 3.1 or 3.2 reuse the matched event's `event_id`.
+Assign each detection to at most one accepted event. If multiple events match, prefer greatest rule coverage, then current-evidence similarity. 
+Detections assigned to the same event form one continuation discovery using its exact `event_id`.
 
 ### Step 4: Group remaining detections into Discoveries
 
-1. Partition remaining detections rules not in `matched_rule_uuids` into discoveries using `<incident_matching>` across the full set, not greedily in input order. 
+1. Without prior bias, partition all remaining detections rules that are not in `matched_rule_uuids`, or were not included in open events, into discoveries using `<incident_matching>` across the full set, not greedily in input order. 
   - Do not merge groups with different onset times unless you find an explicit causal chain. 
   - Keep detections in standalone discoveries when there is no match to justify grouping into a discovery.
   - Rules whose onset coincides are candidates for the same discovery; detection arrival time and batch boundaries are not incident boundaries.
 2. Determine wich rule started firing abnormally within the group. Assess whether the pattern or mechanism shifted and update the candidate `symptom_hypothesis` accordingly; if consistent, note "consistent through [most recent @timestamp]".
 
 ### Step 5: Emit Output
+
+**Pre emit gate**
+- Steps 1-4 are complete
 
 Build the complete `items` array, consolidating any duplicate explicit `event_id` or new-discovery fingerprint, apply field rules from `<field_rules>`, then call `platform_sig_events_discovery_write` exactly once. Inspect the aligned `results` array. If and only if individual results have `reason: "bulk_error"`, retry those input items once in a second call; never retry a top-level `outcome_unknown` error automatically.
 
@@ -256,12 +260,12 @@ Set `written_rule_uuids` from the final results only: include rules belonging to
 
 <field_rules>
 
-Field content rules for `platform_sig_events_discovery_write`. Follow the tool schema field descriptions — constraints below override those defaults. Write field names as words without underscores ("Blast radius", not `blast_radius`).
+Field content rules, use only when calling `platform_sig_events_discovery_write`. Follow the tool schema field descriptions — constraints below override those defaults. Write field names as words without underscores ("Blast radius", not `blast_radius`).
 
 - `title`: derive both halves from one **anchor rule** (in a cascade, the downstream/user-facing rule — never the upstream cause). Apply the tool's affected-scope hierarchy to current evidence, then the anchor rule's matched query KI description and resolved features; never use `causal_features` as the affected scope. `<observed condition>` = the anchor rule's matched query KI `title` (strip a duplicated scope prefix), falling back to its literal signal signature.
   - In a multi-rule discovery, never merge or pick among other member rules' KIs. Follow the tool field description for exclusions and continuation stability.
   - Must discriminate from other events on the same service — if two different incidents could share this title, it is too generic; fall back to the query KI title (already rule-specific) rather than a generic label.
-- `symptom_hypothesis`: required provisional explanation of the discovery evidence. Apply bounded **5 Whys** and write one sentence in **event → cause → consequence** order: lead with the deepest confirmed failure event (the lowest mechanism the evidence supports), state why it is failing, then name the downstream consequence to flows or users. Never lead with the user-visible symptom when a deeper confirmed mechanism exists in the group.
+- `symptom_hypothesis`: required provisional explanation of the discovery evidence. Apply bounded **5 Whys** and write one sentence, state why it is failing, then name the downstream consequence to flows or users. Never lead with the user-visible symptom when a deeper confirmed mechanism exists in the group.
   - Sources in priority order: (1) confirming `platform_core_execute_esql` found-rows; (2) aligned entity KI content when the row confirms the same operation/path; (3) tech KI content for an evidence-supported `causal_features` entity; (4) change semantics plus dependency topology when no confirming row exists; (5) onset order alone.
   - KI metadata may refine an evidenced hypothesis but cannot establish a live failure by itself. When rows contain no error signature, state the observed volume driver and that no mechanism was confirmed. Scope the hypothesis to this discovery's rules only.
 - `summary`: Lead with the problem: affected operation, observed condition, and whether user impact is confirmed, possible, or not established. **Topology** `blast_radius` dependency entries name the explicit dependency path; **KI context** may qualify the conclusion. Never narrate detections, queries, or analysis steps.
