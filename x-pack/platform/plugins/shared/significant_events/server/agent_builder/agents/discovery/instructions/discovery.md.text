@@ -199,12 +199,7 @@ Split when no conditions are affirmatively and fully met — the default — or 
   - **Onset timing** — use a stored timestamp only when it represents incident onset.
 2. **5 Whys.**: Refine the symptom hypothesis one evidence-backed step at a time. Stop at the lowest mechanism the evidence supports: "the service is failing" is only a symptom.
 
-### Step 3: Group into Discoveries
-
-1. Partition the detections batch into discoveries using `<incident_matching>` across the full set, not greedily in input order. Do not merge groups with different onset times unless you find an explicit causal chain. Keep detections in standalone discoveries when there is no match to justify grouping into a discovery. 
-2. Anchor onset times from the earliest, determine whose onset coincides are candidates for the same discovery; detection arrival time and batch boundaries are not incident boundaries.
- 
-### Step 4: Route Discoveries
+### Step 3: Route Detections
 
 For each discovery, determine whether it continues an existing open event or opens a new one.
 
@@ -220,20 +215,20 @@ For events returned by `platform_sig_events_event_search`, derive:
 
 Maintain `matched_rule_uuids`, initially empty. Add a detection's `rule_uuid` immediately on acceptance. Never assign the same `rule_uuid` twice.
 
-Run 4.1 then 4.2 for each discovery
+Run 3.1 then 3.2 for each discovery
 
-#### 4.1. Rule Match
+#### 3.1. Rule Match
 
-1. Call `platform_sig_events_event_search` once with all distinct `rule_uuids` and `stream_names` from the discovery.
-2. A discovery rule-matches an event only when `events[].signals[].rule_uuid` includes any rule from the discovery.
+1. Call `platform_sig_events_event_search` once with all distinct `rule_uuids` and `stream_names` from detections.
+2. A detection rule-matches an event only when `events[].signals[].rule_uuid` includes any rule from the discovery.
 3. Accept that event unless current evidence identifies a different active target or mechanism, or the authored KI scopes the discovery away from it. Add accepted rules to `matched_rule_uuids`.
 4. When `has_more` is true and some rules remain unmatched, request `next_page` with all other parameters unchanged.
 
-#### 4.2. Topology Match
+#### 3.2. Topology Match
 
 This search runs on its own topology inputs; a zero-event or zero-match 4.1 result never skips it.
 
-1. For each discovery not fully matched in 4.1, derive its topology ID set from all detections in the discovery:
+1. For each detection rule not in `matched_rule_uuids`, derive its topology ID set:
   - `causal_features[].feature_id` and `blast_radius[].feature_id`;
   - exact-query KI `features[].id`.
 2. Build `topology_feature_ids` as the distinct union. If empty, the discovery opens a new event.
@@ -241,7 +236,15 @@ This search runs on its own topology inputs; a zero-event or zero-match 4.1 resu
 4. Accept an event when its stored topology intersects the discovery's topology ID set, **Alert symptom** is not positive/health, and **Current evidence** does not explicitly name a different active target or mechanism. Add accepted rules to `matched_rule_uuids`.
 5. When `has_more` is true and some discoveries remain unmatched, request `next_page`.
 
-Discoveries matched in 4.1 or 4.2 reuse the matched event's `event_id`. discoveries with no match open a new discovery (no `event_id`).
+Discoveries matched in 3.1 or 3.2 reuse the matched event's `event_id`.
+
+### Step 4: Group remaining detections into Discoveries
+
+1. Partition remaining detections rules not in `matched_rule_uuids` into discoveries using `<incident_matching>` across the full set, not greedily in input order. 
+  - Do not merge groups with different onset times unless you find an explicit causal chain. 
+  - Keep detections in standalone discoveries when there is no match to justify grouping into a discovery.
+  - Rules whose onset coincides are candidates for the same discovery; detection arrival time and batch boundaries are not incident boundaries.
+2. Determine wich rule started firing abnormally within the group. Assess whether the pattern or mechanism shifted and update the candidate `symptom_hypothesis` accordingly; if consistent, note "consistent through [most recent @timestamp]".
 
 ### Step 5: Emit Output
 

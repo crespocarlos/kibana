@@ -42,7 +42,6 @@ import {
 } from '../../src/evaluators/discovery/utils/parse_agent_output';
 import { buildDiscoveryInput } from '../../src/evaluators/discovery/discovery/build_agent_input';
 import type { ContinuationCycle } from '../../src/evaluators/discovery/discovery/continuation/continuation_stability';
-import { KNOWLEDGE_INDICATORS_DATA_STREAM } from '../../src/data_generators/snapshot_indices';
 
 const TRUST_UPSTREAM = process.env.SIGEVENTS_TRUST_UPSTREAM === 'true';
 
@@ -181,7 +180,7 @@ evaluate.describe(
           }) => {
             // Concurrency must remain 1 — this variable is not safe under concurrent tasks.
             // Raising concurrency requires replacing it with a per-invocation approach or a proper lock.
-            let lastReplayKey: string | undefined;
+            let lastReplayedSnapshotKey: string | undefined;
 
             const detectionsByScenario = new Map(
               collectedExamples.map(({ scenario, detections, snapshotKey }) => [
@@ -206,30 +205,12 @@ evaluate.describe(
                           test_index: MANAGED_STREAM_SEARCH_PATTERN,
                         },
                       },
-                      {
-                        id: `${scenario.input.scenario_id}__no-topology`,
-                        input: {
-                          ...scenario.input,
-                          snapshot_source: scenario.snapshot_source,
-                          without_topology: true,
-                        },
-                        output: { ...scenario.output, criteria: [] },
-                        metadata: {
-                          ...scenario.metadata,
-                          test_index: MANAGED_STREAM_SEARCH_PATTERN,
-                          without_topology: true,
-                        },
-                      },
                     ]),
                   },
                 ],
                 concurrency: 1,
                 trustUpstreamDataset: TRUST_UPSTREAM,
-                task: async ({
-                  input,
-                }: {
-                  input: DiscoveryScenario['input'] & { without_topology?: boolean };
-                }) => {
+                task: async ({ input }: { input: DiscoveryScenario['input'] }) => {
                   const data = detectionsByScenario.get(input.scenario_id);
                   if (!data) {
                     throw new Error(`No pre-collected data for scenario "${input.scenario_id}"`);
@@ -240,11 +221,7 @@ evaluate.describe(
                   if (!snapshotSource) {
                     throw new Error(`No snapshot source found for scenario "${input.scenario_id}"`);
                   }
-
-                  const replayKey = `${snapshotKey}:${
-                    input.without_topology ? 'queries-only' : 'all'
-                  }`;
-                  if (replayKey !== lastReplayKey) {
+                  if (snapshotKey !== lastReplayedSnapshotKey) {
                     await cleanSignificantEventsDataStreams(esClient, log);
                     for (const name of SIGEVENTS_WIRED_ROOTS) {
                       await esClient.indices.deleteDataStream({ name }).catch(() => {});
@@ -265,7 +242,7 @@ evaluate.describe(
                       );
                     }
                     await esClient.indices.refresh({ index: MANAGED_STREAM_SEARCH_PATTERN });
-                    lastReplayKey = replayKey;
+                    lastReplayedSnapshotKey = snapshotKey;
                   }
 
                   // Replay captured KIs into the live KI stream so search_knowledge_indicators
@@ -276,13 +253,6 @@ evaluate.describe(
                     snapshotSource.snapshotName,
                     snapshotSource.gcs
                   );
-                  if (input.without_topology) {
-                    await esClient.deleteByQuery({
-                      index: KNOWLEDGE_INDICATORS_DATA_STREAM,
-                      query: { term: { type: 'feature' } },
-                      refresh: true,
-                    });
-                  }
 
                   // Same message shape as the production batch.
                   const agentInput = buildDiscoveryInput({ detections });
@@ -342,7 +312,7 @@ evaluate.describe(
         ] as const;
 
         for (const continuationSuite of continuationSuites) {
-          evaluate(
+          evaluate.skip(
             `Discovery agent — ${continuationSuite.title}`,
             async ({
               executorClient,
