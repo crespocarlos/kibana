@@ -201,7 +201,7 @@ Split when no conditions are affirmatively and fully met — the default — or 
 
 ### Step 3: Route Detections
 
-For each discovery, determine whether it continues an existing open event or opens a new one.
+For each detection, determine whether it continues an existing open event or opens a new one.
 
 **`platform_sig_events_event_search` instructions**
 - Use `platform_sig_events_event_search` with `status: "open"`, `view: "compact"`, `per_page: 50`, and `exclude_unconfirmed_signals: true`.
@@ -215,13 +215,13 @@ For events returned by `platform_sig_events_event_search`, derive:
 
 Maintain `matched_rule_uuids`, initially empty. Add a detection's `rule_uuid` immediately on acceptance. Never assign the same `rule_uuid` twice.
 
-Run 3.1 then 3.2 for each discovery
+Run 3.1 then 3.2 for each detection
 
 #### 3.1. Rule Match
 
 1. Call `platform_sig_events_event_search` once with all distinct `rule_uuids` and `stream_names` from detections.
-2. A detection rule-matches an event only when `events[].signals[].rule_uuid` includes any rule from the discovery.
-3. Accept that event unless current evidence identifies a different active target or mechanism, or the authored KI scopes the discovery away from it. Add accepted rules to `matched_rule_uuids`.
+2. A detection rule-matches an event only when `events[].signals[].rule_uuid` includes any rule from the detection.
+3. Accept that event unless current evidence identifies a different active target or mechanism, or the authored KI scopes the detection away from it. Add accepted rules to `matched_rule_uuids`.
 4. When `has_more` is true and some rules remain unmatched, request `next_page` with all other parameters unchanged.
 
 #### 3.2. Topology Match
@@ -231,9 +231,9 @@ This search runs on its own topology inputs; a zero-event or zero-match 4.1 resu
 1. For each detection rule not in `matched_rule_uuids`, derive its topology ID set:
   - `causal_features[].feature_id` and `blast_radius[].feature_id`;
   - exact-query KI `features[].id`.
-2. Build `topology_feature_ids` as the distinct union. If empty, the discovery opens a new event.
+2. Build `topology_feature_ids` as the distinct union. If empty, the detection opens a new discovery.
 3. Otherwise, call `platform_sig_events_event_search` with `topology_feature_ids`; omit `rule_uuids` and `stream_names`.
-4. Accept an event when its stored topology intersects the discovery's topology ID set, **Alert symptom** is not positive/health, and **Current evidence** does not explicitly name a different active target or mechanism. Add accepted rules to `matched_rule_uuids`.
+4. Accept an event when its stored topology intersects the detection's topology ID set, **Alert symptom** is not positive/health, and **Current evidence** does not explicitly name a different active target or mechanism. Add accepted rules to `matched_rule_uuids`.
 5. When `has_more` is true and some discoveries remain unmatched, request `next_page`.
 
 Discoveries matched in 3.1 or 3.2 reuse the matched event's `event_id`.
