@@ -57,6 +57,16 @@ export interface EventsWriteResult {
   written: true;
 }
 
+export interface EventsWriteSkippedResult {
+  index: number;
+  event_id: string;
+  status: SignificantEvent['status'];
+  severity: SignificantEvent['severity'];
+  written: false;
+  skipped: true;
+  reason: 'no_change';
+}
+
 export interface EventsWriteFailureResult {
   index: number;
   event_id: string;
@@ -66,7 +76,10 @@ export interface EventsWriteFailureResult {
   error: CompactBulkError;
 }
 
-export type EventsWriteBulkResult = EventsWriteResult | EventsWriteFailureResult;
+export type EventsWriteBulkResult =
+  | EventsWriteResult
+  | EventsWriteSkippedResult
+  | EventsWriteFailureResult;
 
 /**
  * Versions a batch of significant events in one request while preserving input order in the
@@ -101,8 +114,11 @@ export async function eventsWriteBulkHandler({
   const prepared = inputs.map((input, index) => {
     const eventId = input.event_id ?? `agent-event-${uuidv4().slice(0, 8)}`;
     const eventUuid = uuidv4();
+    const latest = latestEvents.get(eventId);
     return {
       index,
+      input,
+      latest,
       eventId,
       eventUuid,
       status: input.status,
@@ -111,67 +127,106 @@ export async function eventsWriteBulkHandler({
         '@timestamp': timestamp,
         event_uuid: eventUuid,
         event_id: eventId,
-        previous_event_uuid: latestEvents.get(eventId)?.event_uuid,
+        previous_event_uuid: latest?.event_uuid,
         // Carry investigation lineage forward so a re-open keeps investigations already attached
         // to the episode. Triage uses this to avoid re-investigating it. Status updates already
         // spread the latest document, and the UI attachment path writes this field directly.
-        investigations: latestEvents.get(eventId)?.investigations,
+        investigations: latest?.investigations,
         severity: input.severity,
       },
     };
   });
 
-  let response;
-  try {
-    response = await eventClient.bulkCreate(
-      prepared.map(({ document }) => document),
-      // `wait_for` lets the immediate triage `_count` see the newly written event version.
-      { throwOnFail: false, refresh: 'wait_for' }
-    );
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Unknown Elasticsearch transport error';
-    throw createBulkWriteOutcomeUnknownError(`Event bulk write outcome is unknown: ${message}`);
+  const results: Array<EventsWriteBulkResult | undefined> = new Array(inputs.length);
+  const itemsToCreate: typeof prepared = [];
+
+  for (const item of prepared) {
+    // Only deduplicate items with an explicit event_id — synthetic IDs are always new.
+    if (item.input.event_id !== undefined) {
+      if (
+        item.latest !== undefined &&
+        item.latest.status === item.input.status &&
+        item.latest.severity === item.input.severity
+      ) {
+        results[item.index] = {
+          index: item.index,
+          event_id: item.eventId,
+          status: item.input.status,
+          severity: item.input.severity,
+          written: false,
+          skipped: true,
+          reason: 'no_change',
+        };
+        continue;
+      }
+    }
+    itemsToCreate.push(item);
   }
 
-  const createResults = extractCreateResults(response, prepared.length, 'Event');
-
-  return prepared.map(({ index, eventId, eventUuid, status }, responseIndex) => {
-    const detail = createResults[responseIndex];
-    if (detail.error) {
-      return {
-        index,
-        event_id: eventId,
-        status,
-        written: false,
-        reason: 'bulk_error',
-        error: toCompactBulkError(detail),
-      };
+  if (itemsToCreate.length > 0) {
+    let response;
+    try {
+      response = await eventClient.bulkCreate(
+        itemsToCreate.map(({ document }) => document),
+        // `wait_for` lets the immediate triage `_count` see the newly written event version.
+        { throwOnFail: false, refresh: 'wait_for' }
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown Elasticsearch transport error';
+      throw createBulkWriteOutcomeUnknownError(`Event bulk write outcome is unknown: ${message}`);
     }
-    return {
-      index,
-      event_uuid: eventUuid,
-      event_id: eventId,
-      status,
-      written: true,
-    };
-  });
+
+    const createResults = extractCreateResults(response, itemsToCreate.length, 'Event');
+
+    itemsToCreate.forEach(({ index, eventId, eventUuid, status }, responseIndex) => {
+      const detail = createResults[responseIndex];
+      results[index] = detail.error
+        ? {
+            index,
+            event_id: eventId,
+            status,
+            written: false,
+            reason: 'bulk_error',
+            error: toCompactBulkError(detail),
+          }
+        : { index, event_uuid: eventUuid, event_id: eventId, status, written: true };
+    });
+  }
+
+  const alignedResults: EventsWriteBulkResult[] = [];
+  for (const result of results) {
+    if (result === undefined) {
+      throw createBulkWriteOutcomeUnknownError(
+        'Event bulk results were not aligned with every input'
+      );
+    }
+    alignedResults.push(result);
+  }
+  return alignedResults;
 }
 
-/** Single-item adapter retained for callers such as `event_create` that require thrown item errors. */
+/**
+ * Single-item adapter retained for callers such as `event_create` that require thrown item errors.
+ * Returns without throwing when the write is skipped (`no_change`) — callers should check
+ * `result.written` when the skipped outcome is relevant.
+ */
 export async function eventsWriteHandler({
   eventClient,
   input,
 }: {
   eventClient: EventClient;
   input: EventsWriteInput;
-}): Promise<EventsWriteResult> {
+}): Promise<EventsWriteResult | EventsWriteSkippedResult> {
   const [result] = await eventsWriteBulkHandler({ eventClient, inputs: [input] });
   if (result === undefined) {
     throw createBulkWriteOutcomeUnknownError('Event bulk write did not return a result');
   }
   if (!result.written) {
-    throw createBulkWriteItemError(result.error);
+    if (result.reason === 'bulk_error') {
+      throw createBulkWriteItemError(result.error);
+    }
+    return result;
   }
   return result;
 }

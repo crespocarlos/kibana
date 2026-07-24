@@ -282,4 +282,120 @@ describe('eventsWriteBulkHandler', () => {
       })
     ).rejects.toThrow('mapper_parsing_exception: bad');
   });
+
+  it('skips a write when status and severity match the latest version', async () => {
+    const eventClient = {
+      findLatestByEventIds: jest
+        .fn()
+        .mockResolvedValue(
+          new Map([
+            ['event-1', { event_uuid: 'existing-uuid', status: 'open', severity: '60-high' }],
+          ])
+        ),
+      bulkCreate: jest.fn(),
+    };
+
+    const results = await eventsWriteBulkHandler({
+      eventClient: eventClient as never,
+      inputs: [{ ...baseInput, event_id: 'event-1', status: 'open', severity: '60-high' }],
+    });
+
+    expect(eventClient.bulkCreate).not.toHaveBeenCalled();
+    expect(results[0]).toEqual({
+      index: 0,
+      event_id: 'event-1',
+      status: 'open',
+      severity: '60-high',
+      written: false,
+      skipped: true,
+      reason: 'no_change',
+    });
+  });
+
+  it('writes through when status differs from the latest version', async () => {
+    const eventClient = {
+      findLatestByEventIds: jest
+        .fn()
+        .mockResolvedValue(
+          new Map([
+            ['event-1', { event_uuid: 'existing-uuid', status: 'open', severity: '60-high' }],
+          ])
+        ),
+      bulkCreate: jest.fn().mockImplementation(successfulBulkCreate),
+    };
+
+    const results = await eventsWriteBulkHandler({
+      eventClient: eventClient as never,
+      inputs: [{ ...baseInput, event_id: 'event-1', status: 'resolved', severity: '60-high' }],
+    });
+
+    expect(eventClient.bulkCreate).toHaveBeenCalledTimes(1);
+    expect(results[0]).toEqual(expect.objectContaining({ index: 0, written: true }));
+  });
+
+  it('writes through when severity differs from the latest version', async () => {
+    const eventClient = {
+      findLatestByEventIds: jest
+        .fn()
+        .mockResolvedValue(
+          new Map([
+            ['event-1', { event_uuid: 'existing-uuid', status: 'open', severity: '60-high' }],
+          ])
+        ),
+      bulkCreate: jest.fn().mockImplementation(successfulBulkCreate),
+    };
+
+    const results = await eventsWriteBulkHandler({
+      eventClient: eventClient as never,
+      inputs: [{ ...baseInput, event_id: 'event-1', status: 'open', severity: '80-critical' }],
+    });
+
+    expect(eventClient.bulkCreate).toHaveBeenCalledTimes(1);
+    expect(results[0]).toEqual(expect.objectContaining({ index: 0, written: true }));
+  });
+
+  it('does not skip writes for synthetic event ids (no event_id provided)', async () => {
+    const eventClient = {
+      findLatestByEventIds: jest.fn(),
+      bulkCreate: jest.fn().mockImplementation(successfulBulkCreate),
+    };
+
+    const results = await eventsWriteBulkHandler({
+      eventClient: eventClient as never,
+      inputs: [{ ...baseInput, status: 'open', severity: '60-high' }],
+    });
+
+    expect(eventClient.findLatestByEventIds).not.toHaveBeenCalled();
+    expect(eventClient.bulkCreate).toHaveBeenCalledTimes(1);
+    expect(results[0]).toEqual(expect.objectContaining({ written: true }));
+  });
+
+  it('skips one and writes another in the same batch', async () => {
+    const eventClient = {
+      findLatestByEventIds: jest.fn().mockResolvedValue(
+        new Map([
+          ['event-1', { event_uuid: 'uuid-1', status: 'open', severity: '60-high' }],
+          ['event-2', { event_uuid: 'uuid-2', status: 'open', severity: '40-medium' }],
+        ])
+      ),
+      bulkCreate: jest.fn().mockImplementation(successfulBulkCreate),
+    };
+
+    const results = await eventsWriteBulkHandler({
+      eventClient: eventClient as never,
+      inputs: [
+        // same status + severity → skip
+        { ...baseInput, event_id: 'event-1', status: 'open', severity: '60-high' },
+        // severity changed → write
+        { ...baseInput, event_id: 'event-2', status: 'open', severity: '80-critical' },
+      ],
+    });
+
+    expect(eventClient.bulkCreate).toHaveBeenCalledTimes(1);
+    expect(eventClient.bulkCreate.mock.calls[0][0]).toHaveLength(1);
+    expect(results[0]).toEqual(
+      expect.objectContaining({ index: 0, written: false, skipped: true, reason: 'no_change' })
+    );
+    expect(results[1]).toEqual(expect.objectContaining({ index: 1, written: true }));
+  });
 });

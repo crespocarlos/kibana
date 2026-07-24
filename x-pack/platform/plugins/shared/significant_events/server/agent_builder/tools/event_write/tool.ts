@@ -88,12 +88,15 @@ export function createEventsWriteTool({
             description: 'events_write telemetry',
             track: () =>
               telemetry.trackAgentToolEventsWrite({
-                success: result.written,
+                success: result.written || result.reason === 'no_change',
                 event_id: result.event_id,
                 status: result.status,
                 written: result.written,
                 stream_names: input.stream_names,
-                error_message: result.written ? undefined : result.error.reason,
+                error_message:
+                  !result.written && result.reason === 'bulk_error'
+                    ? result.error.reason
+                    : undefined,
               }),
           });
         });

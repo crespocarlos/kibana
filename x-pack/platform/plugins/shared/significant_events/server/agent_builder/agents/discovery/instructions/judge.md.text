@@ -89,7 +89,7 @@ Example: platform_sig_events_events_write
   ]
 }
 ```
-Response: `{ "results": [{ "index": 0, "event_uuid": "...", "event_id": "...", "status": "open", "written": true }] }`. An ES item failure omits `event_uuid` and returns `written: false, reason: "bulk_error"`.
+Response: `{ "results": [{ "index": 0, "event_uuid": "...", "event_id": "...", "status": "open", "written": true }] }`. A same-state write (status and severity unchanged) returns `written: false, skipped: true, reason: "no_change"` (no `event_uuid`); an ES item failure also omits `event_uuid` and returns `written: false, reason: "bulk_error"`.
 
 </tool_examples>
 
@@ -187,7 +187,7 @@ The `severity` field description in the `platform_sig_events_events_write` tool 
 
 Build one `items` array in discovery input order and call `platform_sig_events_events_write` exactly once. The batch rejects duplicate `event_id` values, so consolidate duplicates before calling. If and only if individual results have `reason: "bulk_error"`, retry those input items once in a second call; never retry a top-level `outcome_unknown` error automatically.
 
-Build structured `significant_events` from the final tool results. Copy successful `event_uuid`, `event_id`, `status`, and `written` values exactly. Include an unresolved failure with `written: false` and no invented `event_uuid`; the workflow will leave that discovery unhandled and will not trigger an investigation.
+Build structured `significant_events` from the final tool results. Copy successful `event_uuid`, `event_id`, `status`, and `written` values exactly. For `reason: "no_change"` results (`written: false, skipped: true`), treat as resolved — the event is already in the correct state; do not mark it as unhandled. Include an unresolved failure only for `reason: "bulk_error"` results (which omit `event_uuid`); the workflow will leave those discoveries unhandled and will not trigger an investigation.
 
 Apply field rules from `<field_rules>`.
 
