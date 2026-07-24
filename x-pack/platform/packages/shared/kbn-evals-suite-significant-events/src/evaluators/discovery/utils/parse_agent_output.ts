@@ -96,9 +96,14 @@ export const extractDiscoveriesFromToolCall = (steps: ConverseStep[]): Discovery
  * evaluators can distinguish the agent's continuation routing from the final write outcome.
  */
 export const extractRequestedEventIdsFromToolCall = (steps: ConverseStep[]): string[] =>
-  toolCallSteps(steps, platformSignificantEventsTools.discoveryWrite)
-    .map((step) => step.params?.event_id)
-    .filter((eventId): eventId is string => typeof eventId === 'string' && eventId.length > 0);
+  toolCallSteps(steps, platformSignificantEventsTools.discoveryWrite).flatMap((step) => {
+    const items = Array.isArray(step.params?.items)
+      ? (step.params.items as Array<Partial<Discovery>>)
+      : [];
+    return items
+      .map((item) => item.event_id)
+      .filter((eventId): eventId is string => typeof eventId === 'string' && eventId.length > 0);
+  });
 
 /**
  * Extract significant events from `events_write` tool call steps.

@@ -160,20 +160,20 @@ Evaluate each pair independently — one current rule against another current ru
 2. **Require a positive match.** One of the following must hold:
   - **Direct evidence** — both sides' **Current evidence** names the same operational component or control boundary with a compatible mechanism. Differences in severity, affected fields, message templates, or code paths are not split criteria.
   - **Signal convergence** — each side's **Current evidence** independently converges on the same target or mechanism. Incidental row content is insufficient.
-  - **KI-proven incident relationship** - topology ID sets intersect (shared `causal_feature` or `blast_radius` entries), or exact-query **KI context** places both sides in the same connected dependency chain. Non-contradicting **Current evidence** is still required. Mere adjacency without a shared node does not qualify.
-    Example: a DB connection error causing that service to become unreachable to its callers is a valid cascade path through the shared service node.
+  - **KI-proven incident relationship** — **Topology** or exact-query **KI context** establishes that both sides participate in the same connected dependency failure. When two detections' derived topology ID sets intersect (sharing a `causal_feature` or `blast_radius` node), that intersection satisfies this requirement — compatible **Incident class** and non-contradicting **Current evidence** are still required. 
+      A shared flow or call relationship with no topology node intersection does not qualify; mere adjacency without a shared node remains insufficient.
+    Example: A service's internal failure (e.g. a DB connection error) causing it to become unreachable to its callers (e.g. connection refused on its HTTP port) is a valid cascade path through that service node.
   - **Positive convergence** *(positive/health pairs only)* — both detections show consistently healthy behavior; overlapping **Topology** establishes a match. When **Topology** is absent, non-contradicting **Current evidence** is sufficient for signals sharing the same service or stream; **Domain** corroborates. Contradicting **Topology** or **Current evidence** keeps them separate.
 
   The following only **corroborate** a match already established above — they do not establish one on their own: onset timing, shared stream, shared **Domain**, topology adjacency without a shared node, historical KI evidence, or similar wording.
 
-3. **Anchor onset times from the earliest matching evidence** Rules whose onset coincides are candidates for correlation.
-4. **Cascade scan.**: Compare the grounded detections and record evidence-backed relationships: the same target or mechanism, caller-to-dependency propagation, a shared upstream mechanism, or positive convergence. Apply transitivity — if A connects to B and B connects to C through the same upstream node or mechanism, all three belong to the same cascade. Retain bridge detections and connected paths.
+3. **Cascade scan.**: Compare the grounded detections and record evidence-backed relationships: the same target or mechanism, caller-to-dependency propagation, a shared upstream mechanism, or positive convergence. Apply transitivity — if A connects to B and B connects to C through the same upstream node or mechanism, all three belong to the same cascade. Retain bridge detections and connected paths.
   Stream, timing, domain, or topology adjacency alone never creates a relationship.
-5. **Handle sparse Current evidence.** When evidence rows are empty or inconclusive but not contradictory, a match is established when every side's exact-query **KI context** resolves to the same specific target, mechanism, or connected dependency chain. Broad or multi-target KI requires Current evidence or uniquely scoped KI to select the target. Refuting rows cannot establish a match.
-6. **Look for contradiction.** Reject an otherwise-supported match when **Current evidence** names a different active target or mechanism, or when a **Domain** mismatch is unexplained by the matched relationship. A success row contradicts complete outage but is neutral to partial degradation. Explicit exclusions or differently-scoped causes in **KI context** block sparse matching.
+4. **Handle sparse Current evidence.** When evidence rows are empty or inconclusive but not contradictory, a match is established when every side's exact-query **KI context** resolves to the same specific target, mechanism, or connected dependency chain. Broad or multi-target KI requires Current evidence or uniquely scoped KI to select the target. Refuting rows cannot establish a match.
+5. **Look for contradiction.** Reject an otherwise-supported match when **Current evidence** names a different active target or mechanism, or when a **Domain** mismatch is unexplained by the matched relationship. A success row contradicts complete outage but is neutral to partial degradation. Explicit exclusions or differently-scoped causes in **KI context** block sparse matching.
 
 Split when no conditions are affirmatively and fully met — the default — or one of these hold up:
-- **Alert symptom** are categorically unrelated, 
+- **Alert symptom** are categorically unrelated without a corroboration from **Cascade scan**,, 
 - The rules fall in different **Domain** without a corroboration from **Cascade scan**, 
 - Matched query KI `description` explicitly scopes one rule away from the other, 
 - After evidence review no convergence is found.
@@ -201,7 +201,7 @@ Split when no conditions are affirmatively and fully met — the default — or 
 
 ### Step 3: Route Detections
 
-For each detection, determine whether it continues an existing open event or opens a new one.
+For each detection, determine whether it continues an existing open event. 
 
 **`platform_sig_events_event_search` instructions**
 - Use `platform_sig_events_event_search` with `status: "open"`, `view: "compact"`, `per_page: 50`, and `exclude_unconfirmed_signals: true`.
@@ -219,25 +219,27 @@ Run 3.1 then 3.2 for each detection
 
 #### 3.1. Rule Match
 
-1. Call `platform_sig_events_event_search` once with all distinct `rule_uuids` and `stream_names` from detections.
-2. A detection rule-matches an event only when `events[].signals[].rule_uuid` includes any rule from the detection.
+1. Call `platform_sig_events_event_search` once with all distinct batch `rule_uuids` and `stream_names`.
+2. A detection rule-matches an event only when `events[].signals[].rule_uuid` equals the detection's `rule_uuid`.
 3. Accept that event unless current evidence identifies a different active target or mechanism, or the authored KI scopes the detection away from it. Add accepted rules to `matched_rule_uuids`.
 4. When `has_more` is true and some rules remain unmatched, request `next_page` with all other parameters unchanged.
+5. Every detection not accepted here continues to 3.2 — rule matching alone never completes routing.
 
-#### 3.2. Topology Match
+#### 3.2. Semantic Match
 
-This search runs on its own topology inputs; a zero-event or zero-match 4.1 result never skips it.
+Evaluate every detection not accepted in 3.1. This search runs on its own topology inputs; a zero-event or zero-match 3.1 result never skips it.
 
-1. For each detection rule not in `matched_rule_uuids`, derive its topology ID set:
-  - `causal_features[].feature_id` and `blast_radius[].feature_id`;
-  - exact-query KI `features[].id`.
-2. Build `topology_feature_ids` as the distinct union. If empty, the detection opens a new discovery.
-3. Otherwise, call `platform_sig_events_event_search` with `topology_feature_ids`; omit `rule_uuids` and `stream_names`.
-4. Accept an event when its stored topology intersects the detection's topology ID set, **Alert symptom** is not positive/health, and **Current evidence** does not explicitly name a different active target or mechanism. Add accepted rules to `matched_rule_uuids`.
-5. When `has_more` is true and some discoveries remain unmatched, request `next_page`.
+1. For each detection, derive its topology ID set from:
+   - its derived `causal_features[].feature_id` and `blast_radius[].feature_id`;
+   - exact-query KI `features[].id`.
+2. Build `topology_feature_ids` as the distinct union of those per-detection topology ID sets.
+3. If the union is empty, record that result and continue to 3.3. Otherwise, call `platform_sig_events_event_search` with `topology_feature_ids`; omit `rule_uuids` and `stream_names`, and retain `exclude_unconfirmed_signals: true`.
+4. For each detection, consider only events whose stored topology intersects that detection's own topology ID set. Topology intersection from this search already satisfies the *KI-proven incident relationship* in `<incident_matching>`
+  — both sides share a confirmed topology node. Accept when **Incident class** is compatible and **Current evidence** does not explicitly name a different active target or mechanism.
+  - Weak, empty, or inconclusive evidence is neutral and is not grounds for rejection. Add accepted rules to `matched_rule_uuids`.
+5. When `has_more` is true and some rules remain unmatched, request `next_page` with all other parameters unchanged.
 
-Assign each detection to at most one accepted event. If multiple events match, prefer greatest rule coverage, then current-evidence similarity. 
-Detections assigned to the same event form one continuation discovery using its exact `event_id`.
+Assign each matched detection to at most one accepted event continuation. The continuation is a discovery that reuses the matched event's `event_id`. If multiple events continuation match a single detection, prefer greatest rule coverage, then evidence similarity. 
 
 ### Step 4: Group remaining detections into Discoveries
 
