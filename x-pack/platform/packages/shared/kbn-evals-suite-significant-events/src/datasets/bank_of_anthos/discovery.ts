@@ -22,8 +22,8 @@ const toInputDetections = (events: Array<Partial<SignificantEvent>>): Array<Part
 
 /**
  * Canonical cascade significant event — the lean ground truth for the discovery agent eval.
- * Evidences carry the `esql_query` for grounding but are deliberately NOT pre-stamped `confirmed` —
- * the agent must run execute_esql during KI grounding and stamp `confirmed: true` from its own
+ * Evidences carry the `esql_query` for grounding but are deliberately NOT pre-stamped with a verdict —
+ * the agent must run execute_esql during KI grounding and stamp `verdict: "confirms"` from its own
  * query results before promoting. Every field here is seeded by one of the cascade `detections`, so
  * the canonical input and this expected answer stay self-consistent.
  */
@@ -44,9 +44,9 @@ const LEDGER_DB_CASCADE_EVENT: Partial<SignificantEvent> = {
     {
       type: 'detection',
       stream_name: 'logs',
-      verification: { assessment: 'active', lens: 'failure' },
+      verdict: 'confirms',
       description:
-        'Found: SQLState 08001 connection refused from transactionhistory. Impact: transaction-history reads blocked. Verdict: confirms.',
+        'Found: SQLState 08001 connection refused from transactionhistory. Impact: transaction-history reads blocked.',
       evidence: {
         esql_query:
           'FROM logs | WHERE @timestamp >= "2026-06-25T14:30:00Z" AND @timestamp <= NOW() | WHERE MATCH_PHRASE(body.text, "SQLState: 08001") | KEEP @timestamp, body.text | SORT @timestamp ASC | LIMIT 1',
@@ -63,9 +63,9 @@ const LEDGER_DB_CASCADE_EVENT: Partial<SignificantEvent> = {
     {
       type: 'detection',
       stream_name: 'logs',
-      verification: { assessment: 'active', lens: 'failure' },
+      verdict: 'confirms',
       description:
-        'Found: connection refused to transactionhistory:8080 on /transactions. Impact: users cannot view transaction history. Verdict: confirms.',
+        'Found: connection refused to transactionhistory:8080 on /transactions. Impact: users cannot view transaction history.',
       evidence: {
         esql_query:
           'FROM logs | WHERE @timestamp >= "2026-06-25T14:30:00Z" AND @timestamp <= NOW() | WHERE MATCH_PHRASE(body.text, "Error getting transaction_list") | KEEP @timestamp, body.text | SORT @timestamp ASC | LIMIT 1',
@@ -82,9 +82,9 @@ const LEDGER_DB_CASCADE_EVENT: Partial<SignificantEvent> = {
     {
       type: 'detection',
       stream_name: 'logs',
-      verification: { assessment: 'active', lens: 'failure' },
+      verdict: 'confirms',
       description:
-        'Found: connection refused to balancereader:8080 on /balances. Impact: users cannot view account balances. Verdict: confirms.',
+        'Found: connection refused to balancereader:8080 on /balances. Impact: users cannot view account balances.',
       evidence: {
         esql_query:
           'FROM logs | WHERE @timestamp >= "2026-06-25T14:30:00Z" AND @timestamp <= NOW() | WHERE MATCH_PHRASE(body.text, "Error getting balance") | KEEP @timestamp, body.text | SORT @timestamp ASC | LIMIT 1',
@@ -101,9 +101,9 @@ const LEDGER_DB_CASCADE_EVENT: Partial<SignificantEvent> = {
     {
       type: 'detection',
       stream_name: 'logs',
-      verification: { assessment: 'active', lens: 'failure' },
+      verdict: 'confirms',
       description:
-        'Found: Cache error from transactionhistory and balancereader. Impact: balance and transaction-history lookups degraded. Verdict: confirms.',
+        'Found: Cache error from transactionhistory and balancereader. Impact: balance and transaction-history lookups degraded.',
       evidence: {
         esql_query:
           'FROM logs | WHERE @timestamp >= "2026-06-25T14:30:00Z" AND @timestamp <= NOW() | WHERE MATCH_PHRASE(body.text, "Cache error") | KEEP @timestamp, body.text | SORT @timestamp ASC | LIMIT 2',
@@ -120,9 +120,9 @@ const LEDGER_DB_CASCADE_EVENT: Partial<SignificantEvent> = {
     {
       type: 'detection',
       stream_name: 'logs',
-      verification: { assessment: 'active', lens: 'failure' },
+      verdict: 'confirms',
       description:
-        'Found: Failed to retrieve account balance. Impact: payment and deposit submissions fail. Verdict: confirms.',
+        'Found: Failed to retrieve account balance. Impact: payment and deposit submissions fail.',
       evidence: {
         esql_query:
           'FROM logs | WHERE @timestamp >= "2026-06-25T14:30:00Z" AND @timestamp <= NOW() | WHERE MATCH_PHRASE(body.text, "Failed to retrieve account balance") | KEEP @timestamp, body.text | SORT @timestamp ASC | LIMIT 1',
@@ -139,9 +139,9 @@ const LEDGER_DB_CASCADE_EVENT: Partial<SignificantEvent> = {
     {
       type: 'detection',
       stream_name: 'logs',
-      verification: { assessment: 'active', lens: 'failure' },
+      verdict: 'confirms',
       description:
-        'Found: connection refused to ledgerwriter:8080 on deposit /transactions. Impact: users cannot complete deposits. Verdict: confirms.',
+        'Found: connection refused to ledgerwriter:8080 on deposit /transactions. Impact: users cannot complete deposits.',
       evidence: {
         esql_query:
           'FROM logs | WHERE @timestamp >= "2026-06-25T14:30:00Z" AND @timestamp <= NOW() | WHERE MATCH_PHRASE(body.text, "Error submitting deposit") | KEEP @timestamp, body.text | SORT @timestamp ASC | LIMIT 1',
@@ -158,9 +158,9 @@ const LEDGER_DB_CASCADE_EVENT: Partial<SignificantEvent> = {
     {
       type: 'detection',
       stream_name: 'logs',
-      verification: { assessment: 'active', lens: 'failure' },
+      verdict: 'confirms',
       description:
-        'Found: connection refused to ledgerwriter:8080 on payment /transactions. Impact: users cannot complete payments. Verdict: confirms.',
+        'Found: connection refused to ledgerwriter:8080 on payment /transactions. Impact: users cannot complete payments.',
       evidence: {
         esql_query:
           'FROM logs | WHERE @timestamp >= "2026-06-25T14:30:00Z" AND @timestamp <= NOW() | WHERE MATCH_PHRASE(body.text, "Error submitting payment") | KEEP @timestamp, body.text | SORT @timestamp ASC | LIMIT 1',
@@ -244,7 +244,7 @@ const BENIGN_LOGIN_EVENT: Partial<SignificantEvent> = {
     {
       type: 'detection',
       stream_name: 'logs',
-      verification: { assessment: 'non_incident', lens: 'failure' },
+      verdict: 'refutes',
       description: 'Successful login activity does not indicate a user-facing failure.',
       evidence: {
         esql_query:
@@ -278,7 +278,7 @@ const BENIGN_SIGNUP_EVENT: Partial<SignificantEvent> = {
     {
       type: 'detection',
       stream_name: 'logs',
-      verification: { assessment: 'non_incident', lens: 'failure' },
+      verdict: 'refutes',
       description: 'Successful account creation does not indicate a user-facing failure.',
       evidence: {
         esql_query:
@@ -375,7 +375,7 @@ export const discovery: DatasetConfig['discovery'] = [
         },
         {
           id: 'grounding-verification',
-          text: 'Verifies key cascade signals via execute_esql during KI grounding and stamps confirmed: true from its own query results, rather than trusting pre-collected input evidence alone.',
+          text: 'Verifies key cascade signals via execute_esql during KI grounding and stamps `verdict: "confirms"` from its own query results, rather than trusting pre-collected input evidence alone.',
           score: 2,
         },
       ],

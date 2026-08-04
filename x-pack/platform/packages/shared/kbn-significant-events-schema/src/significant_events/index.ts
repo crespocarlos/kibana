@@ -15,16 +15,14 @@ export {
   blastRadiusEntrySchema,
   causalFeatureSchema,
   signalEntrySchema,
-  signalVerificationSchema,
   severitySchema,
-  SIGNAL_VERIFICATION_ASSESSMENTS,
+  SIGNAL_VERDICTS,
   SEVERITY_OPTIONS,
   getSeverityLabel,
   type BlastRadiusEntry,
   type CausalFeature,
   type SignalEntry,
-  type SignalVerification,
-  type SignalVerificationAssessment,
+  type SignalVerdict,
   type Severity,
 } from './common_schemas';
 export type { KnowledgeIndicator } from '../queries';

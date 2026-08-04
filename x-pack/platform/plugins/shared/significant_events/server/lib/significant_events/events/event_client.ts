@@ -13,6 +13,8 @@ import type {
   SignificantEvent,
   Severity,
   SignificantEventStatus,
+  SignalEntry,
+  SignalVerdict,
 } from '@kbn/significant-events-schema';
 import { SIGNIFICANT_EVENT_ACTIVE_STATUS_OPTIONS } from '@kbn/significant-events-schema';
 import {
@@ -48,29 +50,55 @@ import type {
 } from '../../../../common/workflows/triggers';
 
 export type EventDataStreamClient = IDataStreamClient<typeof eventsMappings, StoredEvent>;
-type LegacySignal = NonNullable<SignificantEvent['signals']>[number] & {
+export type LegacySignal = Omit<SignalEntry, 'verdict'> & {
+  verdict?: SignalVerdict;
   confirmed?: boolean;
-  collected_at?: string;
+  verification?: {
+    assessment?: 'active' | 'recovered' | 'non_incident' | 'inconclusive' | 'not_checked';
+  };
+};
+
+const legacyAssessmentToVerdict: Record<
+  NonNullable<LegacySignal['verification']>['assessment'] & string,
+  SignalVerdict
+> = {
+  active: 'confirms',
+  recovered: 'refutes',
+  non_incident: 'refutes',
+  inconclusive: 'inconclusive',
+  not_checked: 'not_checked',
+};
+
+// TODO: Remove this function once old signals are replaced with the new signal schema
+export const normalizeLegacyVerdict = (signal: LegacySignal): SignalEntry => {
+  if (signal.verdict !== undefined) return signal as SignalEntry;
+
+  const { confirmed: _confirmed, verification, ...normalizedSignal } = signal;
+  // Assessment-derived verdict is only valid when evidence supports it — confirms/refutes
+  // require result: 'found'; fall through to the evidence-based branch otherwise.
+  const rawVerdictFromAssessment =
+    verification?.assessment !== undefined
+      ? legacyAssessmentToVerdict[verification.assessment]
+      : undefined;
+  const verdictFromAssessment =
+    (rawVerdictFromAssessment === 'confirms' || rawVerdictFromAssessment === 'refutes') &&
+    signal.evidence?.result !== 'found'
+      ? undefined
+      : rawVerdictFromAssessment;
+
+  const verdict =
+    verdictFromAssessment ??
+    // retro-compat: `confirmed` was a boolean field that was replaced with `verification.assessment`
+    (signal.confirmed === true && signal.evidence?.result === 'found' ? 'confirms' : undefined) ??
+    (signal.confirmed === false && signal.evidence?.result === 'found' ? 'refutes' : undefined) ??
+    (signal.evidence === undefined || signal.evidence === null ? 'not_checked' : 'inconclusive');
+
+  return { ...normalizedSignal, verdict } as SignalEntry;
 };
 
 const normalizeLegacyVerification = (event: SignificantEvent): SignificantEvent => ({
   ...event,
-  signals: event.signals?.map((signal) => {
-    if (signal.verification !== undefined) return signal;
-
-    const legacySignal = signal as LegacySignal;
-    if (legacySignal.confirmed === true) {
-      return {
-        ...signal,
-        verification: {
-          assessment: 'active' as const,
-          lens: 'failure' as const,
-          checked_at: legacySignal.collected_at,
-        },
-      };
-    }
-    return signal;
-  }),
+  signals: event.signals?.map((signal) => normalizeLegacyVerdict(signal as LegacySignal)),
 });
 
 /**
