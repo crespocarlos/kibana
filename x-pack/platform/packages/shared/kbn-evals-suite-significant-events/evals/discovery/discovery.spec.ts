@@ -549,12 +549,18 @@ evaluate.describe(
                                   signals: [
                                     ...(event.signals ?? []).map((signal) => ({
                                       ...signal,
-                                      confirmed: true as const,
+                                      verification: {
+                                        assessment: 'active' as const,
+                                        lens: 'failure' as const,
+                                      },
                                     })),
                                     {
                                       type: 'detection' as const,
                                       stream_name: run.seedUnconfirmedDetection.stream_name,
-                                      confirmed: false,
+                                      verification: {
+                                        assessment: 'non_incident',
+                                        lens: 'failure',
+                                      },
                                       description:
                                         'The agent found no evidence that this signal supports the event.',
                                       metadata: {

@@ -48,6 +48,30 @@ import type {
 } from '../../../../common/workflows/triggers';
 
 export type EventDataStreamClient = IDataStreamClient<typeof eventsMappings, StoredEvent>;
+type LegacySignal = NonNullable<SignificantEvent['signals']>[number] & {
+  confirmed?: boolean;
+  collected_at?: string;
+};
+
+const normalizeLegacyVerification = (event: SignificantEvent): SignificantEvent => ({
+  ...event,
+  signals: event.signals?.map((signal) => {
+    if (signal.verification !== undefined) return signal;
+
+    const legacySignal = signal as LegacySignal;
+    if (legacySignal.confirmed === true) {
+      return {
+        ...signal,
+        verification: {
+          assessment: 'active' as const,
+          lens: 'failure' as const,
+          checked_at: legacySignal.collected_at,
+        },
+      };
+    }
+    return signal;
+  }),
+});
 
 /**
  * Maximum number of distinct active events returned by findLatestActive. With stream+rule
@@ -186,7 +210,7 @@ export class EventClient {
       index: EVENTS_DATA_STREAM,
       groupBy: FIELD_EVENT_ID,
     });
-    return { hits: result.hits };
+    return { hits: result.hits.map(normalizeLegacyVerification) };
   }
 
   async findLatestPaginated(
@@ -268,7 +292,7 @@ export class EventClient {
     const paginatedHits = start >= hits.length ? [] : hits.slice(start, start + perPage);
 
     return {
-      hits: paginatedHits,
+      hits: paginatedHits.map(normalizeLegacyVerification),
       page,
       perPage,
       total,
@@ -315,7 +339,7 @@ export class EventClient {
       esClient: this.clients.esClient,
       query: query.keep('_source').limit(MAX_DEDUP_SCAN_LIMIT),
     });
-    return { hits };
+    return { hits: hits.map(normalizeLegacyVerification) };
   }
 
   async findByEventUuid(id: string): Promise<{ hits: SignificantEvent[] }> {
@@ -326,7 +350,7 @@ export class EventClient {
       idField: FIELD_EVENT_UUID,
       idValue: id,
     });
-    return { hits: result.hits };
+    return { hits: result.hits.map(normalizeLegacyVerification) };
   }
 
   async findByEventId(eventId: string): Promise<{ hits: SignificantEvent[] }> {
@@ -337,7 +361,7 @@ export class EventClient {
       idField: FIELD_EVENT_ID,
       idValue: eventId,
     });
-    return { hits: result.hits };
+    return { hits: result.hits.map(normalizeLegacyVerification) };
   }
 
   async findLatestByEventIds(eventIds: string[]): Promise<Map<string, SignificantEvent>> {
@@ -353,7 +377,7 @@ export class EventClient {
       groupBy: FIELD_EVENT_ID,
     });
     const map = new Map<string, SignificantEvent>();
-    for (const event of hits) {
+    for (const event of hits.map(normalizeLegacyVerification)) {
       if (event.event_id) map.set(event.event_id, event);
     }
     return map;
