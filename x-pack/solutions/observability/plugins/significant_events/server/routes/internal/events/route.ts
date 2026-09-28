@@ -177,13 +177,9 @@ const eventsLifecycleRoute = createServerRoute({
     await assertSignificantEventsAccess({ server, licensing });
 
     const eventClient = await getEventClient();
-    const { hits: initialHits } = await eventClient.findByEventUuid(params.path.id);
-    if (initialHits.length === 0) {
-      return { detections: [], events: [] };
-    }
-
-    const { event_id: eventId } = initialHits[0];
-    const { hits: events } = await eventClient.findByEventId(eventId);
+    // Use event_id (stable) so the lookup works regardless of whether the list API returned a
+    // real event_uuid or a synthetic group_hash from RuleEventsClient.
+    const { hits: events } = await eventClient.findByEventId(params.path.id);
     if (events.length === 0) {
       return { detections: [], events: [] };
     }
@@ -246,12 +242,14 @@ const eventsAttachInvestigationRoute = createServerRoute({
     body: significantEventInvestigationSchema.required({ completed_at: true }),
   }),
   handler: async ({ params, request, getScopedClients, server, logger }) => {
-    const { getEventClient, getAlertEventsClient, licensing } = await getScopedClients({ request });
+    const { getEventClient, getEventSearchClient, getAlertEventsClient, licensing } =
+      await getScopedClients({ request });
 
     await assertSignificantEventsAccess({ server, licensing });
 
     return attachInvestigationToEvent({
       eventClient: await getEventClient(),
+      eventSearchClient: await getEventSearchClient(),
       eventId: params.path.id,
       investigation: params.body,
       alertEventsClient: await getAlertEventsClient(),
@@ -292,7 +290,9 @@ const eventsTriggerInvestigationRoute = createServerRoute({
     await assertNotPaused({ maintenanceService, request });
 
     const eventClient = await getEventClient();
-    const { hits } = await eventClient.findByEventUuid(params.path.id);
+    // Use event_id (stable) so the lookup works regardless of whether the caller supplied a
+    // real event_uuid or a synthetic group_hash from RuleEventsClient. Use the latest version.
+    const { hits } = await eventClient.findByEventId(params.path.id);
     if (hits.length === 0) {
       throw notFound(`Significant event "${params.path.id}" not found.`);
     }
@@ -301,7 +301,7 @@ const eventsTriggerInvestigationRoute = createServerRoute({
       nightshiftInvestigations: server.nightshiftInvestigations,
       request,
       logger,
-      event: hits[0],
+      event: hits.at(-1)!,
     });
 
     if (!executionId) {
