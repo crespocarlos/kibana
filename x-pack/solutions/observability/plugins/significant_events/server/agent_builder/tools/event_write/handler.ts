@@ -577,7 +577,7 @@ export async function eventsWriteBulkHandler({
     if (
       candidate.mode === 'snapshot' &&
       shouldSkipAsNoOp(
-        latestByEventId.get(candidate.eventId),
+        latestLegacyByEventId.get(candidate.eventId),
         candidate,
         priorDocsByEventId.get(candidate.eventId) ?? []
       )
