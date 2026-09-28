@@ -38,12 +38,24 @@ export const attachInvestigationToEvent = async ({
   logger?: Logger;
 }): Promise<{ event_uuid: string; updated: number; ignored: number }> => {
   const resolvedSearchClient = eventSearchClient ?? eventClient;
-  const { hits: readHits } = await resolvedSearchClient.findByEventId(eventId);
+  let readHits: Awaited<ReturnType<SignificantEventsReadClient['findByEventId']>>['hits'] = [];
+  let readStoreThrew = false;
+  try {
+    ({ hits: readHits } = await resolvedSearchClient.findByEventId(eventId));
+  } catch (err) {
+    readStoreThrew = true;
+    logger?.warn(
+      `attach_investigation: read-store lookup failed, falling back to canonical client: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
 
-  // Dual-write lag guard: when the flag-aware read store returns nothing, fall back to the
-  // canonical eventClient before treating the event as absent. An empty read-store result is not
-  // proof of absence — the dual-write to `.rule-events` can lag behind a successful legacy write.
-  const usedLegacyFallback = readHits.length === 0 && eventSearchClient !== undefined;
+  // Dual-write lag guard: when the flag-aware read store returns nothing *or throws*, fall back
+  // to the canonical eventClient. An empty or errored read-store result is not proof of absence —
+  // the dual-write to `.rule-events` can lag behind a successful legacy write, or the read store
+  // may be temporarily unavailable.
+  const usedLegacyFallback = (readHits.length === 0 || readStoreThrew) && eventSearchClient !== undefined;
   const hits = usedLegacyFallback ? (await eventClient.findByEventId(eventId)).hits : readHits;
 
   const latest = hits[hits.length - 1];
