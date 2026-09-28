@@ -55,7 +55,8 @@ export const attachInvestigationToEvent = async ({
   // to the canonical eventClient. An empty or errored read-store result is not proof of absence —
   // the dual-write to `.rule-events` can lag behind a successful legacy write, or the read store
   // may be temporarily unavailable.
-  const usedLegacyFallback = (readHits.length === 0 || readStoreThrew) && eventSearchClient !== undefined;
+  const usedLegacyFallback =
+    (readHits.length === 0 || readStoreThrew) && eventSearchClient !== undefined;
   const hits = usedLegacyFallback ? (await eventClient.findByEventId(eventId)).hits : readHits;
 
   const latest = hits[hits.length - 1];
