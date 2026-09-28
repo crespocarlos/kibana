@@ -38,7 +38,14 @@ export const attachInvestigationToEvent = async ({
   logger?: Logger;
 }): Promise<{ event_uuid: string; updated: number; ignored: number }> => {
   const resolvedSearchClient = eventSearchClient ?? eventClient;
-  const { hits } = await resolvedSearchClient.findByEventId(eventId);
+  const { hits: readHits } = await resolvedSearchClient.findByEventId(eventId);
+
+  // Dual-write lag guard: when the flag-aware read store returns nothing, fall back to the
+  // canonical eventClient before treating the event as absent. An empty read-store result is not
+  // proof of absence — the dual-write to `.rule-events` can lag behind a successful legacy write.
+  const usedLegacyFallback = readHits.length === 0 && eventSearchClient !== undefined;
+  const hits = usedLegacyFallback ? (await eventClient.findByEventId(eventId)).hits : readHits;
+
   const latest = hits[hits.length - 1];
 
   if (!latest) {
@@ -47,8 +54,9 @@ export const attachInvestigationToEvent = async ({
 
   // RuleEventsClient uses `group_hash` as a synthetic event_uuid, so a legacy write must retain
   // the actual EventClient version as its predecessor.
+  // If we already fell back to eventClient above, reuse that result — no second round-trip needed.
   const latestLegacy =
-    resolvedSearchClient === eventClient
+    usedLegacyFallback || eventSearchClient === undefined
       ? latest
       : (await eventClient.findByEventId(eventId)).hits.at(-1);
   if (!latestLegacy) {
