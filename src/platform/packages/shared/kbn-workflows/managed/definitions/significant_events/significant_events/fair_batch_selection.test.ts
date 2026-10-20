@@ -60,7 +60,7 @@ describe('significant events fair batch selection', () => {
     expect(serializedStep).toContain('foreach.item.severity_score');
   });
 
-  it('selects a bounded detection batch with ES|QL severity-plus-age scoring and suppresses flaky rules with an age-based probe', () => {
+  it('selects a bounded, oldest-first detection batch and suppresses flaky rules with an age-based probe', () => {
     const selection = getStep(DISCOVERY_YAML, 'get_detections');
     const query = selection.with?.query;
     const discovery = parse(DISCOVERY_YAML) as { steps: WorkflowStep[] };
@@ -71,18 +71,21 @@ describe('significant events fair batch selection', () => {
     expect(query).toContain('INLINE STATS oldest_unprocessed');
     expect(query).toContain('latest_timestamp = MAX(@timestamp)');
     expect(query).toContain('suppressed_age_minutes');
-    expect(query).toContain('staleness_minutes');
-    expect(query).toContain('recent_detection_count < ?2');
-    expect(query).toContain('suppressed_age_minutes >= ?3');
-    expect(query).toContain('severity_score >= ?4');
+    expect(query).toContain(
+      'EVAL flaky_suppressed = recent_detection_count >= ?2 AND suppressed_age_minutes < ?3 AND severity_score < ?4'
+    );
+    expect(query).toContain('SORT score DESC, @timestamp ASC, _id ASC');
+    expect(query).not.toContain('| WHERE recent_detection_count');
     expect(query).toContain(
       'EVAL flaky_probe = recent_detection_count >= ?2 AND suppressed_age_minutes >= ?3'
     );
-    expect(query).toContain('KEEP rule_uuid, _source, score, recent_detection_count, flaky_probe');
+    expect(query).toContain(
+      'KEEP rule_uuid, _source, score, recent_detection_count, flaky_probe, flaky_suppressed'
+    );
 
     const queryLines = query?.split('\n') ?? [];
     const suppressionLineIdx = queryLines.findIndex((l: string) =>
-      l.includes('recent_detection_count < ?2')
+      l.includes('EVAL flaky_suppressed')
     );
     const limitLineIdx = queryLines.findIndex((l: string) => l.includes('LIMIT ?1'));
     expect(suppressionLineIdx).toBeGreaterThan(-1);
@@ -137,17 +140,16 @@ describe('significant events fair batch selection', () => {
     expect(discovery.outputs.map(({ name }) => name)).toEqual([
       'processedCount',
       'hasWork',
-      'suppressedRuleCount',
+      'skippedCount',
+      'needsAgentCount',
+      'classifierReasonCounts',
+      'classifierProbeStatusCounts',
+      'classifierGateCounts',
+      'classifierFailed',
     ]);
     expect(discovery.steps.find(({ name }) => name === 'output_result')?.with).toMatchObject({
       hasWork: true,
     });
-    expect(discovery.steps.find(({ name }) => name === 'output_result')?.with).toHaveProperty(
-      'suppressedRuleCount'
-    );
-    expect(findStepRecursive(discovery.steps, 'output_no_detections')?.with).toHaveProperty(
-      'suppressedRuleCount'
-    );
   });
 
   it('carries the three flaky-rule throttle inputs with documented defaults', () => {
